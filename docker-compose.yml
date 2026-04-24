@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   backend:
     build: ./backend
@@ -19,7 +17,7 @@ services:
         condition: service_started
     volumes:
       - ./backend:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   worker:
     build: ./backend
@@ -38,6 +36,40 @@ services:
     volumes:
       - ./backend:/app
     command: celery -A app.services.queue worker --loglevel=info
+
+  web:
+    # Usa la fase `deps` del Dockerfile (tiene node_modules instalado) y
+    # corre `next dev` con hot-reload.
+    build:
+      context: ./web
+      target: deps
+    working_dir: /app
+    ports:
+      - "3000:3000"
+    environment:
+      # Variables NEXT_PUBLIC_* se inyectan en el bundle del navegador,
+      # así que deben apuntar al host (no a la red interna de Docker).
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8000
+      - WATCHPACK_POLLING=true  # necesario en Windows/WSL para hot-reload
+    volumes:
+      - ./web:/app
+      # Monta el paquete compartido (@basketball-clipper/shared) dentro del
+      # contenedor. El symlink en el `command` lo expone como si fuera una
+      # dependencia instalada en node_modules.
+      - ./shared:/shared
+      # Volúmenes anónimos que preservan los artefactos del contenedor,
+      # evitando que el mount del host los sobrescriba.
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+    # 1. Crea el symlink para que webpack resuelva @basketball-clipper/shared
+    # 2. Arranca Next.js en modo dev
+    command: >
+      sh -c "mkdir -p node_modules/@basketball-clipper &&
+             ln -sfn /shared node_modules/@basketball-clipper/shared &&
+             npm run dev"
 
   db:
     image: postgres:16-alpine

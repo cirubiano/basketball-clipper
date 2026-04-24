@@ -3,7 +3,11 @@ FROM node:20-alpine AS base
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci
+# Usa `npm ci` (estricto, reproducible) si hay lockfile; si no, cae a
+# `npm install` para que dev funcione sin necesidad de commitear el lock.
+# En cuanto generes el package-lock.json (ej. `npm install` en local)
+# los builds en CI / producción usarán `npm ci` automáticamente.
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 FROM base AS builder
 WORKDIR /app

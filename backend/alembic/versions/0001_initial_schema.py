@@ -9,11 +9,40 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "0001"
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+
+
+# Valores del enum, definidos una sola vez para no duplicarlos
+_VIDEO_STATUS_VALUES = (
+    "pending",
+    "validating",
+    "processing",
+    "completed",
+    "invalid",
+    "error",
+)
+
+
+def _videostatus_column_type() -> postgresql.ENUM:
+    """
+    Tipo ENUM para la columna `videos.status`.
+
+    Se usa `postgresql.ENUM` (dialecto específico) en vez de `sa.Enum`
+    porque respeta fielmente `create_type=False`, evitando que SQLAlchemy
+    intente emitir otro `CREATE TYPE videostatus` al crear la tabla
+    (comportamiento que en `sa.Enum` se ignora en ciertos caminos y
+    provocaba `DuplicateObjectError` cuando el tipo ya existía).
+    """
+    return postgresql.ENUM(
+        *_VIDEO_STATUS_VALUES,
+        name="videostatus",
+        create_type=False,
+    )
 
 
 def upgrade() -> None:
@@ -35,20 +64,24 @@ def upgrade() -> None:
     # Supports fast login lookups by email
     op.create_index("ix_users_email", "users", ["email"])
 
-    # ── videostatus enum ───────────────────────────────────────────────────
-    # Create the PostgreSQL ENUM type before the table that uses it.
-    # The Enum is defined here (create_type=True is the default) so that
-    # the downgrade can drop it explicitly after dropping the table.
-    videostatus_type = sa.Enum(
-        "pending",
-        "validating",
-        "processing",
-        "completed",
-        "invalid",
-        "error",
-        name="videostatus",
+    # ── videostatus enum (idempotent) ─────────────────────────────────────
+    # PostgreSQL no soporta `CREATE TYPE IF NOT EXISTS` directamente.
+    # Usamos un bloque anónimo DO/EXCEPTION para que la migración sea
+    # re-ejecutable sobre una BD donde el tipo ya exista (por ejemplo
+    # después de un intento fallido anterior que dejó el tipo creado
+    # pero no la tabla `videos`).
+    op.execute(
+        """
+        DO $$ BEGIN
+            CREATE TYPE videostatus AS ENUM (
+                'pending', 'validating', 'processing',
+                'completed', 'invalid', 'error'
+            );
+        EXCEPTION
+            WHEN duplicate_object THEN NULL;
+        END $$;
+        """
     )
-    videostatus_type.create(op.get_bind(), checkfirst=True)
 
     # ── videos ────────────────────────────────────────────────────────────
     op.create_table(
@@ -59,17 +92,7 @@ def upgrade() -> None:
         sa.Column("s3_key", sa.String(512), nullable=False),
         sa.Column(
             "status",
-            # create_type=False because the type was created above
-            sa.Enum(
-                "pending",
-                "validating",
-                "processing",
-                "completed",
-                "invalid",
-                "error",
-                name="videostatus",
-                create_type=False,
-            ),
+            _videostatus_column_type(),
             server_default="pending",
             nullable=False,
         ),
@@ -126,8 +149,8 @@ def downgrade() -> None:
     op.drop_index("ix_videos_user_id", table_name="videos")
     op.drop_table("videos")
 
-    # Drop the ENUM type after the table that uses it is gone
-    sa.Enum(name="videostatus").drop(op.get_bind(), checkfirst=True)
+    # Drop idempotente del tipo para no romper si la tabla ya no lo usa
+    op.execute("DROP TYPE IF EXISTS videostatus")
 
     op.drop_index("ix_users_email", table_name="users")
     op.drop_table("users")

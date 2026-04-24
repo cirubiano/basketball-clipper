@@ -1,3 +1,5 @@
+import json
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,7 +9,10 @@ class Settings(BaseSettings):
     # Application
     secret_key: str = "dev-secret-key-change-in-production"
     debug: bool = False
-    allowed_origins: list[str] = ["http://localhost:3000", "http://localhost:8081"]
+
+    # Stored as a plain string so pydantic-settings never tries json.loads() on it.
+    # Accepts comma-separated ("http://a,http://b") or JSON array ('["http://a"]').
+    allowed_origins: str = "http://localhost:3000,http://localhost:8081"
 
     # Database
     database_url: str = (
@@ -29,6 +34,16 @@ class Settings(BaseSettings):
     # Celery
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """Parses allowed_origins into a list regardless of format."""
+        v = self.allowed_origins.strip()
+        if not v:
+            return []
+        if v.startswith("["):
+            return json.loads(v)
+        return [o.strip() for o in v.split(",") if o.strip()]
 
 
 settings = Settings()
