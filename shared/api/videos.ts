@@ -1,27 +1,29 @@
 import type {
+  Clip,
   InitUploadResponse,
   ProcessingJob,
   ProcessingProgress,
   UploadStatusResponse,
   UploadedPart,
+  VideoListItem,
 } from "../types";
 import { WS_BASE_URL, apiRequest } from "./client";
 
 // ── Multipart upload endpoints ───────────────────────────────────────────────
 
-/**
- * POST /videos/init-upload
- * Crea la fila Video y devuelve el plan de multipart upload: upload_id,
- * tamaño de parte, y una URL pre-firmada por cada parte para que el
- * navegador haga PUT directo al storage.
- */
 export async function initUpload(
-  input: { filename: string; size: number; contentType?: string },
+  input: {
+    title: string;
+    filename: string;
+    size: number;
+    contentType?: string;
+  },
   token: string,
 ): Promise<InitUploadResponse> {
   return apiRequest<InitUploadResponse>("/videos/init-upload", {
     method: "POST",
     body: JSON.stringify({
+      title: input.title,
       filename: input.filename,
       size: input.size,
       content_type: input.contentType ?? "video/mp4",
@@ -30,7 +32,6 @@ export async function initUpload(
   });
 }
 
-/** GET /videos/{id}/upload-status — lista partes ya confirmadas en S3. */
 export async function getUploadStatus(
   videoId: number,
   token: string,
@@ -41,10 +42,6 @@ export async function getUploadStatus(
   );
 }
 
-/**
- * POST /videos/{id}/complete-upload
- * Cierra el multipart upload en S3 y encola el procesado.
- */
 export async function completeUpload(
   videoId: number,
   parts: UploadedPart[],
@@ -57,7 +54,6 @@ export async function completeUpload(
   });
 }
 
-/** POST /videos/{id}/abort-upload — cancela un upload en curso. */
 export async function abortUpload(
   videoId: number,
   token: string,
@@ -68,18 +64,46 @@ export async function abortUpload(
   });
 }
 
-// ── Processing status ────────────────────────────────────────────────────────
+// ── Lifecycle ────────────────────────────────────────────────────────────────
 
-/**
- * GET /videos/{id}/status
- * Polling del estado. `progress` viene de Redis y puede estar más
- * actualizado que `status` de la BD.
- */
+/** GET /videos — listado de trabajos del usuario, más recientes primero. */
+export async function listVideos(token: string): Promise<VideoListItem[]> {
+  return apiRequest<VideoListItem[]>("/videos", { token });
+}
+
+/** GET /videos/{id}/status — estado actual del procesado. */
 export async function getVideoStatus(
   videoId: number,
   token: string,
 ): Promise<ProcessingJob> {
   return apiRequest<ProcessingJob>(`/videos/${videoId}/status`, { token });
+}
+
+/** GET /videos/{id}/clips — clips generados a partir de este vídeo. */
+export async function listVideoClips(
+  videoId: number,
+  token: string,
+): Promise<Clip[]> {
+  return apiRequest<Clip[]>(`/videos/${videoId}/clips`, { token });
+}
+
+/** POST /videos/{id}/retry — re-encola el pipeline si está en error/invalid. */
+export async function retryVideo(
+  videoId: number,
+  token: string,
+): Promise<ProcessingJob> {
+  return apiRequest<ProcessingJob>(`/videos/${videoId}/retry`, {
+    method: "POST",
+    token,
+  });
+}
+
+/** DELETE /videos/{id} — borra vídeo, clips y ficheros físicos en S3. */
+export async function deleteVideo(
+  videoId: number,
+  token: string,
+): Promise<void> {
+  await apiRequest<void>(`/videos/${videoId}`, { method: "DELETE", token });
 }
 
 // ── WebSocket subscription ───────────────────────────────────────────────────
@@ -90,11 +114,6 @@ export interface ProgressSubscription {
   unsubscribe: () => void;
 }
 
-/**
- * Abre un WebSocket a /ws/{videoId} y dispara callbacks a medida que el
- * worker publica progreso. La conexión se cierra sola al llegar a un
- * estado terminal ("completed", "invalid", "error").
- */
 export function subscribeToProgress(
   videoId: number,
   onProgress: (progress: ProcessingProgress) => void,
@@ -110,9 +129,7 @@ export function subscribeToProgress(
     } catch {
       return;
     }
-
     onProgress(data);
-
     if (TERMINAL_STATUSES.has(data.status)) {
       onDone?.();
       ws.close();

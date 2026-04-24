@@ -13,16 +13,14 @@ class VideoStatus(str, enum.Enum):
     """
     Estado del vídeo a lo largo del pipeline.
 
-    Flujo normal:
-      uploading → pending → validating → processing → completed
-    Flujos de error:
-      uploading → (abort) → [fila borrada o marcada como error]
-      validating → invalid (no es un partido de baloncesto)
-      processing → error (fallo del detector/cutter)
+    Flujo normal:  uploading → pending → processing → completed
+    Errores:       processing → error (fallo del detector/cutter)
+
+    Nota: el enum en PostgreSQL conserva un valor legado 'validating'
+    de una fase anterior. No se usa en el código.
     """
     uploading = "uploading"
     pending = "pending"
-    validating = "validating"
     processing = "processing"
     completed = "completed"
     invalid = "invalid"
@@ -36,6 +34,9 @@ class Video(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
+    # Título legible añadido por el usuario al subir. Nullable por
+    # compatibilidad con filas anteriores a la migración 0003.
+    title: Mapped[str | None] = mapped_column(String(255))
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     s3_key: Mapped[str] = mapped_column(String(512), nullable=False)
     status: Mapped[VideoStatus] = mapped_column(
@@ -44,16 +45,9 @@ class Video(Base):
         server_default=VideoStatus.uploading.value,
         nullable=False,
     )
-    # ── Multipart upload state ─────────────────────────────────────────────
-    # upload_id: S3/MinIO MultipartUpload identifier. Null cuando el upload
-    # ya se cerró (o nunca se inició). Se usa para reanudar o abortar.
     upload_id: Mapped[str | None] = mapped_column(String(255))
-    # upload_parts: lista serializada de {PartNumber, ETag, Size} que el
-    # cliente va subiendo. En S3 se puede consultar con list_parts; lo
-    # cacheamos aquí para ahorrar una llamada.
     upload_parts: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
 
-    # Stores validation/processing errors for display to the user
     error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

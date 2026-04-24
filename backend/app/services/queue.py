@@ -1,21 +1,13 @@
 """
-Celery task that orchestrates the full video processing pipeline.
+Celery task que orquesta el pipeline de procesado de vídeo.
 
-Execution model
----------------
-Celery workers are synchronous. All heavy I/O (S3, DB) runs inside
-``asyncio.run(_run_pipeline(...))`` which creates a fresh event loop per task
-invocation. A *new* SQLAlchemy async engine is created inside the coroutine
-rather than reusing the global one so there are no event-loop conflicts with
-the asyncpg connection pool.
+Flujo (sin validación previa, asume que el vídeo es baloncesto):
 
-Progress updates
-----------------
-Each pipeline stage publishes a JSON message to the Redis Pub/Sub channel
-``video:{video_id}`` so the FastAPI WebSocket handler can forward it to the
-browser in real time. The same payload is also stored as a Redis string
-(``video:{video_id}:progress``) so the REST status endpoint can serve it
-to clients that connect after the pipeline has already progressed.
+    Download -> detect_possessions -> cut_clips -> upload -> completed
+
+Progreso publicado a Redis Pub/Sub ``video:{video_id}`` para el WebSocket.
+El stage de detección emite progreso incremental a medida que YOLO analiza
+frames (típicamente 5-10 minutos para un partido completo).
 """
 import asyncio
 import json
@@ -23,6 +15,7 @@ import logging
 import os
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 import redis
@@ -51,68 +44,84 @@ celery_app.conf.update(
 
 @celery_app.task(name="process_video", bind=True, max_retries=0)
 def process_video(self, video_id: int) -> None:  # noqa: ARG002
-    """Synchronous Celery entry point — delegates to the async pipeline."""
+    """Entrypoint sync de Celery — delega al pipeline async."""
     asyncio.run(_run_pipeline(video_id))
 
 
 # ── Async pipeline ────────────────────────────────────────────────────────────
 
+# Rango de progreso que cubre la detección YOLO (el stage más largo).
+_DETECT_PROGRESS_START = 20
+_DETECT_PROGRESS_END = 55
+
+
 async def _run_pipeline(video_id: int) -> None:
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+    # Importar el paquete models entero garantiza que Base.metadata conozca
+    # todas las tablas antes de cualquier flush (evita NoReferencedTableError
+    # cuando una FK apunta a una tabla no importada).
+    import app.models  # noqa: F401
     from app.models.clip import Clip
     from app.models.video import Video, VideoStatus
-    from app.services import cutter, detector, storage, validator
+    from app.services import cutter, detector, storage
 
-    # Create a fresh engine for this task invocation to avoid event-loop
-    # conflicts with the global asyncpg connection pool used by FastAPI.
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     async_session = async_sessionmaker(engine, expire_on_commit=False)
 
     r = redis.Redis.from_url(settings.redis_url, decode_responses=True)
     tmp_dir: str | None = None
+    pipeline_started = time.monotonic()
 
     try:
         async with async_session() as session:
             video: Video | None = await session.get(Video, video_id)
             if video is None:
-                logger.error("process_video: video %d not found in DB", video_id)
+                logger.error("[video %d] not found in DB, skipping", video_id)
                 return
 
             tmp_dir = tempfile.mkdtemp(prefix=f"bc_video_{video_id}_")
             video_ext = Path(video.filename).suffix or ".mp4"
             video_local = os.path.join(tmp_dir, f"source{video_ext}")
 
-            # ── Stage 1: Download from S3 ─────────────────────────────────
-            _publish(r, video_id, "validating", 5)
-            video.status = VideoStatus.validating
-            await session.commit()
-
-            await asyncio.to_thread(storage.download_file, video.s3_key, video_local)
-            _publish(r, video_id, "validating", 15)
-
-            # ── Stage 2: Validate with Claude Vision ──────────────────────
-            is_basketball: bool = await asyncio.to_thread(
-                validator.validate_basketball_video, video_local
-            )
-            if not is_basketball:
-                msg = "The uploaded video does not appear to be a basketball game."
-                video.status = VideoStatus.invalid
-                video.error_message = msg
-                await session.commit()
-                _publish(r, video_id, "invalid", 100, msg)
-                logger.info("process_video: video %d rejected as non-basketball", video_id)
-                return
-
-            # ── Stage 3: Detect possession segments ───────────────────────
-            _publish(r, video_id, "processing", 25)
+            # ── Stage 1: Download ─────────────────────────────────────────
+            logger.info("[video %d] stage 1/4: downloading from s3://%s", video_id, video.s3_key)
+            _publish(r, video_id, "processing", 5)
             video.status = VideoStatus.processing
             await session.commit()
 
-            segments: list[tuple[float, float, str]] = await asyncio.to_thread(
-                detector.detect_possessions, video_local
+            t0 = time.monotonic()
+            await asyncio.to_thread(storage.download_file, video.s3_key, video_local)
+            size_mb = os.path.getsize(video_local) / 1024**2
+            logger.info(
+                "[video %d] stage 1/4: download done in %.1fs (%.1f MB)",
+                video_id, time.monotonic() - t0, size_mb,
             )
-            _publish(r, video_id, "processing", 55)
+            _publish(r, video_id, "processing", _DETECT_PROGRESS_START)
+
+            # ── Stage 2: Detect possession segments ───────────────────────
+            logger.info("[video %d] stage 2/4: detecting possessions with YOLOv8", video_id)
+            t0 = time.monotonic()
+
+            # Callback que el detector invoca cada N sampled frames.
+            # Interpola el porcentaje entre _DETECT_PROGRESS_START y _END
+            # según la fracción de frames ya procesados.
+            def _on_detect_progress(current: int, total: int) -> None:
+                frac = (current / total) if total > 0 else 1.0
+                frac = min(max(frac, 0.0), 1.0)
+                progress = _DETECT_PROGRESS_START + int(
+                    frac * (_DETECT_PROGRESS_END - _DETECT_PROGRESS_START)
+                )
+                _publish(r, video_id, "processing", progress)
+
+            segments: list[tuple[float, float, str]] = await asyncio.to_thread(
+                detector.detect_possessions, video_local, _on_detect_progress,
+            )
+            logger.info(
+                "[video %d] stage 2/4: detection done in %.1fs, %d segments found",
+                video_id, time.monotonic() - t0, len(segments),
+            )
+            _publish(r, video_id, "processing", _DETECT_PROGRESS_END)
 
             if not segments:
                 msg = "Could not detect any possession segments in the video."
@@ -120,20 +129,36 @@ async def _run_pipeline(video_id: int) -> None:
                 video.error_message = msg
                 await session.commit()
                 _publish(r, video_id, "error", 100, msg)
-                logger.warning("process_video: no segments detected for video %d", video_id)
+                logger.warning("[video %d] no segments detected, marking error", video_id)
                 return
 
-            # ── Stage 4: Cut clips ────────────────────────────────────────
+            # ── Stage 3: Cut clips ────────────────────────────────────────
+            logger.info("[video %d] stage 3/4: cutting %d clips with FFmpeg", video_id, len(segments))
             clips_dir = os.path.join(tmp_dir, "clips")
             os.makedirs(clips_dir, exist_ok=True)
 
+            # Callback que cutter invoca al terminar cada clip — interpola
+            # progreso 55% → 75% según clips ya cortados.
+            def _on_cut_progress(current: int, total: int) -> None:
+                progress = 55 + int(20 * current / total)
+                _publish(r, video_id, "processing", progress)
+
+            t0 = time.monotonic()
             clip_paths: list[str] = await asyncio.to_thread(
-                cutter.cut_clips, video_local, segments, clips_dir
+                cutter.cut_clips, video_local, segments, clips_dir, _on_cut_progress,
+            )
+            logger.info(
+                "[video %d] stage 3/4: cutting done in %.1fs, %d clips produced",
+                video_id, time.monotonic() - t0, len(clip_paths),
             )
             _publish(r, video_id, "processing", 75)
 
-            # ── Stage 5: Upload clips + create DB records ─────────────────
-            for clip_path, (start_t, end_t, team) in zip(clip_paths, segments):
+            # ── Stage 4: Upload clips + create DB records ─────────────────
+            logger.info("[video %d] stage 4/4: uploading %d clips to S3", video_id, len(clip_paths))
+            t0 = time.monotonic()
+            for i, (clip_path, (start_t, end_t, team)) in enumerate(
+                zip(clip_paths, segments), 1
+            ):
                 clip_filename = Path(clip_path).name
                 clip_s3_key = f"clips/{video.user_id}/{video_id}/{clip_filename}"
                 await asyncio.to_thread(storage.upload_file, clip_path, clip_s3_key)
@@ -149,19 +174,26 @@ async def _run_pipeline(video_id: int) -> None:
                     )
                 )
 
-            _publish(r, video_id, "processing", 90)
+                # Publicar progreso 75 → 90 durante los uploads
+                clip_progress = 75 + int(15 * i / len(clip_paths))
+                _publish(r, video_id, "processing", clip_progress)
 
-            # ── Stage 6: Mark complete ────────────────────────────────────
+            logger.info(
+                "[video %d] stage 4/4: uploads done in %.1fs",
+                video_id, time.monotonic() - t0,
+            )
+
+            # ── Complete ─────────────────────────────────────────────────
             video.status = VideoStatus.completed
             await session.commit()
             _publish(r, video_id, "completed", 100)
             logger.info(
-                "process_video: video %d completed — %d clips", video_id, len(clip_paths)
+                "[video %d] pipeline COMPLETE in %.1fs (%d clips)",
+                video_id, time.monotonic() - pipeline_started, len(clip_paths),
             )
 
     except Exception as exc:
-        logger.exception("process_video: unhandled error for video %d", video_id)
-        # Best-effort: mark the video as errored so the user gets feedback
+        logger.exception("[video %d] pipeline FAILED with unhandled error", video_id)
         try:
             async with async_session() as session:
                 video = await session.get(Video, video_id)
@@ -171,9 +203,9 @@ async def _run_pipeline(video_id: int) -> None:
                     video.error_message = str(exc)[:500]
                     await session.commit()
         except Exception:
-            logger.exception("process_video: also failed to update error status for %d", video_id)
+            logger.exception("[video %d] ALSO failed to update error status", video_id)
         _publish(r, video_id, "error", 100, str(exc)[:500])
-        raise  # propagate so Celery marks the task as FAILURE
+        raise
 
     finally:
         if tmp_dir:
@@ -196,6 +228,4 @@ def _publish(
     )
     channel = f"video:{video_id}"
     r.publish(channel, payload)
-    # Cache as a plain string so the REST status endpoint can serve it without
-    # subscribing to pub-sub. Expires after 24 h.
     r.setex(f"{channel}:progress", 86_400, payload)

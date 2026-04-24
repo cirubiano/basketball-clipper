@@ -53,7 +53,6 @@ def test_cors_origins_parses_comma_separated_string(monkeypatch):
         "app.schemas.clip",
         "app.services.queue",
         "app.services.storage",
-        "app.services.validator",
         "app.services.detector",
         "app.services.cutter",
     ],
@@ -118,7 +117,6 @@ def test_video_status_enum_values():
     assert {s.value for s in VideoStatus} == {
         "uploading",
         "pending",
-        "validating",
         "processing",
         "completed",
         "invalid",

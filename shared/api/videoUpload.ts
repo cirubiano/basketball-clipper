@@ -43,6 +43,8 @@ export interface UploadProgress {
 export interface UploadOptions {
   /** Token JWT Bearer. */
   token: string;
+  /** Título legible del vídeo (obligatorio). */
+  title: string;
   /** Callback de progreso (llamado a medida que cada parte sube). */
   onProgress?: (progress: UploadProgress) => void;
   /** Paralelismo — por defecto 4. Ajustar según ancho de banda. */
@@ -139,6 +141,7 @@ export function uploadVideoMultipart(
     } else {
       plan = await initUpload(
         {
+          title: options.title,
           filename: file.name,
           size: file.size,
           contentType: options.contentType ?? file.type ?? "video/mp4",

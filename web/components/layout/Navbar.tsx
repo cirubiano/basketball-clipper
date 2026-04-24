@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 
 const navLinks = [
   { href: "/", label: "Dashboard" },
-  { href: "/clips", label: "Clips" },
+  { href: "/videos", label: "Mis vídeos" },
 ];
 
 export function Navbar() {

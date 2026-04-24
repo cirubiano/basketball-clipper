@@ -1,12 +1,17 @@
 """
-Flujo multipart upload — sustituye al antiguo POST /videos/upload.
+Endpoints de vídeos: subida multipart + lifecycle del trabajo.
 
-Endpoints:
+Multipart upload (subida del fichero a S3/MinIO):
   POST   /videos/init-upload           crea Video + multipart en S3
   GET    /videos/{id}/upload-status    ver partes ya subidas (reanudar)
   POST   /videos/{id}/complete-upload  cerrar multipart, encolar pipeline
   POST   /videos/{id}/abort-upload     abortar multipart, marcar Video como error
-  GET    /videos/{id}/status           estado del procesado (igual que antes)
+
+Lifecycle (gestión de trabajos del usuario):
+  GET    /videos                       listado de trabajos del usuario
+  GET    /videos/{id}/status           estado del procesado
+  POST   /videos/{id}/retry            re-encolar pipeline si está en error
+  DELETE /videos/{id}                  borrar vídeo + clips + ficheros S3
 
 El upload real lo hace el navegador directamente contra S3/MinIO con las
 URLs pre-firmadas. El backend solo coordina — nunca recibe los bytes del
@@ -19,13 +24,16 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.models.clip import Clip
 from app.models.user import User
 from app.models.video import Video, VideoStatus
+from app.schemas.clip import ClipResponse
 from app.schemas.video import (
     CompleteUploadRequest,
     InitUploadRequest,
@@ -33,6 +41,7 @@ from app.schemas.video import (
     PresignedPart,
     UploadStatusResponse,
     UploadedPart,
+    VideoListItem,
     VideoStatusResponse,
 )
 from app.services import queue, storage
@@ -42,17 +51,43 @@ logger = logging.getLogger(__name__)
 
 _ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
 
-# Partes de 100 MiB: con el máximo S3 de 10k partes => tope de 1 TB. Cómodo
-# para 15 GB (150 partes) sin saturar la BD con miles de URLs firmadas.
 _PART_SIZE = 100 * 1024 * 1024
-# Tope absoluto del tamaño de fichero aceptado. 20 GB deja margen sobre el
-# objetivo de 15 GB sin abrir la puerta a abusos.
 _MAX_FILE_SIZE = 20 * 1024 * 1024 * 1024
-# Máximo de partes según la API de S3
 _MAX_PARTS = 10000
 
 
-# ── Init ─────────────────────────────────────────────────────────────────────
+# ── List ─────────────────────────────────────────────────────────────────────
+
+@router.get("", response_model=list[VideoListItem])
+@router.get("/", response_model=list[VideoListItem], include_in_schema=False)
+async def list_videos(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[VideoListItem]:
+    """Devuelve los trabajos del usuario, más recientes primero, con su nº de clips."""
+    stmt = (
+        select(Video, func.count(Clip.id).label("clips_count"))
+        .outerjoin(Clip, Clip.video_id == Video.id)
+        .where(Video.user_id == current_user.id)
+        .group_by(Video.id)
+        .order_by(Video.created_at.desc())
+    )
+    rows = (await db.execute(stmt)).all()
+    return [
+        VideoListItem(
+            id=v.id,
+            title=v.title,
+            filename=v.filename,
+            status=v.status,
+            error_message=v.error_message,
+            clips_count=int(clips_count),
+            created_at=v.created_at,
+        )
+        for v, clips_count in rows
+    ]
+
+
+# ── Init upload ──────────────────────────────────────────────────────────────
 
 @router.post("/init-upload", response_model=InitUploadResponse, status_code=201)
 async def init_upload(
@@ -61,9 +96,8 @@ async def init_upload(
     db: AsyncSession = Depends(get_db),
 ) -> InitUploadResponse:
     """
-    Valida el fichero, crea el registro Video, inicia el multipart upload
-    en S3/MinIO y devuelve una URL pre-firmada por cada parte. El cliente
-    debe subir cada parte con PUT a su URL y recopilar los ETags.
+    Valida el fichero, crea el registro Video con su título, inicia el
+    multipart upload en S3/MinIO y devuelve una URL pre-firmada por parte.
     """
     ext = Path(body.filename).suffix.lower()
     if ext not in _ALLOWED_EXTENSIONS:
@@ -86,14 +120,13 @@ async def init_upload(
 
     s3_key = f"videos/{current_user.id}/{uuid.uuid4()}{ext}"
 
-    # Crear multipart en S3 (síncrono, pero rápido — fuera del event loop
-    # por seguridad para no bloquear a otros clientes).
     upload_id = await asyncio.to_thread(
         storage.create_multipart_upload, s3_key, body.content_type
     )
 
     video = Video(
         user_id=current_user.id,
+        title=body.title.strip(),
         filename=body.filename,
         s3_key=s3_key,
         status=VideoStatus.uploading,
@@ -104,7 +137,6 @@ async def init_upload(
     await db.flush()
     await db.commit()
 
-    # Generar las URLs firmadas. 150 URLs para 15 GB → unas decenas de ms.
     urls = await asyncio.to_thread(
         _generate_all_part_urls, s3_key, upload_id, total_parts
     )
@@ -122,7 +154,6 @@ async def init_upload(
 def _generate_all_part_urls(
     s3_key: str, upload_id: str, total_parts: int
 ) -> list[PresignedPart]:
-    """Runs inside asyncio.to_thread to avoid blocking the event loop."""
     return [
         PresignedPart(
             part_number=i,
@@ -140,10 +171,6 @@ async def upload_status(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> UploadStatusResponse:
-    """
-    Devuelve las partes ya confirmadas en S3. El cliente usa esto para
-    reanudar un upload interrumpido — solo vuelve a subir las que falten.
-    """
     video = await _get_user_video(db, video_id, current_user)
 
     uploaded: list[UploadedPart] = []
@@ -169,10 +196,6 @@ async def complete_upload(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> VideoStatusResponse:
-    """
-    Cierra el multipart upload en S3, marca el vídeo como 'pending' y
-    encola el pipeline de procesado.
-    """
     video = await _get_user_video(db, video_id, current_user)
 
     if video.status != VideoStatus.uploading or not video.upload_id:
@@ -207,7 +230,6 @@ async def complete_upload(
     video.upload_parts = None
     await db.commit()
 
-    # Encolar el pipeline de procesado
     queue.process_video.delay(video.id)
 
     return VideoStatusResponse(
@@ -227,10 +249,6 @@ async def abort_upload(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """
-    Aborta un multipart upload en curso. Libera el espacio de las partes
-    subidas en S3 y deja la fila Video en estado 'error'.
-    """
     video = await _get_user_video(db, video_id, current_user)
 
     if video.upload_id:
@@ -245,7 +263,117 @@ async def abort_upload(
     await db.commit()
 
 
-# ── Status (sin cambios respecto al flujo antiguo) ──────────────────────────
+# ── Retry ────────────────────────────────────────────────────────────────────
+
+@router.post("/{video_id}/retry", response_model=VideoStatusResponse)
+async def retry_video(
+    video_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> VideoStatusResponse:
+    """
+    Re-encola el pipeline para un vídeo en estado 'error'. El fichero
+    original sigue en S3 (no se borra al fallar el procesado), así que
+    Celery puede repetir el trabajo sin necesidad de re-subir.
+    """
+    video = await _get_user_video(db, video_id, current_user)
+
+    if video.status not in (VideoStatus.error, VideoStatus.invalid):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Sólo se pueden reintentar vídeos en error (estado actual: {video.status.value})",
+        )
+
+    video.status = VideoStatus.pending
+    video.error_message = None
+    await db.commit()
+
+    queue.process_video.delay(video.id)
+
+    return VideoStatusResponse(
+        id=video.id,
+        status=video.status,
+        progress=0,
+        error_message=None,
+        created_at=video.created_at,
+    )
+
+
+# ── Delete ───────────────────────────────────────────────────────────────────
+
+@router.delete("/{video_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_video(
+    video_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Borra un vídeo, todos sus clips, y los ficheros físicos de S3/MinIO.
+    Operación irreversible.
+    """
+    video = await _get_user_video(db, video_id, current_user)
+
+    # Si todavía hay multipart upload sin cerrar, abortar primero
+    if video.upload_id:
+        try:
+            await asyncio.to_thread(
+                storage.abort_multipart_upload, video.s3_key, video.upload_id
+            )
+        except Exception:
+            logger.exception("delete_video: abort_multipart_upload failed (ignored)")
+
+    # Borrar fichero original del vídeo
+    try:
+        await asyncio.to_thread(storage.delete_file, video.s3_key)
+    except Exception:
+        logger.exception("delete_video: delete_file failed for video.s3_key (ignored)")
+
+    # Borrar todos los clips del vídeo en S3 (un solo barrido por prefijo)
+    clips_prefix = f"clips/{video.user_id}/{video.id}/"
+    try:
+        await asyncio.to_thread(storage.delete_prefix, clips_prefix)
+    except Exception:
+        logger.exception("delete_video: delete_prefix failed for %s (ignored)", clips_prefix)
+
+    # Borrar la fila Video — el ON DELETE CASCADE de la FK clips.video_id
+    # se encarga de las filas Clip.
+    await db.delete(video)
+    await db.commit()
+
+
+
+# ── Clips de un video ────────────────────────────────────────────────────────
+
+@router.get("/{video_id}/clips", response_model=list[ClipResponse])
+async def list_video_clips(
+    video_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[ClipResponse]:
+    """Lista los clips generados a partir de este vídeo, en orden cronológico."""
+    video = await _get_user_video(db, video_id, current_user)
+
+    result = await db.execute(
+        select(Clip).where(Clip.video_id == video.id).order_by(Clip.start_time.asc())
+    )
+    clips = result.scalars().all()
+    return [
+        ClipResponse(
+            id=c.id,
+            video_id=c.video_id,
+            start_time=c.start_time,
+            end_time=c.end_time,
+            team=c.team,
+            s3_key=c.s3_key,
+            url=storage.get_presigned_url(c.s3_key),
+            duration=c.duration,
+            created_at=c.created_at,
+        )
+        for c in clips
+    ]
+
+
+# ── Status (procesado en curso) ──────────────────────────────────────────────
 
 @router.get("/{video_id}/status", response_model=VideoStatusResponse)
 async def get_video_status(
@@ -265,7 +393,7 @@ async def get_video_status(
         if cached:
             progress = json.loads(cached).get("progress")
     except Exception:
-        pass  # Redis unavailable — fall back to DB status only
+        pass
 
     return VideoStatusResponse(
         id=video.id,

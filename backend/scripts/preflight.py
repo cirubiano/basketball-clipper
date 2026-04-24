@@ -98,7 +98,6 @@ if env_file.is_file():
         "REDIS_URL",
         "CELERY_BROKER_URL",
         "CELERY_RESULT_BACKEND",
-        "ANTHROPIC_API_KEY",
     }
     missing = required_keys - keys
     if missing:
@@ -106,7 +105,7 @@ if env_file.is_file():
     else:
         ok(f"Todas las claves requeridas presentes ({len(required_keys)})")
 
-    for placeholder in ("ANTHROPIC_API_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
+    for placeholder in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
         for line in env_file.read_text().splitlines():
             if line.startswith(placeholder + "="):
                 val = line.split("=", 1)[1].strip()
@@ -121,7 +120,7 @@ print("\n[4/6] backend/requirements.txt")
 req_file = BACKEND / "requirements.txt"
 if req_file.is_file():
     reqs = req_file.read_text()
-    for pkg in ("fastapi", "uvicorn", "sqlalchemy", "alembic", "celery", "redis", "anthropic"):
+    for pkg in ("fastapi", "uvicorn", "sqlalchemy", "alembic", "celery", "redis"):
         if pkg in reqs.lower():
             ok(f"'{pkg}' presente")
         else:

@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 
 interface ClipCardProps {
   clip: Clip;
+  /** Si se pasa, el link va a /videos/{videoId}/clips/{clipId} (preferido). */
+  videoId?: number;
 }
 
 function formatDuration(seconds: number): string {
@@ -14,9 +16,12 @@ function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export function ClipCard({ clip }: ClipCardProps) {
+export function ClipCard({ clip, videoId }: ClipCardProps) {
+  const href = videoId
+    ? `/videos/${videoId}/clips/${clip.id}`
+    : `/videos/${clip.video_id}/clips/${clip.id}`;
   return (
-    <Link href={`/clips/${clip.id}`} className="group block">
+    <Link href={href} className="group block">
       <Card className="overflow-hidden transition-shadow group-hover:shadow-md">
         <div className="relative aspect-video bg-muted flex items-center justify-center">
           <Play className="h-10 w-10 text-muted-foreground group-hover:text-primary transition-colors" />

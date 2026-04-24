@@ -10,7 +10,7 @@ import cv2
 def sample_video_path(tmp_path_factory):
     """
     Creates a minimal synthetic MP4 (30 frames, 320×240, 30 fps) suitable for
-    unit-testing the validator and detector services.  Two coloured rectangles
+    unit-testing the detector service.  Two coloured rectangles
     simulate jersey colours and a circle simulates the ball.
     """
     tmp_dir = tmp_path_factory.mktemp("video")

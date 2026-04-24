@@ -9,9 +9,6 @@ class Settings(BaseSettings):
     # Application
     secret_key: str = "dev-secret-key-change-in-production"
     debug: bool = False
-
-    # Stored as a plain string so pydantic-settings never tries json.loads() on it.
-    # Accepts comma-separated ("http://a,http://b") or JSON array ('["http://a"]').
     allowed_origins: str = "http://localhost:3000,http://localhost:8081"
 
     # Database
@@ -23,10 +20,6 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # S3 / MinIO
-    # - s3_endpoint_url: usado por boto3 dentro del backend (internal). En dev
-    #   "http://minio:9000"; en prod vacío → endpoint regional AWS por defecto.
-    # - s3_public_url: usado al firmar URLs que devolvemos al navegador. Debe
-    #   ser la URL que el navegador puede resolver (en dev "http://localhost:9000").
     s3_endpoint_url: str = ""
     s3_public_url: str = ""
     aws_access_key_id: str = ""
@@ -34,16 +27,12 @@ class Settings(BaseSettings):
     aws_region: str = "us-east-1"
     s3_bucket_name: str = "basketball-clipper-videos"
 
-    # Anthropic
-    anthropic_api_key: str = ""
-
     # Celery
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
 
     @property
     def cors_origins(self) -> list[str]:
-        """Parses allowed_origins into a list regardless of format."""
         v = self.allowed_origins.strip()
         if not v:
             return []

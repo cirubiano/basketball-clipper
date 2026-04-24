@@ -13,16 +13,14 @@ interface Step {
 }
 
 const STEPS: Step[] = [
-  { status: "validating", label: "Validando", description: "Comprobando que el vídeo es un partido de baloncesto" },
   { status: "processing", label: "Detectando posesión", description: "YOLOv8 analiza jugadores y balón frame a frame" },
   { status: "processing", label: "Cortando clips", description: "FFmpeg genera un clip por cada posesión" },
   { status: "completed", label: "Completado", description: "Todos los clips están listos" },
 ];
 
 const STEP_INDEX: Partial<Record<VideoStatus, number>> = {
-  validating: 0,
-  processing: 1,
-  completed: 3,
+  processing: 0,
+  completed: 2,
 };
 
 interface ProcessingStatusProps {

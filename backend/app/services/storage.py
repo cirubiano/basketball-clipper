@@ -77,6 +77,31 @@ def delete_file(s3_key: str) -> None:
     logger.debug("delete   s3://%s/%s", settings.s3_bucket_name, s3_key)
 
 
+def delete_prefix(prefix: str) -> int:
+    """Borra todos los objetos con prefijo *prefix* (ej. "clips/1/42/").
+
+    Útil para limpiar todos los clips de un vídeo en un único barrido.
+    Devuelve el número de objetos borrados.
+    """
+    client = _client()
+    paginator = client.get_paginator("list_objects_v2")
+    deleted_count = 0
+    for page in paginator.paginate(Bucket=settings.s3_bucket_name, Prefix=prefix):
+        keys = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
+        if not keys:
+            continue
+        client.delete_objects(
+            Bucket=settings.s3_bucket_name,
+            Delete={"Objects": keys, "Quiet": True},
+        )
+        deleted_count += len(keys)
+    logger.info(
+        "delete_prefix s3://%s/%s — %d objects removed",
+        settings.s3_bucket_name, prefix, deleted_count,
+    )
+    return deleted_count
+
+
 def get_presigned_url(s3_key: str, expires_in: int = 3600) -> str:
     """Pre-signed GET URL para que el navegador descargue un objeto."""
     try:

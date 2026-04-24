@@ -1,10 +1,9 @@
 """
 Integration tests for the full video processing pipeline (_run_pipeline).
 
-All external dependencies (DB, Redis, S3, Claude, YOLO, FFmpeg) are mocked so
-the test suite runs without any infrastructure.  What is exercised here is the
-orchestration logic: status transitions, early-exit paths, and the correct
-sequencing of calls across the pipeline stages.
+All external dependencies (DB, Redis, S3, YOLO, FFmpeg) are mocked so the
+suite runs without any infrastructure. Tests cover orchestration only:
+status transitions, early-exit paths, sequencing of stages.
 """
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -17,7 +16,6 @@ from app.services.queue import _run_pipeline
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _make_session_mock(video_mock):
-    """Returns an async context-manager mock that yields *video_mock* from .get()."""
     session = AsyncMock()
     session.get.return_value = video_mock
     session.__aenter__ = AsyncMock(return_value=session)
@@ -32,7 +30,6 @@ def _make_engine_mock():
 
 
 def _patch_infrastructure(session_mock, engine_mock, tmp_path):
-    """Returns a list of patch context managers for the shared infrastructure."""
     return [
         patch("app.services.queue.redis.Redis.from_url", return_value=MagicMock()),
         patch("sqlalchemy.ext.asyncio.create_async_engine", return_value=engine_mock),
@@ -48,9 +45,6 @@ def _patch_infrastructure(session_mock, engine_mock, tmp_path):
 # ── Happy path ────────────────────────────────────────────────────────────────
 
 async def test_pipeline_happy_path_sets_status_completed(tmp_path):
-    """
-    Full pipeline: download → validate (yes) → detect → cut → upload → complete.
-    """
     mock_video = MagicMock()
     mock_video.id = 1
     mock_video.user_id = 42
@@ -69,12 +63,7 @@ async def test_pipeline_happy_path_sets_status_completed(tmp_path):
     with (
         *_patch_infrastructure(session, engine, tmp_path),
         patch("app.services.storage.download_file"),
-        patch(
-            "app.services.validator.validate_basketball_video", return_value=True
-        ),
-        patch(
-            "app.services.detector.detect_possessions", return_value=fake_segments
-        ),
+        patch("app.services.detector.detect_possessions", return_value=fake_segments),
         patch("app.services.cutter.cut_clips", return_value=fake_clip_paths),
         patch("app.services.storage.upload_file") as mock_upload,
         patch("os.makedirs"),
@@ -101,7 +90,6 @@ async def test_pipeline_happy_path_creates_correct_clip_s3_keys(tmp_path):
     with (
         *_patch_infrastructure(session, engine, tmp_path),
         patch("app.services.storage.download_file"),
-        patch("app.services.validator.validate_basketball_video", return_value=True),
         patch("app.services.detector.detect_possessions", return_value=fake_segments),
         patch("app.services.cutter.cut_clips", return_value=fake_clip_paths),
         patch("app.services.storage.upload_file") as mock_upload,
@@ -115,34 +103,7 @@ async def test_pipeline_happy_path_creates_correct_clip_s3_keys(tmp_path):
     assert s3_key.endswith("clip_0000_team_a.mp4")
 
 
-# ── Validation failure ────────────────────────────────────────────────────────
-
-async def test_pipeline_marks_invalid_when_not_basketball(tmp_path):
-    mock_video = MagicMock()
-    mock_video.id = 2
-    mock_video.user_id = 1
-    mock_video.filename = "soccer.mp4"
-    mock_video.s3_key = "videos/1/2/soccer.mp4"
-
-    session = _make_session_mock(mock_video)
-    engine = _make_engine_mock()
-
-    with (
-        *_patch_infrastructure(session, engine, tmp_path),
-        patch("app.services.storage.download_file"),
-        patch(
-            "app.services.validator.validate_basketball_video", return_value=False
-        ),
-        patch("app.services.detector.detect_possessions") as mock_detect,
-        patch("os.makedirs"),
-    ):
-        await _run_pipeline(2)
-
-    assert mock_video.status == VideoStatus.invalid
-    mock_detect.assert_not_called()
-
-
-# ── No possession segments detected ──────────────────────────────────────────
+# ── Sin segmentos → error ─────────────────────────────────────────────────────
 
 async def test_pipeline_marks_error_when_no_segments_detected(tmp_path):
     mock_video = MagicMock()
@@ -157,7 +118,6 @@ async def test_pipeline_marks_error_when_no_segments_detected(tmp_path):
     with (
         *_patch_infrastructure(session, engine, tmp_path),
         patch("app.services.storage.download_file"),
-        patch("app.services.validator.validate_basketball_video", return_value=True),
         patch("app.services.detector.detect_possessions", return_value=[]),
         patch("app.services.cutter.cut_clips") as mock_cut,
         patch("os.makedirs"),
@@ -168,7 +128,7 @@ async def test_pipeline_marks_error_when_no_segments_detected(tmp_path):
     mock_cut.assert_not_called()
 
 
-# ── Video not found ───────────────────────────────────────────────────────────
+# ── Video no encontrado ──────────────────────────────────────────────────────
 
 async def test_pipeline_exits_gracefully_when_video_not_found(tmp_path):
     session = _make_session_mock(video_mock=None)
@@ -179,13 +139,12 @@ async def test_pipeline_exits_gracefully_when_video_not_found(tmp_path):
         patch("app.services.storage.download_file") as mock_download,
         patch("os.makedirs"),
     ):
-        # Should not raise
         await _run_pipeline(999)
 
     mock_download.assert_not_called()
 
 
-# ── Unhandled exception → error status ───────────────────────────────────────
+# ── Excepción inesperada → error ─────────────────────────────────────────────
 
 async def test_pipeline_marks_error_on_unexpected_exception(tmp_path):
     mock_video = MagicMock()
