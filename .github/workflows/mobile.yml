@@ -1,0 +1,38 @@
+name: Mobile CI
+
+on:
+  pull_request:
+    paths:
+      - "mobile/**"
+      - "shared/**"
+      - ".github/workflows/mobile.yml"
+
+jobs:
+  lint-and-build-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Type check
+        working-directory: mobile
+        run: npm run type-check
+
+      - name: Expo build check (web platform)
+        working-directory: mobile
+        env:
+          EXPO_PUBLIC_API_URL: http://localhost:8000
+        # Export the web bundle — validates that the app compiles without
+        # needing a native simulator or Expo account.
+        run: npx expo export --platform web --output-dir /tmp/expo-out

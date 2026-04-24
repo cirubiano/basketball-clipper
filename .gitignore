@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Node / JS
+node_modules/
+.next/
+out/
+dist/
+.expo/
+*.tsbuildinfo
+
+# IDEs
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.log
+
+# AWS CDK
+cdk.out/
+infrastructure/dist/
+
+# Alembic (keep versions tracked)
+# alembic/versions/
+
+# Uploads / media
+*.mp4
+*.avi
+*.mov
+*.mkv
+uploads/
+tmp/

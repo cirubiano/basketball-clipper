@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Basketball Clipper",
+    "slug": "basketball-clipper",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "basketball-clipper",
+    "platforms": ["ios", "android"],
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Necesitamos acceso a tu galería para seleccionar vídeos de partidos.",
+        "NSCameraUsageDescription": "Acceso a la cámara para grabar partidos directamente."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-document-picker",
+        {
+          "iCloudContainerEnvironment": "Production"
+        }
+      ]
+    ]
+  }
+}

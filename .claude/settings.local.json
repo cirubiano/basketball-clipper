@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ':*)",
+      "Bash(where.exe python:*)",
+      "Bash(where.exe python3:*)",
+      "Read(//c/Users/Maxim/AppData/Local/Programs/Python//**)",
+      "Bash(ls /c/Python*)",
+      "Bash(ls:*)"
+    ]
+  }
+}

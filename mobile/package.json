@@ -1,0 +1,28 @@
+{
+  "name": "basketball-clipper-mobile",
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "expo": "~51.0.0",
+    "expo-av": "~14.0.0",
+    "expo-document-picker": "~11.0.1",
+    "expo-router": "~3.5.0",
+    "expo-secure-store": "~13.0.1",
+    "expo-status-bar": "~1.12.1",
+    "react": "18.2.0",
+    "react-native": "0.74.1",
+    "@tanstack/react-query": "^5.37.1"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.5",
+    "@types/react": "~18.2.79",
+    "babel-plugin-module-resolver": "^5.0.2",
+    "typescript": "^5.3.3"
+  }
+}

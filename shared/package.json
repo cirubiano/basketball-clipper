@@ -1,0 +1,12 @@
+{
+  "name": "@basketball-clipper/shared",
+  "version": "0.1.0",
+  "private": true,
+  "sideEffects": false,
+  "exports": {
+    "./types": "./types/index.ts",
+    "./types/*": "./types/*.ts",
+    "./api": "./api/index.ts",
+    "./api/*": "./api/*.ts"
+  }
+}
