@@ -10,11 +10,20 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      # S3-compatible storage — apunta a MinIO en dev, quita esta línea en
+      # producción para usar el endpoint por defecto de AWS.
+      - S3_ENDPOINT_URL=http://minio:9000
+      - S3_PUBLIC_URL=http://localhost:9000
+      - AWS_ACCESS_KEY_ID=minioadmin
+      - AWS_SECRET_ACCESS_KEY=minioadmin
+      - S3_BUCKET_NAME=basketball-clipper-videos
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_started
+      minio-init:
+        condition: service_completed_successfully
     volumes:
       - ./backend:/app
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
@@ -28,18 +37,23 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - S3_ENDPOINT_URL=http://minio:9000
+      - S3_PUBLIC_URL=http://localhost:9000
+      - AWS_ACCESS_KEY_ID=minioadmin
+      - AWS_SECRET_ACCESS_KEY=minioadmin
+      - S3_BUCKET_NAME=basketball-clipper-videos
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_started
+      minio-init:
+        condition: service_completed_successfully
     volumes:
       - ./backend:/app
     command: celery -A app.services.queue worker --loglevel=info
 
   web:
-    # Usa la fase `deps` del Dockerfile (tiene node_modules instalado) y
-    # corre `next dev` con hot-reload.
     build:
       context: ./web
       target: deps
@@ -47,25 +61,16 @@ services:
     ports:
       - "3000:3000"
     environment:
-      # Variables NEXT_PUBLIC_* se inyectan en el bundle del navegador,
-      # así que deben apuntar al host (no a la red interna de Docker).
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - NEXT_PUBLIC_WS_URL=ws://localhost:8000
-      - WATCHPACK_POLLING=true  # necesario en Windows/WSL para hot-reload
+      - WATCHPACK_POLLING=true
     volumes:
       - ./web:/app
-      # Monta el paquete compartido (@basketball-clipper/shared) dentro del
-      # contenedor. El symlink en el `command` lo expone como si fuera una
-      # dependencia instalada en node_modules.
       - ./shared:/shared
-      # Volúmenes anónimos que preservan los artefactos del contenedor,
-      # evitando que el mount del host los sobrescriba.
       - /app/node_modules
       - /app/.next
     depends_on:
       - backend
-    # 1. Crea el symlink para que webpack resuelva @basketball-clipper/shared
-    # 2. Arranca Next.js en modo dev
     command: >
       sh -c "mkdir -p node_modules/@basketball-clipper &&
              ln -sfn /shared node_modules/@basketball-clipper/shared &&
@@ -92,5 +97,62 @@ services:
     ports:
       - "6379:6379"
 
+  # ── MinIO — S3-compatible storage para desarrollo local ───────────────
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"   # S3 API (boto3 y el navegador hablan aquí)
+      - "9001:9001"   # Consola web: http://localhost:9001
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Inicialización de MinIO — crea el bucket y aplica CORS ────────────
+  # Este servicio se ejecuta una sola vez al arrancar el stack: crea el
+  # bucket si no existe, lo deja público-lectura para servir clips, y
+  # aplica una CORS policy que permite al navegador hacer PUT multipart
+  # directo desde http://localhost:3000.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        set -e
+        mc alias set local http://minio:9000 minioadmin minioadmin
+        mc mb --ignore-existing local/basketball-clipper-videos
+        # Los clips generados se sirven con URLs pre-firmadas, pero durante
+        # dev es cómodo poder abrir un objeto directamente desde el navegador
+        mc anonymous set download local/basketball-clipper-videos
+        # CORS: habilita PUT desde el frontend dev para multipart uploads
+        cat > /tmp/cors.json <<'CORS'
+        {
+          "CORSRules": [
+            {
+              "AllowedOrigins": ["http://localhost:3000"],
+              "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
+              "AllowedHeaders": ["*"],
+              "ExposeHeaders": ["ETag"],
+              "MaxAgeSeconds": 3600
+            }
+          ]
+        }
+        CORS
+        # MinIO acepta la CORS policy vía el comando admin s3-cors
+        mc admin config set local api cors_allow_origin="http://localhost:3000" || true
+        echo "MinIO bootstrapped: bucket basketball-clipper-videos ready."
+
 volumes:
   postgres_data:
+  minio_data:

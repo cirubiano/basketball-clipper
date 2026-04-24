@@ -1,38 +1,79 @@
 import type {
+  InitUploadResponse,
   ProcessingJob,
   ProcessingProgress,
-  VideoUploadResponse,
+  UploadStatusResponse,
+  UploadedPart,
 } from "../types";
 import { WS_BASE_URL, apiRequest } from "./client";
 
-// ── REST endpoints ────────────────────────────────────────────────────────────
+// ── Multipart upload endpoints ───────────────────────────────────────────────
 
 /**
- * POST /videos/upload
- *
- * Uploads a video file and enqueues it for processing.
- * Returns immediately with status "pending" — use `getVideoStatus` or
- * `subscribeToProgress` to track progress.
+ * POST /videos/init-upload
+ * Crea la fila Video y devuelve el plan de multipart upload: upload_id,
+ * tamaño de parte, y una URL pre-firmada por cada parte para que el
+ * navegador haga PUT directo al storage.
  */
-export async function uploadVideo(
-  file: File,
+export async function initUpload(
+  input: { filename: string; size: number; contentType?: string },
   token: string,
-): Promise<VideoUploadResponse> {
-  const formData = new FormData();
-  formData.append("file", file);
-
-  return apiRequest<VideoUploadResponse>("/videos/upload", {
+): Promise<InitUploadResponse> {
+  return apiRequest<InitUploadResponse>("/videos/init-upload", {
     method: "POST",
-    body: formData,
+    body: JSON.stringify({
+      filename: input.filename,
+      size: input.size,
+      content_type: input.contentType ?? "video/mp4",
+    }),
     token,
   });
 }
 
+/** GET /videos/{id}/upload-status — lista partes ya confirmadas en S3. */
+export async function getUploadStatus(
+  videoId: number,
+  token: string,
+): Promise<UploadStatusResponse> {
+  return apiRequest<UploadStatusResponse>(
+    `/videos/${videoId}/upload-status`,
+    { token },
+  );
+}
+
 /**
- * GET /videos/{videoId}/status
- *
- * Polls the current processing status.  The `progress` field is sourced from
- * Redis and may be more up-to-date than the `status` field from the database.
+ * POST /videos/{id}/complete-upload
+ * Cierra el multipart upload en S3 y encola el procesado.
+ */
+export async function completeUpload(
+  videoId: number,
+  parts: UploadedPart[],
+  token: string,
+): Promise<ProcessingJob> {
+  return apiRequest<ProcessingJob>(`/videos/${videoId}/complete-upload`, {
+    method: "POST",
+    body: JSON.stringify({ parts }),
+    token,
+  });
+}
+
+/** POST /videos/{id}/abort-upload — cancela un upload en curso. */
+export async function abortUpload(
+  videoId: number,
+  token: string,
+): Promise<void> {
+  await apiRequest<void>(`/videos/${videoId}/abort-upload`, {
+    method: "POST",
+    token,
+  });
+}
+
+// ── Processing status ────────────────────────────────────────────────────────
+
+/**
+ * GET /videos/{id}/status
+ * Polling del estado. `progress` viene de Redis y puede estar más
+ * actualizado que `status` de la BD.
  */
 export async function getVideoStatus(
   videoId: number,
@@ -41,42 +82,18 @@ export async function getVideoStatus(
   return apiRequest<ProcessingJob>(`/videos/${videoId}/status`, { token });
 }
 
-// ── WebSocket subscription ────────────────────────────────────────────────────
+// ── WebSocket subscription ───────────────────────────────────────────────────
 
-/** Statuses that mark the end of the pipeline — no more messages will arrive. */
 const TERMINAL_STATUSES = new Set(["completed", "invalid", "error"]);
 
 export interface ProgressSubscription {
-  /** Call this to close the WebSocket before a terminal status is received. */
   unsubscribe: () => void;
 }
 
 /**
- * Opens a WebSocket to WS /ws/{videoId} and calls the supplied callbacks
- * as the Celery worker pushes progress updates.
- *
- * The connection is closed automatically once a terminal status is received
- * ("completed", "invalid", or "error").  You can also close it early by
- * calling `subscription.unsubscribe()`.
- *
- * @param videoId   - ID returned by `uploadVideo`
- * @param onProgress - called for every progress message
- * @param onDone     - called once after the terminal message is delivered
- * @param onError    - called if the WebSocket itself errors
- *
- * @returns `{ unsubscribe }` — call it to cancel the subscription early
- *
- * @example
- * ```ts
- * const sub = subscribeToProgress(
- *   videoId,
- *   (p) => setProgress(p.progress),
- *   ()  => router.push("/clips"),
- *   (e) => console.error("WS error", e),
- * );
- * // Later, if the user navigates away:
- * sub.unsubscribe();
- * ```
+ * Abre un WebSocket a /ws/{videoId} y dispara callbacks a medida que el
+ * worker publica progreso. La conexión se cierra sola al llegar a un
+ * estado terminal ("completed", "invalid", "error").
  */
 export function subscribeToProgress(
   videoId: number,
@@ -91,7 +108,6 @@ export function subscribeToProgress(
     try {
       data = JSON.parse(event.data) as ProcessingProgress;
     } catch {
-      // Ignore malformed frames — the server should never send these
       return;
     }
 

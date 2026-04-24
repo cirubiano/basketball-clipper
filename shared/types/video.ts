@@ -3,6 +3,7 @@
  * Order reflects the processing pipeline progression.
  */
 export type VideoStatus =
+  | "uploading"   // multipart upload in progress
   | "pending"     // uploaded, not yet picked up by worker
   | "validating"  // Claude Vision API is checking it's a basketball game
   | "processing"  // YOLOv8 detection + FFmpeg cutting in progress
@@ -26,17 +27,7 @@ export interface Video {
 }
 
 /**
- * Response from POST /videos/upload.
- * Minimal — just enough to start polling or open a WebSocket.
- */
-export interface VideoUploadResponse {
-  id: number;
-  status: VideoStatus;
-  message: string;
-}
-
-/**
- * Response from GET /videos/{id}/status.
+ * GET /videos/{id}/status response.
  * Mirrors backend app/schemas/video.py VideoStatusResponse.
  */
 export interface ProcessingJob {
@@ -54,7 +45,39 @@ export interface ProcessingJob {
  */
 export interface ProcessingProgress {
   status: VideoStatus;
-  /** Always 0–100 in WebSocket messages. */
   progress: number;
   error_message: string | null;
+}
+
+// ── Multipart upload contracts ────────────────────────────────────────────────
+
+/** URL pre-firmada para subir UNA parte del multipart upload. */
+export interface PresignedPart {
+  part_number: number;
+  url: string;
+}
+
+/** Respuesta de POST /videos/init-upload. */
+export interface InitUploadResponse {
+  video_id: number;
+  upload_id: string;
+  s3_key: string;
+  part_size: number;
+  total_parts: number;
+  urls: PresignedPart[];
+}
+
+/** Parte ya subida, enviada a complete-upload o devuelta por upload-status. */
+export interface UploadedPart {
+  part_number: number;
+  etag: string;
+}
+
+/** GET /videos/{id}/upload-status — usado para reanudar uploads. */
+export interface UploadStatusResponse {
+  video_id: number;
+  upload_id: string | null;
+  s3_key: string;
+  status: VideoStatus;
+  uploaded_parts: UploadedPart[];
 }

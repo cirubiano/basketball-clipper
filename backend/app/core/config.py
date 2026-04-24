@@ -22,7 +22,13 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
-    # AWS
+    # S3 / MinIO
+    # - s3_endpoint_url: usado por boto3 dentro del backend (internal). En dev
+    #   "http://minio:9000"; en prod vacío → endpoint regional AWS por defecto.
+    # - s3_public_url: usado al firmar URLs que devolvemos al navegador. Debe
+    #   ser la URL que el navegador puede resolver (en dev "http://localhost:9000").
+    s3_endpoint_url: str = ""
+    s3_public_url: str = ""
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
     aws_region: str = "us-east-1"

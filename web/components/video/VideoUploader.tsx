@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 const ACCEPTED = ["video/mp4", "video/quicktime", "video/x-msvideo", "video/x-matroska"];
-const MAX_SIZE_GB = 2;
+const MAX_SIZE_GB = 15;
 const MAX_BYTES = MAX_SIZE_GB * 1024 ** 3;
 
 interface VideoUploaderProps {

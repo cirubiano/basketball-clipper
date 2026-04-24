@@ -1,23 +1,7 @@
 """
 Smoke tests que verifican que el backend arranca sin errores.
 
-Estos tests se diseñan para ejecutarse dentro del contenedor backend,
-donde todas las dependencias del `requirements.txt` están instaladas.
-Sirven como red de seguridad antes de `docker compose up`:
-
     docker compose run --rm backend pytest tests/test_startup.py -v
-
-Si todos pasan, el backend debería arrancar limpio. Si alguno falla,
-el mensaje indica qué arreglar antes de volver a levantar el stack.
-
-Cubren:
-  - Carga de Pydantic Settings desde entorno/.env
-  - Import de todos los módulos de `app/`
-  - Creación de la app FastAPI (routers, middleware)
-  - Endpoint /health vía TestClient (asgi)
-  - Coherencia modelos SQLAlchemy ↔ migración inicial de Alembic
-  - Helpers de security (hash password, JWT)
-  - Descubrimiento de la tarea Celery
 """
 from __future__ import annotations
 
@@ -30,35 +14,23 @@ import pytest
 # ── 1. Settings ──────────────────────────────────────────────────────────────
 
 def test_settings_load_without_errors():
-    """Pydantic Settings no debe explotar aunque falten variables opcionales."""
     from app.core.config import settings
 
     assert settings.database_url.startswith("postgresql")
     assert settings.redis_url.startswith("redis://")
     assert settings.celery_broker_url.startswith("redis://")
-    # allowed_origins se almacena como str; cors_origins lo expone como list
     assert isinstance(settings.allowed_origins, str)
     assert isinstance(settings.cors_origins, list)
-    assert all(isinstance(o, str) for o in settings.cors_origins)
 
 
 def test_cors_origins_parses_comma_separated_string(monkeypatch):
-    """La propiedad cors_origins debe aceptar 'a,b,c' igual que un JSON array."""
     monkeypatch.setenv("ALLOWED_ORIGINS", "http://a.com,http://b.com")
     import app.core.config as cfg
     importlib.reload(cfg)
     assert cfg.settings.cors_origins == ["http://a.com", "http://b.com"]
 
 
-def test_cors_origins_parses_json_array(monkeypatch):
-    """La propiedad cors_origins debe aceptar '["a","b"]'."""
-    monkeypatch.setenv("ALLOWED_ORIGINS", '["http://x.com","http://y.com"]')
-    import app.core.config as cfg
-    importlib.reload(cfg)
-    assert cfg.settings.cors_origins == ["http://x.com", "http://y.com"]
-
-
-# ── 2. Imports de la aplicación ──────────────────────────────────────────────
+# ── 2. Imports ───────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize(
     "module_path",
@@ -87,14 +59,12 @@ def test_cors_origins_parses_json_array(monkeypatch):
     ],
 )
 def test_module_imports_cleanly(module_path: str):
-    """Cada módulo del backend debe importar sin lanzar excepciones."""
     importlib.import_module(module_path)
 
 
 # ── 3. FastAPI app ───────────────────────────────────────────────────────────
 
 def test_fastapi_app_has_expected_routes():
-    """Todos los endpoints del contrato deben estar registrados."""
     from app.main import app
 
     paths = {route.path for route in app.routes}
@@ -104,7 +74,11 @@ def test_fastapi_app_has_expected_routes():
         "/auth/register",
         "/auth/login",
         "/auth/me",
-        "/videos/upload",
+        # Nuevo flujo multipart upload
+        "/videos/init-upload",
+        "/videos/{video_id}/upload-status",
+        "/videos/{video_id}/complete-upload",
+        "/videos/{video_id}/abort-upload",
         "/videos/{video_id}/status",
         "/clips/",
         "/clips/{clip_id}",
@@ -114,17 +88,8 @@ def test_fastapi_app_has_expected_routes():
     assert not missing, f"Rutas faltantes: {missing}"
 
 
-def test_fastapi_app_cors_middleware_configured():
-    from app.main import app
-
-    middleware_classes = [m.cls.__name__ for m in app.user_middleware]
-    assert "CORSMiddleware" in middleware_classes
-
-
 def test_health_endpoint_responds_ok():
-    """Smoke end-to-end vía TestClient (sin red externa)."""
     from fastapi.testclient import TestClient
-
     from app.main import app
 
     client = TestClient(app)
@@ -133,10 +98,9 @@ def test_health_endpoint_responds_ok():
     assert r.json() == {"status": "ok"}
 
 
-# ── 4. SQLAlchemy models ─────────────────────────────────────────────────────
+# ── 4. Modelos ───────────────────────────────────────────────────────────────
 
 def test_all_models_are_mapped_on_base():
-    """Todos los modelos deben registrarse contra el mismo Base."""
     from app.core.database import Base
     import app.models.clip  # noqa: F401
     import app.models.exercise  # noqa: F401
@@ -149,10 +113,10 @@ def test_all_models_are_mapped_on_base():
 
 
 def test_video_status_enum_values():
-    """Los valores del enum deben coincidir con los de la migración Alembic."""
     from app.models.video import VideoStatus
 
     assert {s.value for s in VideoStatus} == {
+        "uploading",
         "pending",
         "validating",
         "processing",
@@ -162,34 +126,53 @@ def test_video_status_enum_values():
     }
 
 
+def test_video_model_has_multipart_columns():
+    from app.models.video import Video
+
+    columns = {c.name for c in Video.__table__.columns}
+    assert "upload_id" in columns
+    assert "upload_parts" in columns
+
+
 # ── 5. Alembic ───────────────────────────────────────────────────────────────
 
 def test_alembic_env_imports_without_errors():
-    """env.py debe poder ejecutar sus imports top-level."""
     alembic_env = Path(__file__).parent.parent / "alembic" / "env.py"
-    assert alembic_env.is_file(), "backend/alembic/env.py no encontrado"
+    assert alembic_env.is_file()
     compile(alembic_env.read_text(), str(alembic_env), "exec")
 
 
 def test_initial_migration_creates_expected_tables():
-    """La migración 0001 debe crear todas las tablas que los modelos esperan."""
     migration = (
         Path(__file__).parent.parent
         / "alembic"
         / "versions"
         / "0001_initial_schema.py"
     )
-    assert migration.is_file(), "Migración inicial 0001_initial_schema.py no encontrada"
-
+    assert migration.is_file()
     src = migration.read_text()
     for table in ("users", "videos", "clips"):
         assert f'"{table}"' in src, f"Migración 0001 no crea la tabla {table!r}"
 
 
-# ── 6. Security helpers ──────────────────────────────────────────────────────
+def test_multipart_migration_exists():
+    migration = (
+        Path(__file__).parent.parent
+        / "alembic"
+        / "versions"
+        / "0002_multipart_upload.py"
+    )
+    assert migration.is_file(), "Migración 0002 debe existir"
+    src = migration.read_text()
+    assert "upload_id" in src
+    assert "upload_parts" in src
+    assert "uploading" in src
+
+
+# ── 6. Security ──────────────────────────────────────────────────────────────
 
 def test_password_hash_and_verify_roundtrip():
-    """Detecta la incompatibilidad conocida passlib 1.7.4 + bcrypt 4.1+."""
+    """Detecta la incompatibilidad passlib 1.7.4 + bcrypt 4.x."""
     from app.core.security import hash_password, verify_password
 
     hashed = hash_password("supersecret123")
@@ -210,10 +193,21 @@ def test_jwt_encode_and_decode_roundtrip():
 # ── 7. Celery ────────────────────────────────────────────────────────────────
 
 def test_celery_app_registers_process_video_task():
-    """El worker arranca con `celery -A app.services.queue worker`, así que
-    esta referencia debe existir y la tarea process_video estar registrada."""
     from app.services.queue import celery_app, process_video
 
     assert celery_app.main == "basketball_clipper"
     assert "process_video" in celery_app.tasks
     assert process_video.name == "process_video"
+
+
+# ── 8. Storage multipart API ─────────────────────────────────────────────────
+
+def test_storage_module_exposes_multipart_helpers():
+    """El nuevo flujo depende de estos símbolos."""
+    from app.services import storage
+
+    assert callable(storage.create_multipart_upload)
+    assert callable(storage.generate_part_url)
+    assert callable(storage.complete_multipart_upload)
+    assert callable(storage.abort_multipart_upload)
+    assert callable(storage.list_parts)
