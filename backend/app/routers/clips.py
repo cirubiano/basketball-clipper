@@ -3,8 +3,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_current_profile
 from app.models.clip import Clip
+from app.models.profile import Profile
 from app.models.user import User
 from app.models.video import Video
 from app.schemas.clip import ClipResponse
@@ -15,16 +16,33 @@ router = APIRouter()
 
 @router.get("/", response_model=list[ClipResponse])
 async def list_clips(
-    current_user: User = Depends(get_current_user),
+    current_profile: Profile = Depends(get_current_profile),
     db: AsyncSession = Depends(get_db),
 ) -> list[ClipResponse]:
-    """Returns all clips belonging to the authenticated user, newest first."""
-    result = await db.execute(
-        select(Clip)
-        .join(Video, Clip.video_id == Video.id)
-        .where(Video.user_id == current_user.id)
-        .order_by(Clip.created_at.desc())
-    )
+    """
+    Devuelve los clips visibles para el perfil activo, más recientes primero.
+    - HeadCoach / StaffMember: solo clips de su equipo.
+    - TechnicalDirector: todos los clips del club.
+    """
+    if current_profile.team_id is not None:
+        stmt = (
+            select(Clip)
+            .join(Video, Clip.video_id == Video.id)
+            .where(Video.team_id == current_profile.team_id)
+            .order_by(Clip.created_at.desc())
+        )
+    else:
+        from app.models.team import Team  # noqa: PLC0415
+
+        stmt = (
+            select(Clip)
+            .join(Video, Clip.video_id == Video.id)
+            .join(Team, Team.id == Video.team_id)
+            .where(Team.club_id == current_profile.club_id)
+            .order_by(Clip.created_at.desc())
+        )
+
+    result = await db.execute(stmt)
     clips = result.scalars().all()
     return [_to_response(c) for c in clips]
 
@@ -35,7 +53,7 @@ async def get_clip(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ClipResponse:
-    """Returns a single clip with a fresh pre-signed URL, or 404."""
+    """Devuelve un clip concreto con URL pre-firmada fresca, o 404."""
     result = await db.execute(
         select(Clip)
         .join(Video, Clip.video_id == Video.id)
@@ -48,7 +66,7 @@ async def get_clip(
 
 
 def _to_response(clip: Clip) -> ClipResponse:
-    """Enriches a Clip ORM object with a fresh pre-signed S3 URL."""
+    """Enriquece un Clip ORM con una URL pre-firmada S3 fresca."""
     return ClipResponse(
         id=clip.id,
         video_id=clip.video_id,

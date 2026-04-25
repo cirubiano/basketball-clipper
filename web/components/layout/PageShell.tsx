@@ -8,18 +8,34 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 interface PageShellProps {
   children: ReactNode;
+  /** Si true (default), redirige a /login cuando no hay usuario autenticado. */
   requireAuth?: boolean;
+  /**
+   * Si true (default), redirige a /select-profile cuando el usuario está
+   * autenticado pero no tiene un perfil activo seleccionado.
+   * Ponlo a false en la propia página /select-profile para evitar bucle.
+   */
+  requireProfile?: boolean;
 }
 
-export function PageShell({ children, requireAuth = true }: PageShellProps) {
-  const { user, isLoading } = useAuth();
+export function PageShell({
+  children,
+  requireAuth = true,
+  requireProfile = true,
+}: PageShellProps) {
+  const { user, activeProfile, isLoading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!isLoading && requireAuth && !user) {
+    if (isLoading) return;
+    if (requireAuth && !user) {
       router.replace("/login");
+      return;
     }
-  }, [isLoading, requireAuth, user, router]);
+    if (requireAuth && requireProfile && user && !activeProfile) {
+      router.replace("/select-profile");
+    }
+  }, [isLoading, requireAuth, requireProfile, user, activeProfile, router]);
 
   if (isLoading) {
     return (
@@ -39,6 +55,7 @@ export function PageShell({ children, requireAuth = true }: PageShellProps) {
   }
 
   if (requireAuth && !user) return null;
+  if (requireAuth && requireProfile && !activeProfile) return null;
 
   return (
     <div className="min-h-screen flex flex-col">

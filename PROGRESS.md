@@ -11,7 +11,7 @@
 | Fase | Descripción | Estado | Notas |
 |---|---|---|---|
 | **A** | Estructura organizativa + auth multi-perfil | ✅ Completado | Backend completo + selector de perfil en web |
-| **B** | Módulo de vídeo integrado en equipos | 🔶 Base construida | Standalone — pendiente integración con Fase A |
+| **B** | Módulo de vídeo integrado en equipos | 🔶 En curso | Backend integrado con perfiles — mobile y tests pendientes |
 | **C** | Gestión de jugadores | 🔴 No iniciado | Requiere Fase A |
 | **D** | Editor de jugadas/ejercicios | 🔴 No iniciado | La pieza más compleja. Requiere Fase C |
 | **E** | Catálogo del club + TeamPlaybook | 🔴 No iniciado | Requiere Fase D |
@@ -63,10 +63,15 @@ a su equipo.
 | CI/CD GitHub Actions | ✅ Completo | Workflows backend, web, mobile |
 | Infraestructura AWS (CDK) | 🔴 Skeleton | Sin recursos reales |
 
-**Pendiente para completar Fase B** (Fase A ya lista):
-- [ ] Filtrar vídeos/clips por equipo del perfil activo en routers (`video.py`, `clips.py`)
-- [ ] Requerir perfil activo (`get_current_profile`) en endpoints de subida y listado de vídeos
-- [ ] Web: redirigir a selector de perfil si el usuario no tiene ninguno activo
+**Completado en sesión 8:**
+- [x] Requerir perfil activo (`get_current_profile`) en `GET /videos` y `POST /videos/init-upload`
+- [x] Filtrar vídeos por equipo del perfil (HeadCoach/StaffMember) o por club completo (TechnicalDirector)
+- [x] `init_upload` rechaza TechnicalDirector (403) — solo perfiles con team_id pueden subir
+- [x] `GET /clips` y `GET /clips/{id}` filtrados por equipo del perfil activo
+- [x] Web: nueva página `/select-profile` — selector de perfil a pantalla completa
+- [x] Web: `PageShell` redirige a `/select-profile` si el usuario no tiene perfil activo
+
+**Pendiente:**
 - [ ] Mobile: conectar a `shared/api`, upload y reproductor funcionales
 - [ ] Tests de integración end-to-end
 - [ ] Gestión de errores en web: retry manual desde UI
@@ -201,8 +206,15 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ## Historial de sesiones
 
+### 2026-04-25 — Sesión 8 (Fase B — integración backend + web)
+- **Backend `video.py`**: `GET /videos` e `init_upload` usan `get_current_profile`; filtrado por `team_id` (HeadCoach/StaffMember) o por club completo (TechnicalDirector); `init_upload` rechaza `technical_director` con 403
+- **Backend `clips.py`**: `GET /clips` usa `get_current_profile` con mismo filtrado por equipo/club
+- **Web `PageShell`**: nueva prop `requireProfile` (default `true`); redirige a `/select-profile` si no hay perfil activo
+- **Web `/select-profile`**: página nueva de selección de perfil a pantalla completa con spinner por item y mensaje si no hay perfiles asignados
+- **CLAUDE.md**: añadidas secciones de verificación para shared/web (tsc, grep apiClient, smoke test login)
+- Verificaciones: `py_compile` ✅, coherencia de rutas ✅, grep apiClient → 0 resultados ✅
+
 ### 2026-04-25 — Sesión 7 (Fase A completa)
-Sin commit aún — pendiente de hacer commit manual.
 - **Backend**: modelos Club, Season, Team, ClubMember, Profile; `is_admin` en User; `team_id` en Video
 - **Migración** `0004_phase_a_org_structure.py` — crea todas las tablas de Fase A
 - **Security**: `create_access_token` con `profile_id` opcional; `get_current_profile`, `require_admin`

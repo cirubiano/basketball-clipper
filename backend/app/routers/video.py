@@ -8,7 +8,7 @@ Multipart upload (subida del fichero a S3/MinIO):
   POST   /videos/{id}/abort-upload     abortar multipart, marcar Video como error
 
 Lifecycle (gestión de trabajos del usuario):
-  GET    /videos                       listado de trabajos del usuario
+  GET    /videos                       listado de trabajos del perfil activo
   GET    /videos/{id}/status           estado del procesado
   POST   /videos/{id}/retry            re-encolar pipeline si está en error
   DELETE /videos/{id}                  borrar vídeo + clips + ficheros S3
@@ -29,8 +29,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_current_profile
 from app.models.clip import Clip
+from app.models.profile import Profile, UserRole
 from app.models.user import User
 from app.models.video import Video, VideoStatus
 from app.schemas.clip import ClipResponse
@@ -56,22 +57,39 @@ _MAX_FILE_SIZE = 20 * 1024 * 1024 * 1024
 _MAX_PARTS = 10000
 
 
-# ── List ─────────────────────────────────────────────────────────────────────
+# ── List ──────────────────────────────────────────────────────────────────────
 
 @router.get("", response_model=list[VideoListItem])
 @router.get("/", response_model=list[VideoListItem], include_in_schema=False)
 async def list_videos(
-    current_user: User = Depends(get_current_user),
+    current_profile: Profile = Depends(get_current_profile),
     db: AsyncSession = Depends(get_db),
 ) -> list[VideoListItem]:
-    """Devuelve los trabajos del usuario, más recientes primero, con su nº de clips."""
-    stmt = (
-        select(Video, func.count(Clip.id).label("clips_count"))
-        .outerjoin(Clip, Clip.video_id == Video.id)
-        .where(Video.user_id == current_user.id)
-        .group_by(Video.id)
-        .order_by(Video.created_at.desc())
-    )
+    """
+    Devuelve los vídeos visibles para el perfil activo, más recientes primero.
+    - HeadCoach / StaffMember: solo los vídeos de su equipo.
+    - TechnicalDirector: todos los vídeos del club.
+    """
+    if current_profile.team_id is not None:
+        stmt = (
+            select(Video, func.count(Clip.id).label("clips_count"))
+            .outerjoin(Clip, Clip.video_id == Video.id)
+            .where(Video.team_id == current_profile.team_id)
+            .group_by(Video.id)
+            .order_by(Video.created_at.desc())
+        )
+    else:
+        from app.models.team import Team  # noqa: PLC0415
+
+        stmt = (
+            select(Video, func.count(Clip.id).label("clips_count"))
+            .outerjoin(Clip, Clip.video_id == Video.id)
+            .join(Team, Team.id == Video.team_id)
+            .where(Team.club_id == current_profile.club_id)
+            .group_by(Video.id)
+            .order_by(Video.created_at.desc())
+        )
+
     rows = (await db.execute(stmt)).all()
     return [
         VideoListItem(
@@ -87,18 +105,30 @@ async def list_videos(
     ]
 
 
-# ── Init upload ──────────────────────────────────────────────────────────────
+# ── Init upload ───────────────────────────────────────────────────────────────
 
 @router.post("/init-upload", response_model=InitUploadResponse, status_code=201)
 async def init_upload(
     body: InitUploadRequest,
-    current_user: User = Depends(get_current_user),
+    current_profile: Profile = Depends(get_current_profile),
     db: AsyncSession = Depends(get_db),
 ) -> InitUploadResponse:
     """
-    Valida el fichero, crea el registro Video con su título, inicia el
-    multipart upload en S3/MinIO y devuelve una URL pre-firmada por parte.
+    Valida el fichero, crea el registro Video asociado al equipo del perfil
+    activo, inicia el multipart upload en S3/MinIO y devuelve URLs pre-firmadas.
+
+    Solo HeadCoach y StaffMember pueden subir vídeos (tienen team_id).
+    TechnicalDirector no tiene equipo asignado y recibe 403.
     """
+    if current_profile.role == UserRole.technical_director:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Technical directors cannot upload videos. "
+                "Select a team profile (HeadCoach or StaffMember)."
+            ),
+        )
+
     ext = Path(body.filename).suffix.lower()
     if ext not in _ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -118,14 +148,15 @@ async def init_upload(
             detail=f"Demasiadas partes ({total_parts} > {_MAX_PARTS})",
         )
 
-    s3_key = f"videos/{current_user.id}/{uuid.uuid4()}{ext}"
+    s3_key = f"videos/{current_profile.user_id}/{uuid.uuid4()}{ext}"
 
     upload_id = await asyncio.to_thread(
         storage.create_multipart_upload, s3_key, body.content_type
     )
 
     video = Video(
-        user_id=current_user.id,
+        user_id=current_profile.user_id,
+        team_id=current_profile.team_id,
         title=body.title.strip(),
         filename=body.filename,
         s3_key=s3_key,
@@ -163,7 +194,7 @@ def _generate_all_part_urls(
     ]
 
 
-# ── Resume ───────────────────────────────────────────────────────────────────
+# ── Resume ────────────────────────────────────────────────────────────────────
 
 @router.get("/{video_id}/upload-status", response_model=UploadStatusResponse)
 async def upload_status(
@@ -187,7 +218,7 @@ async def upload_status(
     )
 
 
-# ── Complete ─────────────────────────────────────────────────────────────────
+# ── Complete ──────────────────────────────────────────────────────────────────
 
 @router.post("/{video_id}/complete-upload", response_model=VideoStatusResponse)
 async def complete_upload(
@@ -241,7 +272,7 @@ async def complete_upload(
     )
 
 
-# ── Abort ────────────────────────────────────────────────────────────────────
+# ── Abort ─────────────────────────────────────────────────────────────────────
 
 @router.post("/{video_id}/abort-upload", status_code=status.HTTP_204_NO_CONTENT)
 async def abort_upload(
@@ -263,7 +294,7 @@ async def abort_upload(
     await db.commit()
 
 
-# ── Retry ────────────────────────────────────────────────────────────────────
+# ── Retry ─────────────────────────────────────────────────────────────────────
 
 @router.post("/{video_id}/retry", response_model=VideoStatusResponse)
 async def retry_video(
@@ -273,8 +304,7 @@ async def retry_video(
 ) -> VideoStatusResponse:
     """
     Re-encola el pipeline para un vídeo en estado 'error'. El fichero
-    original sigue en S3 (no se borra al fallar el procesado), así que
-    Celery puede repetir el trabajo sin necesidad de re-subir.
+    original sigue en S3, así que Celery puede repetir sin re-subir.
     """
     video = await _get_user_video(db, video_id, current_user)
 
@@ -299,7 +329,7 @@ async def retry_video(
     )
 
 
-# ── Delete ───────────────────────────────────────────────────────────────────
+# ── Delete ────────────────────────────────────────────────────────────────────
 
 @router.delete("/{video_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_video(
@@ -313,7 +343,6 @@ async def delete_video(
     """
     video = await _get_user_video(db, video_id, current_user)
 
-    # Si todavía hay multipart upload sin cerrar, abortar primero
     if video.upload_id:
         try:
             await asyncio.to_thread(
@@ -322,27 +351,22 @@ async def delete_video(
         except Exception:
             logger.exception("delete_video: abort_multipart_upload failed (ignored)")
 
-    # Borrar fichero original del vídeo
     try:
         await asyncio.to_thread(storage.delete_file, video.s3_key)
     except Exception:
         logger.exception("delete_video: delete_file failed for video.s3_key (ignored)")
 
-    # Borrar todos los clips del vídeo en S3 (un solo barrido por prefijo)
     clips_prefix = f"clips/{video.user_id}/{video.id}/"
     try:
         await asyncio.to_thread(storage.delete_prefix, clips_prefix)
     except Exception:
         logger.exception("delete_video: delete_prefix failed for %s (ignored)", clips_prefix)
 
-    # Borrar la fila Video — el ON DELETE CASCADE de la FK clips.video_id
-    # se encarga de las filas Clip.
     await db.delete(video)
     await db.commit()
 
 
-
-# ── Clips de un video ────────────────────────────────────────────────────────
+# ── Clips de un video ─────────────────────────────────────────────────────────
 
 @router.get("/{video_id}/clips", response_model=list[ClipResponse])
 async def list_video_clips(
@@ -373,7 +397,7 @@ async def list_video_clips(
     ]
 
 
-# ── Status (procesado en curso) ──────────────────────────────────────────────
+# ── Status (procesado en curso) ───────────────────────────────────────────────
 
 @router.get("/{video_id}/status", response_model=VideoStatusResponse)
 async def get_video_status(
@@ -404,11 +428,12 @@ async def get_video_status(
     )
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _get_user_video(
     db: AsyncSession, video_id: int, user: User
 ) -> Video:
+    """Devuelve el vídeo si pertenece al usuario, o lanza 404."""
     video = await db.get(Video, video_id)
     if not video or video.user_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")

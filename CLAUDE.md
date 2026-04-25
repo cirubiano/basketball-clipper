@@ -370,6 +370,7 @@ web/
 ├── app/
 │   ├── layout.tsx            # Layout raíz — incluye FloatingUploadWidget global
 │   ├── page.tsx              # Dashboard / landing
+│   ├── select-profile/page.tsx  # Selector de perfil a pantalla completa (sin perfil activo)
 │   ├── upload/page.tsx       # Página de subida de vídeo
 │   ├── videos/
 │   │   ├── page.tsx          # Lista de vídeos del usuario
@@ -384,7 +385,7 @@ web/
 │   ├── layout/
 │   │   ├── Navbar.tsx
 │   │   ├── ProfileSelector.tsx   # Dropdown selector de perfil activo (RF-010)
-│   │   └── PageShell.tsx
+│   │   └── PageShell.tsx         # requireAuth + requireProfile (→ /select-profile)
 │   └── video/
 │       ├── VideoUploader.tsx
 │       ├── FloatingUploadWidget.tsx
