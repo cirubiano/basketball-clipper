@@ -211,7 +211,7 @@ function DrillRow({
 }) {
   return (
     <div className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-accent/30 transition-colors group">
-      <div className="flex-1 min-w-0" onClick={onEdit} role="button" className="cursor-pointer flex-1 min-w-0">
+      <div className="cursor-pointer flex-1 min-w-0" onClick={onEdit} role="button">
         <div className="flex items-center gap-2 mb-0.5">
           <Badge variant={drill.type === "play" ? "default" : "secondary"} className="text-xs">
             {drill.type === "play" ? "Jugada" : "Ejercicio"}

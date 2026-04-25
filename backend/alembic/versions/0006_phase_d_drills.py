@@ -62,7 +62,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("court_layout", sa.Text(), nullable=False, server_default="half_fiba"),
         sa.Column("description", sa.Text(), nullable=True),
-        sa.Column("root_sequence", sa.dialects.postgresql.JSON(), nullable=False),
+        sa.Column("root_sequence", sa.JSON(), nullable=False),
         sa.Column("parent_id", sa.Integer(), sa.ForeignKey("drills.id", ondelete="SET NULL"), nullable=True),
         sa.Column("archived_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
