@@ -42,3 +42,6 @@ class Season(Base):
     profiles: Mapped[list["Profile"]] = relationship(  # noqa: F821
         "Profile", back_populates="season", lazy="select"
     )
+    roster_entries: Mapped[list["RosterEntry"]] = relationship(  # noqa: F821
+        "RosterEntry", back_populates="season", lazy="select"
+    )

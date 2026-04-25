@@ -32,3 +32,6 @@ class Team(Base):
     videos: Mapped[list["Video"]] = relationship(  # noqa: F821
         "Video", back_populates="team", lazy="select"
     )
+    roster_entries: Mapped[list["RosterEntry"]] = relationship(  # noqa: F821
+        "RosterEntry", back_populates="team", lazy="select"
+    )

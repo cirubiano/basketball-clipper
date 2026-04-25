@@ -8,6 +8,7 @@ from app.models.clip import Clip
 from app.models.club import Club
 from app.models.club_member import ClubMember
 from app.models.exercise import Exercise
+from app.models.player import Player, PlayerPosition, RosterEntry
 from app.models.profile import Profile, UserRole
 from app.models.season import Season, SeasonStatus
 from app.models.team import Team
@@ -19,6 +20,9 @@ __all__ = [
     "Club",
     "ClubMember",
     "Exercise",
+    "Player",
+    "PlayerPosition",
+    "RosterEntry",
     "Profile",
     "UserRole",
     "Season",

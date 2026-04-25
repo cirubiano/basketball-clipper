@@ -12,7 +12,7 @@
 |---|---|---|---|
 | **A** | Estructura organizativa + auth multi-perfil | ✅ Completado | Backend completo + selector de perfil en web |
 | **B** | Módulo de vídeo integrado en equipos | ✅ Completado | Backend + web + mobile + tests |
-| **C** | Gestión de jugadores | 🔴 No iniciado | Requiere Fase A |
+| **C** | Gestión de jugadores | 🔶 En curso | Backend + shared completos, web implementada |
 | **D** | Editor de jugadas/ejercicios | 🔴 No iniciado | La pieza más compleja. Requiere Fase C |
 | **E** | Catálogo del club + TeamPlaybook | 🔴 No iniciado | Requiere Fase D |
 | **F** | Partidos, estadísticas, entrenamientos | 🔴 No iniciado | Requiere Fase E |
@@ -102,7 +102,24 @@ equipo/temporada (datos deportivos, plantillas).
 - Soft-delete de jugadores (RF-090 a RF-092)
 - UI para gestión de plantilla
 
-**Estado**: 🔴 No iniciado — requisitos detallados pendientes de definir en `REQUIREMENTS.md`
+**Completado en sesión 11:**
+- [x] Modelo `Player` (nivel club): nombre, fecha de nacimiento, posición, foto, `archived_at`
+- [x] Modelo `RosterEntry` (nivel equipo/temporada): dorsal, posición, stats básicas (ppg/rpg/apg/mpg), `archived_at`
+- [x] Migración `0005_phase_c_players.py`: tablas `players` + `roster_entries`, enum `playerposition`, UNIQUE (player, team, season)
+- [x] Router `players.py` con 9 endpoints: CRUD jugadores + CRUD plantilla; permisos por rol (TD/HC/Admin)
+- [x] Soft-delete RF-090: archivar jugador retira de todas las plantillas activas
+- [x] `shared/types/player.ts`: tipos `Player`, `RosterEntry`, enums `PlayerPosition`, labels `POSITION_LABELS`
+- [x] `shared/api/players.ts`: `listPlayers`, `createPlayer`, `updatePlayer`, `archivePlayer`, `listRoster`, `addToRoster`, `updateRosterEntry`, `removeFromRoster`
+- [x] Web `/players`: lista de jugadores del club con crear/editar/archivar en dialog
+- [x] Web `/teams/[teamId]/roster`: plantilla por equipo con añadir/editar stats/retirar
+- [x] Navbar actualizada con enlace "Jugadores"
+- [x] `py_compile` sobre todos los archivos Python ✅ ALL OK
+
+**Pendiente:**
+- [ ] Tests de integración (players + roster)
+- [ ] Mobile: pantallas de jugadores y plantilla
+
+**Estado**: 🔶 En curso — core completo, pendiente tests y mobile
 
 ---
 
@@ -215,6 +232,17 @@ personal, el catálogo del club y los playbooks de los equipos.
 ---
 
 ## Historial de sesiones
+
+### 2026-04-25 — Sesión 11 (Fase C — gestión de jugadores)
+- **`app/models/player.py`**: modelos `Player` (nivel club) y `RosterEntry` (nivel equipo/temporada) con enum `PlayerPosition`
+- **`alembic/versions/0005_phase_c_players.py`**: tablas `players` + `roster_entries`; UNIQUE constraint `(player_id, team_id, season_id)`
+- **`app/schemas/player.py`**: schemas Pydantic Create/Update/Response para Player y RosterEntry (con player embebido en RosterEntryResponse)
+- **`app/routers/players.py`**: 9 endpoints bajo prefix `/clubs`; soft-delete archiva también todas las entradas de plantilla activas (RF-090)
+- **`shared/types/player.ts`** + **`shared/api/players.ts`**: tipos y cliente completos; `POSITION_LABELS` para UI
+- **`web/app/players/page.tsx`**: lista + crear/editar/archivar jugadores con dialog
+- **`web/app/teams/[teamId]/roster/page.tsx`**: plantilla del equipo con dorsal, posición y stats
+- **`web/components/layout/Navbar.tsx`**: añadido enlace "Jugadores"
+- Verificaciones: `py_compile` ✅ ALL OK, `grep apiClient` → 0 ✅, rutas coherentes ✅
 
 ### 2026-04-25 — Sesión 10 (Fase B — tests de integración + fix main.py)
 - **`backend/tests/test_auth_api.py`** (nuevo): 7 tests — register OK (201), register conflict (409), login OK, login wrong password (401), login unknown email (401), me OK, me sin auth (401), switch-profile pone profile_id en JWT, switch-profile rechaza perfil ajeno (404), clear-profile elimina profile_id del JWT

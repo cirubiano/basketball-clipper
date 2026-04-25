@@ -32,3 +32,6 @@ class Club(Base):
     profiles: Mapped[list["Profile"]] = relationship(  # noqa: F821
         "Profile", back_populates="club", lazy="select"
     )
+    players: Mapped[list["Player"]] = relationship(  # noqa: F821
+        "Player", back_populates="club", lazy="select"
+    )

@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 const navLinks = [
   { href: "/", label: "Dashboard" },
   { href: "/videos", label: "Mis vídeos" },
+  { href: "/players", label: "Jugadores" },
 ];
 
 export function Navbar() {
