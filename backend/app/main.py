@@ -29,14 +29,7 @@ app.include_router(clubs.router, prefix="/clubs", tags=["clubs"])
 app.include_router(seasons.router, prefix="/clubs", tags=["seasons"])
 app.include_router(teams.router, prefix="/clubs", tags=["teams"])
 
-# ── Video module ──────────────────────────────────────────────────────────────
+# ── Video & Clips ─────────────────────────────────────────────────────────────
 app.include_router(video.router, prefix="/videos", tags=["videos"])
 app.include_router(clips.router, prefix="/clips", tags=["clips"])
-
-# ── WebSocket ─────────────────────────────────────────────────────────────────
 app.include_router(ws.router, tags=["websocket"])
-
-
-@app.get("/health", tags=["health"])
-async def health_check() -> dict:
-    return {"status": "ok"}

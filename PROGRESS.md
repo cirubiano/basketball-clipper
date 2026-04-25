@@ -11,7 +11,7 @@
 | Fase | Descripción | Estado | Notas |
 |---|---|---|---|
 | **A** | Estructura organizativa + auth multi-perfil | ✅ Completado | Backend completo + selector de perfil en web |
-| **B** | Módulo de vídeo integrado en equipos | 🔶 En curso | Core completo — tests pendientes |
+| **B** | Módulo de vídeo integrado en equipos | ✅ Completado | Backend + web + mobile + tests |
 | **C** | Gestión de jugadores | 🔴 No iniciado | Requiere Fase A |
 | **D** | Editor de jugadas/ejercicios | 🔴 No iniciado | La pieza más compleja. Requiere Fase C |
 | **E** | Catálogo del club + TeamPlaybook | 🔴 No iniciado | Requiere Fase D |
@@ -77,8 +77,14 @@ a su equipo.
 - [x] Mobile: `index.tsx` muestra vídeos del equipo usando `listVideos` en lugar de `getClips`
 - [x] `shared/api/index.ts` corregido — faltaba `export * from "./videos"` (estaba truncado)
 
-**Pendiente:**
-- [ ] Tests de integración end-to-end
+**Completado en sesión 10:**
+- [x] `backend/tests/test_auth_api.py` — tests de todos los endpoints de auth (register, login, me, switch-profile, clear-profile); verifica que el JWT contiene `profile_id` y que switch-profile rechaza perfiles de otros usuarios
+- [x] `backend/tests/test_videos_profile.py` — tests de filtrado por perfil activo en `GET /videos` y `GET /clips`; verifica 403 sin perfil activo, filtrado por `team_id`, 403 para TechnicalDirector en `init_upload`, y que el vídeo creado hereda el `team_id` del perfil
+- [x] `backend/tests/test_multipart_upload.py` — actualizado para usar `get_current_profile` en init-upload; añadido `test_init_upload_rejected_for_technical_director`
+- [x] `backend/app/main.py` — corregido truncamiento; routers de clubs/seasons/teams/video/clips/ws restaurados
+- [x] `py_compile` sobre todos los archivos tocados en Fase B: ✅ ALL OK
+
+**Pendiente (no bloqueante para Fase C):**
 - [ ] Evaluar modelo YOLO: ¿`yolov8n.pt` es suficiente? (ver `backend/models/README.md`)
 - [ ] Infraestructura AWS básica para staging
 
@@ -209,6 +215,14 @@ personal, el catálogo del club y los playbooks de los equipos.
 ---
 
 ## Historial de sesiones
+
+### 2026-04-25 — Sesión 10 (Fase B — tests de integración + fix main.py)
+- **`backend/tests/test_auth_api.py`** (nuevo): 7 tests — register OK (201), register conflict (409), login OK, login wrong password (401), login unknown email (401), me OK, me sin auth (401), switch-profile pone profile_id en JWT, switch-profile rechaza perfil ajeno (404), clear-profile elimina profile_id del JWT
+- **`backend/tests/test_videos_profile.py`** (nuevo): 8 tests — list_videos require active profile (403), filtrado por team, lista vacía, init_upload forbidden para TechnicalDirector (403), allowed para HeadCoach (201), video hereda team_id del perfil, list_clips require active profile (403), clips filtrados por equipo
+- **`backend/tests/test_multipart_upload.py`** (actualizado): init-upload tests migrados a `get_current_profile`; añadido `test_init_upload_rejected_for_technical_director`; resto de tests conservan `get_current_user`
+- **`backend/app/main.py`** (fix): detectado y corregido truncamiento — faltaban los `include_router` de clubs, seasons, teams, video, clips, ws
+- Verificaciones finales: `py_compile` sobre 9 archivos ✅ ALL OK
+- **Fase B marcada como ✅ Completado**
 
 ### 2026-04-25 — Sesión 9 (Fase B — mobile + retry UI + fix shared/api)
 - **`shared/api/index.ts`**: corregido truncamiento — añadido `export * from "./videos"` que faltaba
