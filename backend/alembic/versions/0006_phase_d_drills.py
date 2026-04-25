@@ -19,7 +19,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # ── Enums (idempotente) ───────────────────────────────────────────────────
+    # Enums (idempotente)
     op.execute(sa.text(
         "DO $$ BEGIN "
         "  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'drilltype') THEN "
@@ -36,7 +36,7 @@ def upgrade() -> None:
         "END $$"
     ))
 
-    # ── tags ─────────────────────────────────────────────────────────────────
+    # tags
     op.create_table(
         "tags",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -53,7 +53,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_tags_user_id", "tags", ["user_id"])
 
-    # ── drills ────────────────────────────────────────────────────────────────
+    # drills
     op.create_table(
         "drills",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -63,7 +63,12 @@ def upgrade() -> None:
         sa.Column("court_layout", sa.Text(), nullable=False, server_default="half_fiba"),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("root_sequence", sa.JSON(), nullable=False),
-        sa.Column("parent_id", sa.Integer(), sa.ForeignKey("drills.id", ondelete="SET NULL"), nullable=True),
+        sa.Column(
+            "parent_id",
+            sa.Integer(),
+            sa.ForeignKey("drills.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         sa.Column("archived_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
             "created_at",
@@ -81,18 +86,36 @@ def upgrade() -> None:
     op.create_index("ix_drills_user_id", "drills", ["user_id"])
     op.create_index("ix_drills_parent_id", "drills", ["parent_id"])
 
-    # Cambiar columnas Text a los enums reales
+    # Cambiar columnas Text a los enums reales.
+    # Hay que dropear el server_default de court_layout antes del cast
+    # porque PostgreSQL no puede castear un string default al enum automaticamente.
     op.execute(sa.text(
-        "ALTER TABLE drills "
-        "  ALTER COLUMN type TYPE drilltype USING type::drilltype, "
+        "ALTER TABLE drills ALTER COLUMN court_layout DROP DEFAULT"
+    ))
+    op.execute(sa.text(
+        "ALTER TABLE drills"
+        "  ALTER COLUMN type TYPE drilltype USING type::drilltype,"
         "  ALTER COLUMN court_layout TYPE courtlayouttype USING court_layout::courtlayouttype"
     ))
+    op.execute(sa.text(
+        "ALTER TABLE drills ALTER COLUMN court_layout SET DEFAULT 'half_fiba'::courtlayouttype"
+    ))
 
-    # ── drill_tags ────────────────────────────────────────────────────────────
+    # drill_tags
     op.create_table(
         "drill_tags",
-        sa.Column("drill_id", sa.Integer(), sa.ForeignKey("drills.id", ondelete="CASCADE"), primary_key=True),
-        sa.Column("tag_id", sa.Integer(), sa.ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
+        sa.Column(
+            "drill_id",
+            sa.Integer(),
+            sa.ForeignKey("drills.id", ondelete="CASCADE"),
+            primary_key=True,
+        ),
+        sa.Column(
+            "tag_id",
+            sa.Integer(),
+            sa.ForeignKey("tags.id", ondelete="CASCADE"),
+            primary_key=True,
+        ),
     )
 
 

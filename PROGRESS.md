@@ -13,7 +13,7 @@
 | **A** | Estructura organizativa + auth multi-perfil | ✅ Completado | Backend completo + selector de perfil en web |
 | **B** | Módulo de vídeo integrado en equipos | ✅ Completado | Backend + web + mobile + tests |
 | **C** | Gestión de jugadores | ✅ Completado | Backend + shared + web completos |
-| **D** | Editor de jugadas/ejercicios | 🔴 No iniciado | La pieza más compleja. Requiere Fase C |
+| **D** | Editor de jugadas/ejercicios | ✅ Completado | Backend + shared + web (canvas + árbol + undo/redo) |
 | **E** | Catálogo del club + TeamPlaybook | 🔴 No iniciado | Requiere Fase D |
 | **F** | Partidos, estadísticas, entrenamientos | 🔴 No iniciado | Requiere Fase E |
 
@@ -236,6 +236,48 @@ personal, el catálogo del club y los playbooks de los equipos.
 ---
 
 ## Historial de sesiones
+
+### 2026-04-25 — Sesión 12 (Fase D — editor de jugadas/ejercicios + arranque y fixes)
+
+**D1 — Backend + Shared:**
+- **`backend/app/models/drill.py`**: modelos `Drill`, `Tag`, enums `DrillType`/`CourtLayoutType`, tabla M2M `drill_tags`
+- **`backend/app/schemas/drill.py`**: schemas Create/Update/Response para Drill y Tag
+- **`backend/app/routers/drills.py`**: 11 endpoints — tags CRUD + drills CRUD + clone + variants; todos los DELETE devuelven `Response(status_code=204)`
+- **`backend/alembic/versions/0006_phase_d_drills.py`**: tablas `tags`, `drills`, `drill_tags`; enums idempotentes; DROP DEFAULT antes del ALTER TYPE (ver CLAUDE.md §6 backend)
+- **`shared/types/drill.ts`**: tipos `DrillType`, `CourtLayoutType`, `COURT_LAYOUT_LABELS`, `SketchElement`, `SequenceNode`, `Tag`, `DrillSummary`, `Drill`
+- **`shared/api/drills.ts`**: funciones para tags y drills completas
+
+**D2 — Canvas editor:**
+- **`web/components/drill-editor/court-utils.ts`**: coordenadas normalizadas [0,1] ↔ SVG; dimensiones FIBA
+- **`web/components/drill-editor/CourtBackground.tsx`**: SVG con todas las marcas FIBA (clave, arco 3pt, área restringida, tiro libre)
+- **`web/components/drill-editor/ElementRenderer.tsx`**: renderizado de players, ball, cone, basket, lines con arrows
+- **`web/components/drill-editor/ElementPalette.tsx`**: sidebar de herramientas con drag-and-drop
+- **`web/components/drill-editor/PropertiesPanel.tsx`**: color, label, rotación, estilo de línea
+- **`web/components/drill-editor/CourtCanvas.tsx`**: SVG interactivo — drop, drag, dibujo de líneas, teclado
+
+**D3 — Árbol de secuencias + undo/redo:**
+- **`web/lib/useUndoRedo.ts`**: hook genérico con historial inmutable
+- **`web/components/drill-editor/tree-utils.ts`**: `createChildNode` con herencia de posición (RF-188)
+- **`web/components/drill-editor/SequenceTreePanel.tsx`**: árbol navegable con edición de labels y confirmación de borrado
+- **`web/components/drill-editor/DrillEditor.tsx`**: orquestador — tabs properties/sequences, Ctrl+Z/Y/S
+- **`web/app/drills/page.tsx`**: biblioteca personal con tabs tipo/jugada, clone, archive
+- **`web/app/drills/[id]/edit/page.tsx`**: página de edición con auto-save
+
+**Fix Fase C:**
+- **`backend/app/routers/players.py`**: corregido `AssertionError: Status code 204 must not have a response body` — todos los DELETE cambiados a `-> Response` retornando `Response(status_code=204)`
+
+**Fixes de arranque (sesión 12):**
+- **`shared/package.json`**: añadido `"."` al `exports` para permitir imports desde `@basketball-clipper/shared` (root) — necesario para drill-editor components
+- **`shared/index.ts`**: nuevo archivo raíz que re-exporta `api/index` y `types/index`
+- **`web/components/ui/dialog.tsx`**, **`alert-dialog.tsx`**, **`select.tsx`**: creados (faltaban en el proyecto)
+- **`web/package.json`**: añadidos `@radix-ui/react-dialog`, `@radix-ui/react-alert-dialog`, `@radix-ui/react-select`
+- **`backend/alembic/versions/0006_phase_d_drills.py`**: fix `DatatypeMismatchError` — DROP DEFAULT antes del ALTER TYPE en `court_layout`
+- Múltiples archivos restaurados desde git por truncamiento del FUSE mount (PageShell, Navbar, auth.tsx, select-profile, videos/page, shared/api/auth.ts, clubs.ts)
+- **`.idea/runConfigurations/Seed_Dev_Data.xml`**: fix "Interpreter not found" — cambiado a `C:\Windows\System32\cmd.exe /C`
+- **Fase D marcada como ✅ Completado**
+
+**Lección aprendida — Docker node_modules:**
+Al añadir paquetes npm nuevos, el volumen `/app/node_modules` del contenedor Docker persiste los packages de la imagen anterior. Para forzar reinstalación limpia: `docker-compose down -v && docker-compose build web && docker-compose up`. Alternativa sin perder datos: `docker-compose exec web npm install <paquete>`.
 
 ### 2026-04-25 — Sesión 11 (Fase C — gestión de jugadores)
 - **`app/models/player.py`**: modelos `Player` (nivel club) y `RosterEntry` (nivel equipo/temporada) con enum `PlayerPosition`

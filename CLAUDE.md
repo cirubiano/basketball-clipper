@@ -56,6 +56,22 @@ xxd backend/app/routers/mi_router.py | tail -3
 # Solución: reescribir el archivo completo via cat > archivo << 'PYEOF' ... PYEOF
 ```
 
+**6. Migraciones Alembic — columnas con server_default + cast a enum:**
+Cuando una columna tiene `server_default` de texto y se quiere cambiar el tipo a un enum PostgreSQL,
+hay que dropear el default ANTES del ALTER y restaurarlo DESPUÉS — PostgreSQL no puede castear el
+default string al enum automáticamente:
+```python
+op.execute(sa.text("ALTER TABLE drills ALTER COLUMN court_layout DROP DEFAULT"))
+op.execute(sa.text(
+    "ALTER TABLE drills"
+    "  ALTER COLUMN type TYPE drilltype USING type::drilltype,"
+    "  ALTER COLUMN court_layout TYPE courtlayouttype USING court_layout::courtlayouttype"
+))
+op.execute(sa.text(
+    "ALTER TABLE drills ALTER COLUMN court_layout SET DEFAULT 'half_fiba'::courtlayouttype"
+))
+```
+
 ### Después de cada bloque de cambios en shared/ o web/
 Ejecuta siempre estas verificaciones antes de declarar el trabajo terminado:
 
@@ -79,6 +95,37 @@ Si `tsconfig.json` no tiene `noEmit`, añadir `--noEmit` de todas formas — sol
 grep -r "apiClient" shared/api/   # debe devolver 0 resultados
 grep -r "body: {" shared/api/     # debe devolver 0 resultados (usar JSON.stringify)
 grep -r "body: data" shared/api/  # debe devolver 0 resultados
+```
+
+**5. Imports desde shared — usar siempre sub-paths, nunca el root:**
+- Las páginas web deben importar desde `@basketball-clipper/shared/api` o `@basketball-clipper/shared/types`.
+- NUNCA usar `@basketball-clipper/shared` (root) directamente — el `package.json` de shared
+  ahora expone `"."` pero es más explícito y seguro usar los sub-paths.
+- `shared/package.json` exports correctos:
+```json
+{
+  ".": "./index.ts",
+  "./types": "./types/index.ts",
+  "./api": "./api/index.ts"
+}
+```
+- Si se añade un nuevo sub-módulo, actualizar el `exports` en `shared/package.json`.
+
+**6. Componentes UI de shadcn/ui — los que existen y los que hay que crear:**
+Los siguientes componentes ya están creados en `web/components/ui/`:
+`alert`, `alert-dialog`, `badge`, `button`, `card`, `dialog`, `input`, `label`, `progress`, `select`, `skeleton`
+
+Si se necesita un componente nuevo, también hay que añadir su paquete `@radix-ui/react-*` al
+`web/package.json` y ejecutar `docker-compose down -v && docker-compose build web && docker-compose up`
+para reinstalar los node_modules (el volumen Docker persiste los packages instalados).
+
+**7. Truncamiento de archivos web — restaurar desde git:**
+Si un archivo TypeScript/TSX está truncado (termina a mitad de código), restaurarlo desde git:
+```bash
+git show HEAD:web/components/mi_componente.tsx > web/components/mi_componente.tsx
+# Verificar:
+tail -1 web/components/mi_componente.tsx   # debe ser "}" o similar
+wc -l web/components/mi_componente.tsx     # comparar con git show HEAD:... | wc -l
 ```
 
 **3. Coherencia shared/api/ ↔ tabla de API REST — para cada función nueva:**

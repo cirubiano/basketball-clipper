@@ -12,7 +12,7 @@ const navLinks = [
   { href: "/", label: "Dashboard" },
   { href: "/videos", label: "Mis vídeos" },
   { href: "/players", label: "Jugadores" },
-  { href: "/drills",  label: "Biblioteca" },
+  { href: "/drills", label: "Biblioteca" },
 ];
 
 export function Navbar() {
@@ -51,7 +51,6 @@ export function Navbar() {
         </nav>
 
         <div className="flex items-center gap-3">
-          {/* Selector de perfil activo — siempre visible (RF-010) */}
           <ProfileSelector />
 
           <Button asChild size="sm">
@@ -60,5 +59,14 @@ export function Navbar() {
               Subir vídeo
             </Link>
           </Button>
+
           {user && (
-     
+            <Button variant="ghost" size="icon" onClick={handleLogout} title="Cerrar sesión">
+              <LogOut className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}
