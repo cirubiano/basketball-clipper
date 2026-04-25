@@ -7,6 +7,7 @@ tablas, necesario para Alembic y el worker Celery.
 from app.models.clip import Clip
 from app.models.club import Club
 from app.models.club_member import ClubMember
+from app.models.drill import CourtLayoutType, Drill, DrillType, Tag, drill_tags
 from app.models.exercise import Exercise
 from app.models.player import Player, PlayerPosition, RosterEntry
 from app.models.profile import Profile, UserRole
@@ -19,6 +20,10 @@ __all__ = [
     "Clip",
     "Club",
     "ClubMember",
+    "CourtLayoutType",
+    "Drill",
+    "DrillType",
+    "drill_tags",
     "Exercise",
     "Player",
     "PlayerPosition",
@@ -27,6 +32,7 @@ __all__ = [
     "UserRole",
     "Season",
     "SeasonStatus",
+    "Tag",
     "Team",
     "User",
     "Video",

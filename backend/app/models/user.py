@@ -25,3 +25,9 @@ class User(Base):
     club_memberships: Mapped[list["ClubMember"]] = relationship(  # noqa: F821
         "ClubMember", foreign_keys="ClubMember.user_id", back_populates="user", lazy="select"
     )
+    drills: Mapped[list["Drill"]] = relationship(  # noqa: F821
+        "Drill", back_populates="user", lazy="select"
+    )
+    tags: Mapped[list["Tag"]] = relationship(  # noqa: F821
+        "Tag", back_populates="user", lazy="select"
+    )
