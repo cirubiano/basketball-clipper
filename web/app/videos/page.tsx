@@ -13,6 +13,7 @@ import type { VideoListItem } from "@basketball-clipper/shared/types";
 import { PageShell } from "@/components/layout/PageShell";
 import { VideoCard } from "@/components/video/VideoCard";
 import { DeleteVideoDialog } from "@/components/video/DeleteVideoDialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getStoredToken } from "@/lib/auth";
@@ -43,10 +44,16 @@ export default function VideosPage() {
     },
   });
 
+  const [retryError, setRetryError] = useState<string | null>(null);
+
   const retryMut = useMutation({
     mutationFn: (id: number) => retryVideo(id, getStoredToken()!),
     onSuccess: () => {
+      setRetryError(null);
       void queryClient.invalidateQueries({ queryKey: ["videos"] });
+    },
+    onError: () => {
+      setRetryError("No se ha podido reintentar el procesado. Inténtalo de nuevo.");
     },
   });
 
@@ -70,6 +77,12 @@ export default function VideosPage() {
           </Button>
         </div>
 
+        {retryError && (
+          <Alert variant="destructive">
+            <AlertDescription>{retryError}</AlertDescription>
+          </Alert>
+        )}
+
         {isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -91,6 +104,7 @@ export default function VideosPage() {
                 video={video}
                 onDelete={(v) => setToDelete(v)}
                 onRetry={(v) => retryMut.mutate(v.id)}
+                isRetrying={retryMut.isPending && retryMut.variables === video.id}
               />
             ))}
           </div>

@@ -12,9 +12,11 @@ interface VideoCardProps {
   video: VideoListItem;
   onDelete?: (video: VideoListItem) => void;
   onRetry?: (video: VideoListItem) => void;
+  /** true mientras el retry de este vídeo está en curso */
+  isRetrying?: boolean;
 }
 
-export function VideoCard({ video, onDelete, onRetry }: VideoCardProps) {
+export function VideoCard({ video, onDelete, onRetry, isRetrying = false }: VideoCardProps) {
   const isError = video.status === "error" || video.status === "invalid";
   const isProcessing = video.status === "pending" || video.status === "processing" || video.status === "uploading";
   const isDone = video.status === "completed";
@@ -70,13 +72,18 @@ export function VideoCard({ video, onDelete, onRetry }: VideoCardProps) {
               size="sm"
               variant="outline"
               className="flex-1"
+              disabled={isRetrying}
               onClick={(e) => {
                 e.preventDefault();
                 onRetry(video);
               }}
             >
-              <RefreshCcw className="h-3.5 w-3.5 mr-1.5" />
-              Reintentar
+              {isRetrying ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <RefreshCcw className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              {isRetrying ? "Reintentando…" : "Reintentar"}
             </Button>
           )}
           {isDone && (

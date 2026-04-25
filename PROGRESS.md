@@ -11,7 +11,7 @@
 | Fase | Descripción | Estado | Notas |
 |---|---|---|---|
 | **A** | Estructura organizativa + auth multi-perfil | ✅ Completado | Backend completo + selector de perfil en web |
-| **B** | Módulo de vídeo integrado en equipos | 🔶 En curso | Backend integrado con perfiles — mobile y tests pendientes |
+| **B** | Módulo de vídeo integrado en equipos | 🔶 En curso | Core completo — tests pendientes |
 | **C** | Gestión de jugadores | 🔴 No iniciado | Requiere Fase A |
 | **D** | Editor de jugadas/ejercicios | 🔴 No iniciado | La pieza más compleja. Requiere Fase C |
 | **E** | Catálogo del club + TeamPlaybook | 🔴 No iniciado | Requiere Fase D |
@@ -70,11 +70,15 @@ a su equipo.
 - [x] `GET /clips` y `GET /clips/{id}` filtrados por equipo del perfil activo
 - [x] Web: nueva página `/select-profile` — selector de perfil a pantalla completa
 - [x] Web: `PageShell` redirige a `/select-profile` si el usuario no tiene perfil activo
+- [x] Web: retry con spinner individual por vídeo y manejo de error en dashboard y `/videos`
+- [x] Mobile: `lib/auth.tsx` extendido con soporte de perfiles (`activeProfile`, `switchProfile`, `clearActiveProfile`)
+- [x] Mobile: nueva pantalla `select-profile.tsx` — selector de perfil con spinner por item
+- [x] Mobile: `_layout.tsx` actualizado con guard de perfil (redirige a `/select-profile` si no hay perfil activo)
+- [x] Mobile: `index.tsx` muestra vídeos del equipo usando `listVideos` en lugar de `getClips`
+- [x] `shared/api/index.ts` corregido — faltaba `export * from "./videos"` (estaba truncado)
 
 **Pendiente:**
-- [ ] Mobile: conectar a `shared/api`, upload y reproductor funcionales
 - [ ] Tests de integración end-to-end
-- [ ] Gestión de errores en web: retry manual desde UI
 - [ ] Evaluar modelo YOLO: ¿`yolov8n.pt` es suficiente? (ver `backend/models/README.md`)
 - [ ] Infraestructura AWS básica para staging
 
@@ -205,6 +209,15 @@ personal, el catálogo del club y los playbooks de los equipos.
 ---
 
 ## Historial de sesiones
+
+### 2026-04-25 — Sesión 9 (Fase B — mobile + retry UI + fix shared/api)
+- **`shared/api/index.ts`**: corregido truncamiento — añadido `export * from "./videos"` que faltaba
+- **Web retry**: `VideoCard` recibe prop `isRetrying` — spinner + disabled mientras retrying; `onError` en ambas páginas muestra `Alert` con mensaje
+- **Mobile `lib/auth.tsx`**: añadido soporte completo de perfiles (`activeProfile`, `profiles`, `switchProfile`, `clearActiveProfile`) usando `SecureStore` — alineado con web
+- **Mobile `app/select-profile.tsx`**: nueva pantalla de selección de perfil con spinner por item
+- **Mobile `app/_layout.tsx`**: guard de perfil — redirige a `/select-profile` si autenticado pero sin perfil activo
+- **Mobile `app/index.tsx`**: usa `listVideos` filtrado por perfil activo; botón ⇄ para cambiar de club
+- Verificaciones: `py_compile` ✅, grep apiClient → 0 ✅, `shared/api/index.ts` completo ✅
 
 ### 2026-04-25 — Sesión 8 (Fase B — integración backend + web)
 - **Backend `video.py`**: `GET /videos` e `init_upload` usan `get_current_profile`; filtrado por `team_id` (HeadCoach/StaffMember) o por club completo (TechnicalDirector); `init_upload` rechaza `technical_director` con 403

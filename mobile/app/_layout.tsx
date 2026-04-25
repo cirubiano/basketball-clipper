@@ -6,19 +6,30 @@ import { useAuth } from "../lib/auth";
 import { colors } from "../lib/theme";
 
 function AuthGuard() {
-  const { user, isLoading } = useAuth();
+  const { user, activeProfile, isLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => {
     if (isLoading) return;
+
     const inAuthGroup = segments[0] === "(auth)";
+    const inSelectProfile = segments[0] === "select-profile";
+
     if (!user && !inAuthGroup) {
+      // No autenticado → login
       router.replace("/(auth)/login");
     } else if (user && inAuthGroup) {
+      // Autenticado, estaba en login/register → inicio
+      router.replace("/");
+    } else if (user && !activeProfile && !inSelectProfile) {
+      // Autenticado pero sin perfil activo → selector de perfil
+      router.replace("/select-profile");
+    } else if (user && activeProfile && inSelectProfile) {
+      // Ya tiene perfil activo y está en el selector → inicio
       router.replace("/");
     }
-  }, [user, isLoading, segments]);
+  }, [user, activeProfile, isLoading, segments]);
 
   return null;
 }
@@ -39,6 +50,10 @@ function RootStack() {
         <Stack.Screen name="upload" options={{ title: "Subir vídeo" }} />
         <Stack.Screen name="clips/index" options={{ title: "Mis clips" }} />
         <Stack.Screen name="clips/[id]" options={{ title: "Detalle" }} />
+        <Stack.Screen
+          name="select-profile"
+          options={{ title: "Selecciona tu perfil", headerBackVisible: false }}
+        />
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="dark" />

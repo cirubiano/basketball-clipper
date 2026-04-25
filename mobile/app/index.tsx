@@ -1,45 +1,78 @@
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { getClips } from "@basketball-clipper/shared/api";
+import { listVideos } from "@basketball-clipper/shared/api";
 import { ClipCard } from "../components/ClipCard";
 import { colors, fontSize, radius, spacing } from "../lib/theme";
-import { useAuth } from "../lib/auth";
-import { getStoredToken } from "../lib/auth";
+import { useAuth, getStoredToken } from "../lib/auth";
 
 export default function DashboardScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, activeProfile, logout, clearActiveProfile } = useAuth();
 
-  const { data: clips, isLoading } = useQuery({
-    queryKey: ["clips", "recent"],
+  const { data: videos, isLoading } = useQuery({
+    queryKey: ["videos", activeProfile?.id],
     queryFn: async () => {
       const token = await getStoredToken();
-      return getClips(token!);
+      return listVideos(token!);
     },
-    enabled: !!user,
+    enabled: !!user && !!activeProfile,
   });
 
-  const recent = clips?.slice(0, 6) ?? [];
+  const recent = videos?.slice(0, 6) ?? [];
 
   return (
     <View style={styles.container}>
       <FlatList
         data={isLoading ? [] : recent}
-        keyExtractor={(c) => String(c.id)}
-        renderItem={({ item }) => <ClipCard clip={item} />}
+        keyExtractor={(v) => String(v.id)}
+        renderItem={({ item }) => (
+          <TouchableOpacity onPress={() => router.push(`/videos/${item.id}`)}>
+            <View style={styles.videoCard}>
+              <View style={styles.videoCardInfo}>
+                <Text style={styles.videoTitle} numberOfLines={1}>
+                  {item.title ?? item.filename}
+                </Text>
+                <Text style={styles.videoMeta}>
+                  {item.clips_count} {item.clips_count === 1 ? "clip" : "clips"} ·{" "}
+                  <Text
+                    style={[
+                      styles.statusBadge,
+                      item.status === "completed" && styles.statusDone,
+                      item.status === "error" && styles.statusError,
+                    ]}
+                  >
+                    {statusLabel(item.status)}
+                  </Text>
+                </Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        )}
         ListHeaderComponent={
           <View style={styles.header}>
             <View>
               <Text style={styles.title}>Dashboard</Text>
-              <Text style={styles.subtitle}>Clips generados recientemente</Text>
+              {activeProfile && (
+                <Text style={styles.subtitle} numberOfLines={1}>
+                  {activeProfile.team_name ?? activeProfile.club_name}
+                </Text>
+              )}
             </View>
-            <TouchableOpacity
-              style={styles.uploadButton}
-              onPress={() => router.push("/upload")}
-            >
-              <Text style={styles.uploadButtonText}>+ Subir vídeo</Text>
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              <TouchableOpacity
+                style={styles.uploadButton}
+                onPress={() => router.push("/upload")}
+              >
+                <Text style={styles.uploadButtonText}>+ Subir</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.switchButton}
+                onPress={clearActiveProfile}
+              >
+                <Text style={styles.switchButtonText}>⇄</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         }
         ListEmptyComponent={
@@ -49,15 +82,15 @@ export default function DashboardScreen() {
             </View>
           ) : (
             <View style={styles.emptyBox}>
-              <Text style={styles.emptyText}>Todavía no tienes clips.</Text>
+              <Text style={styles.emptyText}>Todavía no hay vídeos.</Text>
               <TouchableOpacity onPress={() => router.push("/upload")}>
-                <Text style={styles.emptyLink}>Sube tu primer vídeo</Text>
+                <Text style={styles.emptyLink}>Sube el primero</Text>
               </TouchableOpacity>
             </View>
           )
         }
         ListFooterComponent={
-          (clips?.length ?? 0) > 6 ? (
+          (videos?.length ?? 0) > 6 ? (
             <TouchableOpacity
               style={styles.seeAllButton}
               onPress={() => router.push("/clips")}
@@ -70,6 +103,18 @@ export default function DashboardScreen() {
       />
     </View>
   );
+}
+
+function statusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    uploading: "Subiendo",
+    pending: "En cola",
+    processing: "Procesando",
+    completed: "Listo",
+    error: "Error",
+    invalid: "Rechazado",
+  };
+  return labels[status] ?? status;
 }
 
 const styles = StyleSheet.create({
@@ -97,6 +142,12 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.muted,
     marginTop: 2,
+    maxWidth: 160,
+  },
+  headerActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    alignItems: "center",
   },
   uploadButton: {
     backgroundColor: colors.primary,
@@ -108,6 +159,47 @@ const styles = StyleSheet.create({
     color: colors.primaryForeground,
     fontWeight: "600",
     fontSize: fontSize.sm,
+  },
+  switchButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.background,
+  },
+  switchButtonText: {
+    fontSize: fontSize.base,
+    color: colors.muted,
+  },
+  videoCard: {
+    backgroundColor: colors.background,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  videoCardInfo: {
+    gap: 4,
+  },
+  videoTitle: {
+    fontSize: fontSize.base,
+    fontWeight: "600",
+    color: colors.foreground,
+  },
+  videoMeta: {
+    fontSize: fontSize.sm,
+    color: colors.muted,
+  },
+  statusBadge: {
+    color: colors.muted,
+  },
+  statusDone: {
+    color: colors.success,
+  },
+  statusError: {
+    color: colors.destructive,
   },
   emptyBox: {
     alignItems: "center",
