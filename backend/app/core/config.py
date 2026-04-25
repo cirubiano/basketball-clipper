@@ -48,6 +48,17 @@ class Settings(BaseSettings):
     # posición conocida y usamos ese centro para la lógica de "jugador
     # más cercano". Compensa que yolov8n pierde el balón con frecuencia.
     detector_ball_memory_frames: int = 10
+    # Filtro de personas no-jugadoras por altura (px). Para un plano fijo
+    # desde grada, los entrenadores cerca de cámara salen mucho más altos
+    # que las jugadoras y el público mucho más pequeño. Calculamos la
+    # mediana de altura on-the-fly y descartamos detecciones fuera del
+    # rango [median * min_ratio, median * max_ratio]. Estos defaults
+    # tolerantes funcionan razonablemente bien para grabaciones de pabellón.
+    detector_player_height_min_ratio: float = 0.55
+    detector_player_height_max_ratio: float = 1.70
+    # Frames de "warm-up" durante los que aceptamos cualquier detección
+    # mientras vamos juntando la mediana inicial de alturas.
+    detector_height_warmup_samples: int = 30
     # Modelo YOLO. Subir a 'yolov8s.pt' (22 MB) o 'yolov8m.pt' (50 MB) si
     # el balón sale demasiado pequeño y yolov8n no lo detecta. Tradeoff:
     # yolov8s ~2x más lento, yolov8m ~4x más lento, ambos detectan

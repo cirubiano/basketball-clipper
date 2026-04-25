@@ -25,7 +25,7 @@ are exposed via env vars so you can tune without redeploying. See
 ``app.core.config.Settings``.
 """
 import logging
-from collections import Counter
+from collections import Counter, deque
 from typing import Callable
 
 import cv2
@@ -73,6 +73,9 @@ def detect_possessions(
     person_conf = settings.detector_person_conf
     ball_conf = settings.detector_ball_conf
     ball_memory_frames = settings.detector_ball_memory_frames
+    height_min_ratio = settings.detector_player_height_min_ratio
+    height_max_ratio = settings.detector_player_height_max_ratio
+    height_warmup = settings.detector_height_warmup_samples
 
     model = YOLO(yolo_model)
 
@@ -96,6 +99,11 @@ def detect_possessions(
     last_ball_center: tuple[int, int] | None = None
     sampled_since_last_ball = 0
     ball_memory_uses = 0  # diagnóstico: cuántos frames rescatamos por memoria
+    # Deque deslizante con las alturas de personas detectadas. Se usa para
+    # calcular la mediana on-the-fly y filtrar entrenadores/público.
+    recent_heights: deque[float] = deque(maxlen=300)
+    persons_total = 0
+    persons_kept = 0
 
     frame_idx = 0
     sample_idx = 0
@@ -109,6 +117,25 @@ def detect_possessions(
             )
             if ball_conf_seen > max_ball_conf_seen:
                 max_ball_conf_seen = ball_conf_seen
+
+            # Filtro de personas no-jugadoras por altura. Los entrenadores
+            # están cerca de cámara y son más altos en píxeles; el público
+            # del fondo y el banquillo lejano son más pequeños. La mediana
+            # de la ventana móvil define lo que es "altura típica de
+            # jugadora" y descartamos lo que esté fuera de rango.
+            persons_total += len(players)
+            for pl in players:
+                recent_heights.append(pl.get("height", 0.0))
+            if len(recent_heights) >= height_warmup:
+                sorted_heights = sorted(recent_heights)
+                median_h = sorted_heights[len(sorted_heights) // 2]
+                lo = median_h * height_min_ratio
+                hi = median_h * height_max_ratio
+                players = [
+                    pl for pl in players
+                    if lo <= pl.get("height", 0.0) <= hi
+                ]
+            persons_kept += len(players)
 
             # Memoria: si no detectamos balón pero lo vimos hace poco,
             # reutilizar última posición. Asume que el balón no se mueve
@@ -152,6 +179,15 @@ def detect_possessions(
         frame_idx, sampled_count, len(all_jersey_colors),
         ball_detected_count, sampled_count, ball_pct,
         ball_memory_uses, rescued_pct,
+    )
+
+    kept_pct = (100.0 * persons_kept / persons_total) if persons_total else 0.0
+    logger.info(
+        "detector: filtro altura — %d personas detectadas, %d aceptadas como "
+        "jugadoras (%.1f%%). Resto: entrenadores cerca de cámara, banquillo, "
+        "público o ruido. Tunear con DETECTOR_PLAYER_HEIGHT_MIN/MAX_RATIO si "
+        "el porcentaje aceptado es muy bajo o muy alto.",
+        persons_total, persons_kept, kept_pct,
     )
 
     logger.info(
@@ -285,6 +321,7 @@ def _detect_frame(
                 {
                     "color": mean_color,
                     "center": ((x1 + x2) // 2, (y1 + y2) // 2),
+                    "height": float(y2 - y1),
                 }
             )
 

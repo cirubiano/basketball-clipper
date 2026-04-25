@@ -26,6 +26,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./backend:/app
+      - ./backend/models:/models:ro
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   worker:
@@ -51,6 +52,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./backend:/app
+      - ./backend/models:/models:ro
     command: celery -A app.services.queue worker --loglevel=info
 
   web:

@@ -50,3 +50,6 @@ infrastructure/dist/
 *.mkv
 uploads/
 tmp/
+
+# Pesos YOLO custom (no se distribuyen vía git)
+backend/models/*.pt
