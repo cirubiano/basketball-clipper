@@ -20,11 +20,109 @@
 3. Si el usuario pide algo que afecta al dominio, consulta `REQUIREMENTS.md` para los requisitos específicos.
 4. Si el cambio afecta a múltiples capas, identifica todos los archivos implicados antes de empezar (backend → shared → web/mobile).
 
+### Después de cada bloque de cambios en backend
+Ejecuta siempre estas verificaciones antes de declarar el trabajo terminado:
+
+**1. Sintaxis Python — todos los archivos tocados:**
+```bash
+cd backend
+python -m py_compile \
+  app/main.py \
+  app/core/security.py \
+  app/models/__init__.py \
+  # añade aquí los archivos que hayas creado o modificado
+&& echo "ALL OK"
+```
+
+**2. Coherencia de rutas — para cada router nuevo o modificado:**
+- Comprueba el `prefix` con el que está registrado en `main.py`.
+- Verifica que `prefix + path_del_decorator` da la URL documentada en la tabla de API.
+- Ejemplo: prefix `/clubs` + `@router.post("/{id}/profiles")` → `POST /clubs/{id}/profiles` ✓
+- Trampa común: un endpoint en router `/profiles` con path `/clubs/{id}/profiles` → `POST /profiles/clubs/{id}/profiles` ✗
+
+**3. Coherencia modelo ↔ schema ↔ migración — para cada modelo nuevo:**
+- Cada campo del modelo SQLAlchemy tiene su columna en la migración Alembic.
+- Cada campo del schema Pydantic de respuesta existe en el modelo ORM.
+- Los nombres de columnas y tipos coinciden (ej: `starts_at` no `start_date`).
+
+**4. Imports — para cada router:**
+- Todos los modelos y schemas importados en el router se usan realmente.
+- No hay imports que ya no hagan falta tras refactorizaciones.
+
+**5. Truncamiento de archivos — el Write tool puede truncar archivos largos:**
+```bash
+xxd backend/app/routers/mi_router.py | tail -3
+# El último byte debe ser 0a (newline). Si el archivo termina a mitad de línea, está truncado.
+# Solución: reescribir el archivo completo via cat > archivo << 'PYEOF' ... PYEOF
+```
+
+### Después de cada bloque de cambios en shared/ o web/
+Ejecuta siempre estas verificaciones antes de declarar el trabajo terminado:
+
+**1. Type-check de TypeScript — shared y web:**
+```bash
+# Verificar shared/ (sin emitir archivos)
+cd /path/to/project
+npx tsc --project shared/tsconfig.json --noEmit 2>&1 | head -40
+
+# Verificar web/
+npx tsc --project web/tsconfig.json --noEmit 2>&1 | head -40
+```
+Si `tsconfig.json` no tiene `noEmit`, añadir `--noEmit` de todas formas — solo queremos errores, no output.
+
+**2. Coherencia de imports en shared/api/ — regla crítica:**
+- Los únicos exports de `shared/api/client.ts` son: `BASE_URL`, `WS_BASE_URL`, `ApiError`, `RequestOptions`, `apiRequest`.
+- Ningún archivo de `shared/api/` debe importar `apiClient` — no existe.
+- Todos los bodies de POST/PATCH deben pasarse como `body: JSON.stringify(data)`, nunca como objeto plano.
+- Verificar con grep:
+```bash
+grep -r "apiClient" shared/api/   # debe devolver 0 resultados
+grep -r "body: {" shared/api/     # debe devolver 0 resultados (usar JSON.stringify)
+grep -r "body: data" shared/api/  # debe devolver 0 resultados
+```
+
+**3. Coherencia shared/api/ ↔ tabla de API REST — para cada función nueva:**
+- Cada función en `shared/api/` llama a una URL que existe en la tabla de API de este archivo.
+- El método HTTP coincide (GET/POST/PATCH/DELETE).
+- Las URLs con `profile_id`, `club_id`, etc. coinciden exactamente con el patrón del endpoint.
+- Trampa frecuente: `assignProfile` era `/profiles/clubs/${clubId}/profiles` cuando el endpoint real es `/clubs/${clubId}/profiles`.
+
+**4. Coherencia shared/types/ ↔ schemas Pydantic — para cada tipo nuevo:**
+- Los nombres de campos coinciden exactamente (snake_case en ambos lados).
+- Los tipos opcionales en Python (`Optional[X]`) corresponden a `X | null` en TypeScript.
+- Los enums coinciden: si el backend define `"future" | "active" | "archived"`, el tipo TS debe ser igual.
+
+### Smoke test de login — ejecutar siempre tras cambios en auth o shared/api/
+Antes de declarar cualquier tarea terminada que toque auth, perfiles o shared/api, verificar manualmente (o con curl) que el flujo de login funciona de extremo a extremo:
+
+```bash
+# 1. Login → debe devolver access_token
+curl -s -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"admin1234"}' | python3 -m json.tool
+
+# 2. Con el token obtenido, verificar /auth/me
+TOKEN="<token_del_paso_anterior>"
+curl -s http://localhost:8000/auth/me \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+
+# 3. Verificar /profiles (usado por hydrateFromToken en el frontend)
+curl -s http://localhost:8000/profiles \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```
+
+Si cualquiera de estos tres pasos falla, el login del frontend fallará — aunque el backend devuelva 200 en `/auth/login`.
+
+**Por qué importa el paso 3**: `hydrateFromToken` en `web/lib/auth.tsx` llama a `getMe` y `getMyProfiles` en paralelo después del login. Si `getMyProfiles` lanza un error (por import roto, URL incorrecta, o respuesta inesperada), el `catch` del formulario de login muestra "credenciales incorrectas" aunque el login haya funcionado.
+
 ### Al finalizar cada sesión
-1. **Actualiza `PROGRESS.md`**: marca lo completado, actualiza lo pendiente, añade entrada al historial.
-2. **Actualiza `CLAUDE.md`** si cambiaste la arquitectura, añadiste dependencias o tomaste decisiones técnicas nuevas.
-3. Si añades un endpoint nuevo: actualiza la tabla de API REST de este archivo.
-4. Si cambias la estructura de archivos: actualiza las secciones de estructura.
+1. **Ejecuta las verificaciones de backend** descritas arriba sobre todos los archivos tocados.
+2. **Ejecuta las verificaciones de shared/web** si tocaste TypeScript.
+3. **Ejecuta el smoke test de login** si tocaste auth, perfiles o shared/api/.
+4. **Actualiza `PROGRESS.md`**: marca lo completado, actualiza lo pendiente, añade entrada al historial.
+5. **Actualiza `CLAUDE.md`** si cambiaste la arquitectura, añadiste dependencias o tomaste decisiones técnicas nuevas.
+6. Si añades un endpoint nuevo: actualiza la tabla de API REST de este archivo.
+7. Si cambias la estructura de archivos: actualiza las secciones de estructura.
 
 ### Reglas de coordinación entre capas
 - Backend nuevo endpoint → actualizar `shared/api/` y `shared/types/` siempre.
@@ -209,10 +307,14 @@ backend/
 │   │   ├── database.py       # Conexión SQLAlchemy async
 │   │   └── security.py       # JWT, get_current_user dependency
 │   ├── routers/
+│   │   ├── auth.py           # Login, registro, switch-profile, clear-profile, me
+│   │   ├── profiles.py       # Perfiles del usuario (listar, asignar, archivar)
+│   │   ├── clubs.py          # CRUD clubs + gestión de miembros
+│   │   ├── seasons.py        # CRUD temporadas (valida una activa por club)
+│   │   ├── teams.py          # CRUD equipos por club/temporada
 │   │   ├── video.py          # Multipart upload lifecycle + gestión de jobs
 │   │   ├── clips.py          # GET /clips, GET /clips/{id}, DELETE /clips/{id}
 │   │   ├── exercises.py      # Stub — no implementado aún
-│   │   ├── auth.py           # Login, registro, refresh token
 │   │   └── ws.py             # WebSocket /ws/{video_id}
 │   ├── services/
 │   │   ├── detector.py       # YOLOv8 + OpenCV — detección de posesión (LAB + K-means)
@@ -221,18 +323,25 @@ backend/
 │   │   └── queue.py          # Celery tasks — orquestación del pipeline
 │   ├── models/
 │   │   ├── __init__.py
-│   │   ├── user.py           # User
-│   │   ├── video.py          # Video (con VideoStatus enum)
+│   │   ├── user.py           # User (+ is_admin)
+│   │   ├── club.py           # Club
+│   │   ├── season.py         # Season + SeasonStatus enum
+│   │   ├── team.py           # Team
+│   │   ├── club_member.py    # ClubMember (UNIQUE club_id+user_id)
+│   │   ├── profile.py        # Profile + UserRole enum
+│   │   ├── video.py          # Video + VideoStatus enum (+ team_id FK)
 │   │   ├── clip.py           # Clip
 │   │   └── exercise.py       # Exercise (stub)
 │   └── schemas/
-│       ├── auth.py
+│       ├── auth.py           # Login, Register, TokenResponse, UserResponse, SwitchProfileRequest
+│       ├── club.py           # Club, Season, Team, ClubMember, Profile schemas
 │       ├── video.py          # InitUpload, CompleteUpload, etc.
 │       └── clip.py
 ├── alembic/versions/
 │   ├── 0001_initial_schema.py
 │   ├── 0002_multipart_upload.py
-│   └── 0003_add_video_title.py
+│   ├── 0003_add_video_title.py
+│   └── 0004_phase_a_org_structure.py
 ├── models/
 │   └── README.md             # Cómo usar modelos custom de YOLO
 ├── scripts/
@@ -274,6 +383,7 @@ web/
 │   ├── ui/                   # shadcn/ui
 │   ├── layout/
 │   │   ├── Navbar.tsx
+│   │   ├── ProfileSelector.tsx   # Dropdown selector de perfil activo (RF-010)
 │   │   └── PageShell.tsx
 │   └── video/
 │       ├── VideoUploader.tsx
@@ -308,9 +418,9 @@ web/
 ```
 shared/
 ├── types/
-│   ├── video.ts, clip.ts, user.ts, auth.ts, index.ts
+│   ├── video.ts, clip.ts, user.ts, auth.ts, club.ts, index.ts
 └── api/
-    ├── client.ts, auth.ts, videos.ts, videoUpload.ts, clips.ts, index.ts
+    ├── client.ts, auth.ts, videos.ts, videoUpload.ts, clips.ts, clubs.ts, index.ts
 ```
 
 **Regla**: al añadir un endpoint nuevo, añadir su función en `shared/api/`
@@ -354,22 +464,41 @@ y sus tipos en `shared/types/`. Web y mobile nunca llaman al backend directament
 
 ## API REST — endpoints actuales
 
-| Método | Endpoint | Descripción |
-|---|---|---|
-| POST | /auth/register | Registro |
-| POST | /auth/login | Login → JWT |
-| POST | /videos/init-upload | Inicia multipart: crea Video + presigned URLs |
-| GET | /videos/{id}/upload-status | Partes subidas (reanudar) |
-| POST | /videos/{id}/complete-upload | Cierra multipart, encola pipeline |
-| POST | /videos/{id}/abort-upload | Aborta upload, limpia S3 |
-| GET | /videos | Lista vídeos del usuario |
-| GET | /videos/{id}/status | Estado del procesado |
-| POST | /videos/{id}/retry | Re-encola si está en error |
-| DELETE | /videos/{id} | Borra vídeo + clips + S3 |
-| GET | /clips | Lista clips del usuario |
-| GET | /clips/{id} | Detalle de clip |
-| DELETE | /clips/{id} | Eliminar clip |
-| WS | /ws/{video_id} | Progreso en tiempo real |
+| Método | Endpoint | Auth | Descripción |
+|---|---|---|---|
+| POST | /auth/register | — | Registro |
+| POST | /auth/login | — | Login → JWT |
+| POST | /auth/switch-profile | user | Cambia perfil activo → nuevo JWT con profile_id |
+| POST | /auth/clear-profile | user | Elimina profile_id del token → selector de perfil |
+| GET | /auth/me | user | Usuario autenticado |
+| GET | /profiles | user | Perfiles activos del usuario (enriquecidos) |
+| DELETE | /profiles/{id} | user | Archivar perfil |
+| POST | /clubs | admin | Crear club |
+| GET | /clubs/mine | user | Clubs a los que pertenece el usuario |
+| GET | /clubs/{id} | member | Detalle de club |
+| PATCH | /clubs/{id} | tech_director | Actualizar club |
+| GET | /clubs/{id}/members | member | Listar miembros |
+| POST | /clubs/{id}/members | tech_director | Añadir miembro al club |
+| POST | /clubs/{id}/profiles | tech_director | Asignar perfil (rol) a un miembro |
+| GET | /clubs/{id}/seasons | member | Listar temporadas |
+| POST | /clubs/{id}/seasons | tech_director | Crear temporada |
+| PATCH | /clubs/{id}/seasons/{sid} | tech_director | Cambiar estado de temporada |
+| GET | /clubs/{id}/teams | member | Listar equipos (filtrable por season_id) |
+| POST | /clubs/{id}/teams | tech_director | Crear equipo |
+| GET | /clubs/{id}/teams/{tid} | member | Detalle de equipo |
+| PATCH | /clubs/{id}/teams/{tid} | tech_director | Archivar equipo |
+| POST | /videos/init-upload | profile | Inicia multipart: crea Video + presigned URLs |
+| GET | /videos/{id}/upload-status | user | Partes subidas (reanudar) |
+| POST | /videos/{id}/complete-upload | user | Cierra multipart, encola pipeline |
+| POST | /videos/{id}/abort-upload | user | Aborta upload, limpia S3 |
+| GET | /videos | user | Lista vídeos del usuario |
+| GET | /videos/{id}/status | user | Estado del procesado |
+| POST | /videos/{id}/retry | user | Re-encola si está en error |
+| DELETE | /videos/{id} | user | Borra vídeo + clips + S3 |
+| GET | /clips | user | Lista clips del usuario |
+| GET | /clips/{id} | user | Detalle de clip |
+| DELETE | /clips/{id} | user | Eliminar clip |
+| WS | /ws/{video_id} | — | Progreso en tiempo real |
 
 ---
 
@@ -377,7 +506,7 @@ y sus tipos en `shared/types/`. Web y mobile nunca llaman al backend directament
 
 | Fase | Descripción | Estado |
 |---|---|---|
-| **A** | Estructura organizativa + auth multi-perfil | 🔴 No iniciado |
+| **A** | Estructura organizativa + auth multi-perfil | ✅ Completado |
 | **B** | Módulo de vídeo integrado en equipos | 🔶 Base construida (standalone) |
 | **C** | Gestión de jugadores | 🔴 No iniciado |
 | **D** | Editor de jugadas/ejercicios (sketch + árbol) | 🔴 No iniciado |

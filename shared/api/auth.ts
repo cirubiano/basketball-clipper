@@ -39,3 +39,32 @@ export async function login(body: LoginRequest): Promise<TokenResponse> {
 export async function getMe(token: string): Promise<User> {
   return apiRequest<User>("/auth/me", { token });
 }
+
+/**
+ * POST /auth/switch-profile
+ *
+ * Cambia el perfil activo. Devuelve un nuevo JWT con el claim profile_id
+ * actualizado. El frontend debe reemplazar el token almacenado.
+ */
+export async function switchProfile(
+  token: string,
+  profileId: number,
+): Promise<TokenResponse> {
+  return apiRequest<TokenResponse>("/auth/switch-profile", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ profile_id: profileId }),
+  });
+}
+
+/**
+ * POST /auth/clear-profile
+ *
+ * Vuelve a la vista de selector de perfil eliminando el claim profile_id del JWT.
+ */
+export async function clearProfile(token: string): Promise<TokenResponse> {
+  return apiRequest<TokenResponse>("/auth/clear-profile", {
+    method: "POST",
+    token,
+  });
+}

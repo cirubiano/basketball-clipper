@@ -3,10 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.routers import auth, clips, video, ws
+from app.routers import clubs, seasons, teams, profiles
 
 app = FastAPI(
-    title="Basketball Clipper API",
-    version="0.1.0",
+    title="Basketball Club Management API",
+    version="0.2.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
@@ -19,10 +20,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Auth & Profiles ───────────────────────────────────────────────────────────
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
+app.include_router(profiles.router, prefix="/profiles", tags=["profiles"])
+
+# ── Org structure ─────────────────────────────────────────────────────────────
+app.include_router(clubs.router, prefix="/clubs", tags=["clubs"])
+app.include_router(seasons.router, prefix="/clubs", tags=["seasons"])
+app.include_router(teams.router, prefix="/clubs", tags=["teams"])
+
+# ── Video module ──────────────────────────────────────────────────────────────
 app.include_router(video.router, prefix="/videos", tags=["videos"])
 app.include_router(clips.router, prefix="/clips", tags=["clips"])
-# WebSocket router registered without a prefix so the path is /ws/{video_id}
+
+# ── WebSocket ─────────────────────────────────────────────────────────────────
 app.include_router(ws.router, tags=["websocket"])
 
 

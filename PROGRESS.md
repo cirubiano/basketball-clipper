@@ -10,7 +10,7 @@
 
 | Fase | Descripción | Estado | Notas |
 |---|---|---|---|
-| **A** | Estructura organizativa + auth multi-perfil | 🔴 No iniciado | Diseño de BD pendiente |
+| **A** | Estructura organizativa + auth multi-perfil | ✅ Completado | Backend completo + selector de perfil en web |
 | **B** | Módulo de vídeo integrado en equipos | 🔶 Base construida | Standalone — pendiente integración con Fase A |
 | **C** | Gestión de jugadores | 🔴 No iniciado | Requiere Fase A |
 | **D** | Editor de jugadas/ejercicios | 🔴 No iniciado | La pieza más compleja. Requiere Fase C |
@@ -33,7 +33,7 @@ Sin esta fase, ninguna otra funcionalidad puede integrarse correctamente.
 - Panel de `Admin` independiente (RF-020 a RF-023)
 - Migraciones Alembic para las nuevas tablas
 
-**Estado**: 🔴 No iniciado — pendiente diseño detallado del esquema de BD
+**Estado**: ✅ Completado — ver sesión 7 del historial
 
 ---
 
@@ -63,9 +63,10 @@ a su equipo.
 | CI/CD GitHub Actions | ✅ Completo | Workflows backend, web, mobile |
 | Infraestructura AWS (CDK) | 🔴 Skeleton | Sin recursos reales |
 
-**Pendiente para completar Fase B** (tras tener Fase A):
-- [ ] Migrar `Video` para que pertenezca a un `Team` (FK: `video.team_id`)
-- [ ] Filtrar vídeos/clips por equipo del perfil activo
+**Pendiente para completar Fase B** (Fase A ya lista):
+- [ ] Filtrar vídeos/clips por equipo del perfil activo en routers (`video.py`, `clips.py`)
+- [ ] Requerir perfil activo (`get_current_profile`) en endpoints de subida y listado de vídeos
+- [ ] Web: redirigir a selector de perfil si el usuario no tiene ninguno activo
 - [ ] Mobile: conectar a `shared/api`, upload y reproductor funcionales
 - [ ] Tests de integración end-to-end
 - [ ] Gestión de errores en web: retry manual desde UI
@@ -144,18 +145,23 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ---
 
-## Detalle técnico — módulos construidos (Fase B base)
+## Detalle técnico — módulos construidos
 
 ### Backend (`backend/`)
 
 **Core**
 - `config.py` — Pydantic Settings; incluye parámetros del detector
 - `database.py` — SQLAlchemy async con pool
-- `security.py` — JWT: `create_access_token`, `get_current_user`
+- `security.py` — JWT: `create_access_token(subject, profile_id?)`, `get_current_user`, `get_current_profile`, `require_admin`
 
-**Modelos actuales**
-- `User` — id, email, hashed_password, created_at
-- `Video` — id, user_id, title, filename, s3_key, status, upload_id, s3_parts, error_message
+**Modelos** (todos en `app/models/`)
+- `User` — id, email, hashed_password, is_admin, created_at
+- `Club` — id, name, logo_url, archived_at, created_at
+- `Season` — id, club_id, name, status (SeasonStatus enum), start_date, end_date, archived_at
+- `Team` — id, club_id, season_id, name, archived_at, created_at
+- `ClubMember` — id, club_id (UNIQUE), user_id, invited_by, joined_at
+- `Profile` — id, user_id, club_id, team_id (nullable for TechnicalDirector), role (UserRole enum), archived_at
+- `Video` — id, user_id, team_id (nullable), title, filename, s3_key, status, upload parts, error_message
 - `Clip` — id, video_id, s3_key, start_sec, end_sec, team, created_at
 - `Exercise` — stub
 
@@ -163,9 +169,14 @@ personal, el catálogo del club y los playbooks de los equipos.
 - `0001_initial_schema.py` — tablas base
 - `0002_multipart_upload.py` — columnas multipart en Video
 - `0003_add_video_title.py` — columna title
+- `0004_phase_a_org_structure.py` — clubs, seasons, teams, club_members, profiles; is_admin en users; team_id en videos
 
 **Routers**
-- `auth.py` — register, login
+- `auth.py` — register, login, switch-profile, clear-profile, me
+- `clubs.py` — CRUD clubs, gestión de miembros
+- `seasons.py` — CRUD temporadas con validación de temporada activa única
+- `teams.py` — CRUD equipos por club/temporada
+- `profiles.py` — listar perfiles del usuario, asignar, archivar
 - `video.py` — multipart upload lifecycle completo + gestión de jobs
 - `clips.py` — CRUD clips
 - `ws.py` — WebSocket progreso
@@ -178,17 +189,27 @@ personal, el catálogo del club y los playbooks de los equipos.
 - `queue.py` — Celery, orquesta pipeline, actualiza BD, notifica WS
 
 ### Shared (`shared/`)
-- Tipos: `Video`, `VideoStatus`, `Clip`, `User`, `AuthTokens` + multipart types
-- API: `uploadVideo()` con progreso/concurrencia/reanudación, CRUD vídeos y clips
+- Tipos: `Video`, `VideoStatus`, `Clip`, `User`, `AuthTokens`, multipart types + `Club`, `Season`, `Team`, `ClubMember`, `Profile`, `UserRole`, `SeasonStatus`, `profileLabel()`
+- API: `uploadVideo()` con progreso/concurrencia/reanudación, CRUD vídeos y clips, clubs/seasons/teams/profiles API, `switchProfile()`, `clearProfile()`
 
 ### Web (`web/`)
 - Páginas: `/`, `/upload`, `/videos`, `/videos/[id]`, `/videos/[id]/clips/[clipId]`, auth
-- Componentes: `FloatingUploadWidget`, `VideoUploader`, `VideoCard`, `ClipCard`, `ClipPlayer`, `ProcessingStatus`, `DeleteVideoDialog`
-- Lib: auth context, uploadJob context, React Query
+- Componentes: `FloatingUploadWidget`, `VideoUploader`, `VideoCard`, `ClipCard`, `ClipPlayer`, `ProcessingStatus`, `DeleteVideoDialog`, `ProfileSelector`
+- Lib: auth context (con `activeProfile`, `switchProfile`, `clearActiveProfile`), uploadJob context, React Query
 
 ---
 
 ## Historial de sesiones
+
+### 2026-04-25 — Sesión 7 (Fase A completa)
+Sin commit aún — pendiente de hacer commit manual.
+- **Backend**: modelos Club, Season, Team, ClubMember, Profile; `is_admin` en User; `team_id` en Video
+- **Migración** `0004_phase_a_org_structure.py` — crea todas las tablas de Fase A
+- **Security**: `create_access_token` con `profile_id` opcional; `get_current_profile`, `require_admin`
+- **Routers**: clubs, seasons, teams, profiles; switch-profile, clear-profile en auth
+- **Shared**: tipos y API client para todas las entidades de Fase A
+- **Web**: `ProfileSelector` component + auth context extendido con `activeProfile`, `switchProfile`, `clearActiveProfile`
+- Todos los archivos nuevos/modificados verificados con `python -m py_compile` ✅
 
 ### 2026-04-25 — Sesión 6 (planificación estratégica)
 Sin commits — sesión de análisis y documentación.

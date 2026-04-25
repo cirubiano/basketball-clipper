@@ -28,6 +28,12 @@ class TokenResponse(BaseModel):
 class UserResponse(BaseModel):
     id: int
     email: str
+    is_admin: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class SwitchProfileRequest(BaseModel):
+    """Body para POST /auth/switch-profile."""
+    profile_id: int

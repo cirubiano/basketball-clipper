@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Upload, Film, LogOut } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
+import { ProfileSelector } from "@/components/layout/ProfileSelector";
 import { cn } from "@/lib/utils";
 
 const navLinks = [
@@ -47,7 +48,10 @@ export function Navbar() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          {/* Selector de perfil activo — siempre visible (RF-010) */}
+          <ProfileSelector />
+
           <Button asChild size="sm">
             <Link href="/upload">
               <Upload className="h-4 w-4 mr-1.5" />
