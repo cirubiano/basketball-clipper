@@ -12,7 +12,7 @@
 |---|---|---|---|
 | **A** | Estructura organizativa + auth multi-perfil | ✅ Completado | Backend completo + selector de perfil en web |
 | **B** | Módulo de vídeo integrado en equipos | ✅ Completado | Backend + web + mobile + tests |
-| **C** | Gestión de jugadores | 🔶 En curso | Backend + shared completos, web implementada |
+| **C** | Gestión de jugadores | ✅ Completado | Backend + shared + web completos |
 | **D** | Editor de jugadas/ejercicios | 🔴 No iniciado | La pieza más compleja. Requiere Fase C |
 | **E** | Catálogo del club + TeamPlaybook | 🔴 No iniciado | Requiere Fase D |
 | **F** | Partidos, estadísticas, entrenamientos | 🔴 No iniciado | Requiere Fase E |
@@ -119,7 +119,7 @@ equipo/temporada (datos deportivos, plantillas).
 - [ ] Tests de integración (players + roster)
 - [ ] Mobile: pantallas de jugadores y plantilla
 
-**Estado**: 🔶 En curso — core completo, pendiente tests y mobile
+**Estado**: ✅ Completado — ver sesión 11 del historial
 
 ---
 
@@ -195,6 +195,8 @@ personal, el catálogo del club y los playbooks de los equipos.
 - `Profile` — id, user_id, club_id, team_id (nullable for TechnicalDirector), role (UserRole enum), archived_at
 - `Video` — id, user_id, team_id (nullable), title, filename, s3_key, status, upload parts, error_message
 - `Clip` — id, video_id, s3_key, start_sec, end_sec, team, created_at
+- `Player` — id, club_id, first_name, last_name, date_of_birth, position (PlayerPosition enum), photo_url, archived_at
+- `RosterEntry` — id, player_id, team_id, season_id, jersey_number, position, ppg/rpg/apg/mpg, archived_at
 - `Exercise` — stub
 
 **Migraciones**
@@ -202,6 +204,7 @@ personal, el catálogo del club y los playbooks de los equipos.
 - `0002_multipart_upload.py` — columnas multipart en Video
 - `0003_add_video_title.py` — columna title
 - `0004_phase_a_org_structure.py` — clubs, seasons, teams, club_members, profiles; is_admin en users; team_id en videos
+- `0005_phase_c_players.py` — tablas players + roster_entries; enum playerposition (idempotente)
 
 **Routers**
 - `auth.py` — register, login, switch-profile, clear-profile, me
@@ -212,6 +215,7 @@ personal, el catálogo del club y los playbooks de los equipos.
 - `video.py` — multipart upload lifecycle completo + gestión de jobs
 - `clips.py` — CRUD clips
 - `ws.py` — WebSocket progreso
+- `players.py` — CRUD jugadores + CRUD plantilla; permisos TD/HC/Admin; soft-delete RF-090
 - `exercises.py` — stub
 
 **Servicios**
@@ -221,11 +225,11 @@ personal, el catálogo del club y los playbooks de los equipos.
 - `queue.py` — Celery, orquesta pipeline, actualiza BD, notifica WS
 
 ### Shared (`shared/`)
-- Tipos: `Video`, `VideoStatus`, `Clip`, `User`, `AuthTokens`, multipart types + `Club`, `Season`, `Team`, `ClubMember`, `Profile`, `UserRole`, `SeasonStatus`, `profileLabel()`
-- API: `uploadVideo()` con progreso/concurrencia/reanudación, CRUD vídeos y clips, clubs/seasons/teams/profiles API, `switchProfile()`, `clearProfile()`
+- Tipos: `Video`, `VideoStatus`, `Clip`, `User`, `AuthTokens`, multipart types + `Club`, `Season`, `Team`, `ClubMember`, `Profile`, `UserRole`, `SeasonStatus`, `profileLabel()` + `Player`, `RosterEntry`, `PlayerPosition`, `POSITION_LABELS`
+- API: `uploadVideo()` con progreso/concurrencia/reanudación, CRUD vídeos y clips, clubs/seasons/teams/profiles API, `switchProfile()`, `clearProfile()` + `listPlayers`, `createPlayer`, `updatePlayer`, `archivePlayer`, `listRoster`, `addToRoster`, `updateRosterEntry`, `removeFromRoster`
 
 ### Web (`web/`)
-- Páginas: `/`, `/upload`, `/videos`, `/videos/[id]`, `/videos/[id]/clips/[clipId]`, auth
+- Páginas: `/`, `/upload`, `/videos`, `/videos/[id]`, `/videos/[id]/clips/[clipId]`, auth, `/players`, `/teams/[teamId]/roster`
 - Componentes: `FloatingUploadWidget`, `VideoUploader`, `VideoCard`, `ClipCard`, `ClipPlayer`, `ProcessingStatus`, `DeleteVideoDialog`, `ProfileSelector`
 - Lib: auth context (con `activeProfile`, `switchProfile`, `clearActiveProfile`), uploadJob context, React Query
 
@@ -243,6 +247,7 @@ personal, el catálogo del club y los playbooks de los equipos.
 - **`web/app/teams/[teamId]/roster/page.tsx`**: plantilla del equipo con dorsal, posición y stats
 - **`web/components/layout/Navbar.tsx`**: añadido enlace "Jugadores"
 - Verificaciones: `py_compile` ✅ ALL OK, `grep apiClient` → 0 ✅, rutas coherentes ✅
+- **Fase C marcada como ✅ Completado**
 
 ### 2026-04-25 — Sesión 10 (Fase B — tests de integración + fix main.py)
 - **`backend/tests/test_auth_api.py`** (nuevo): 7 tests — register OK (201), register conflict (409), login OK, login wrong password (401), login unknown email (401), me OK, me sin auth (401), switch-profile pone profile_id en JWT, switch-profile rechaza perfil ajeno (404), clear-profile elimina profile_id del JWT
