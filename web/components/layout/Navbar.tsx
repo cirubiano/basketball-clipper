@@ -12,6 +12,7 @@ const navLinks = [
   { href: "/", label: "Dashboard" },
   { href: "/videos", label: "Mis vídeos" },
   { href: "/players", label: "Jugadores" },
+  { href: "/drills",  label: "Biblioteca" },
 ];
 
 export function Navbar() {
@@ -60,12 +61,4 @@ export function Navbar() {
             </Link>
           </Button>
           {user && (
-            <Button variant="ghost" size="icon" onClick={handleLogout} title="Cerrar sesión">
-              <LogOut className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-      </div>
-    </header>
-  );
-}
+     
