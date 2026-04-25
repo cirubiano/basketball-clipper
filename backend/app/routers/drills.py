@@ -18,7 +18,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.models.drill import Drill, DrillType, Tag, _default_root_sequence, drill_tags
+from app.models.drill import Drill, DrillType, Tag, _default_root_sequence
 from app.models.user import User
 from app.schemas.drill import (
     DrillCreate,

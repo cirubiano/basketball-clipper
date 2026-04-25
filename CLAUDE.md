@@ -419,9 +419,9 @@ web/
 ```
 shared/
 ├── types/
-│   ├── video.ts, clip.ts, user.ts, auth.ts, club.ts, index.ts
+│   ├── video.ts, clip.ts, user.ts, auth.ts, club.ts, player.ts, drill.ts, index.ts
 └── api/
-    ├── client.ts, auth.ts, videos.ts, videoUpload.ts, clips.ts, clubs.ts, index.ts
+    ├── client.ts, auth.ts, videos.ts, videoUpload.ts, clips.ts, clubs.ts, players.ts, drills.ts, index.ts
 ```
 
 **Regla**: al añadir un endpoint nuevo, añadir su función en `shared/api/`
@@ -500,6 +500,26 @@ y sus tipos en `shared/types/`. Web y mobile nunca llaman al backend directament
 | GET | /clips/{id} | user | Detalle de clip |
 | DELETE | /clips/{id} | user | Eliminar clip |
 | WS | /ws/{video_id} | — | Progreso en tiempo real |
+| GET | /clubs/{id}/players | member | Listar jugadores del club |
+| POST | /clubs/{id}/players | td_or_hc | Crear jugador |
+| GET | /clubs/{id}/players/{pid} | member | Detalle de jugador |
+| PATCH | /clubs/{id}/players/{pid} | td_or_hc | Actualizar jugador |
+| DELETE | /clubs/{id}/players/{pid} | td_or_hc | Archivar jugador (RF-090) |
+| GET | /clubs/{id}/teams/{tid}/roster | member | Listar plantilla |
+| POST | /clubs/{id}/teams/{tid}/roster | td_or_hc | Añadir jugador a plantilla |
+| PATCH | /clubs/{id}/teams/{tid}/roster/{eid} | td_or_hc | Actualizar entrada plantilla |
+| DELETE | /clubs/{id}/teams/{tid}/roster/{eid} | td_or_hc | Retirar jugador de plantilla |
+| GET | /drills/tags | user | Listar tags personales |
+| POST | /drills/tags | user | Crear tag |
+| PATCH | /drills/tags/{id} | user | Actualizar tag |
+| DELETE | /drills/tags/{id} | user | Archivar tag |
+| GET | /drills | user | Biblioteca personal (filtrable por type/tag) |
+| POST | /drills | user | Crear drill/play |
+| GET | /drills/{id} | author | Detalle con root_sequence |
+| PATCH | /drills/{id} | author | Actualizar (incluye root_sequence) |
+| DELETE | /drills/{id} | author | Archivar drill/play |
+| POST | /drills/{id}/clone | author | Clonar en biblioteca personal (RF-151) |
+| POST | /drills/{id}/variants | author | Crear variante (RF-140) |
 
 ---
 
@@ -508,9 +528,9 @@ y sus tipos en `shared/types/`. Web y mobile nunca llaman al backend directament
 | Fase | Descripción | Estado |
 |---|---|---|
 | **A** | Estructura organizativa + auth multi-perfil | ✅ Completado |
-| **B** | Módulo de vídeo integrado en equipos | 🔶 Base construida (standalone) |
-| **C** | Gestión de jugadores | 🔴 No iniciado |
-| **D** | Editor de jugadas/ejercicios (sketch + árbol) | 🔴 No iniciado |
+| **B** | Módulo de vídeo integrado en equipos | ✅ Completado |
+| **C** | Gestión de jugadores | ✅ Completado |
+| **D** | Editor de jugadas/ejercicios (sketch + árbol) | ✅ Completado |
 | **E** | Catálogo del club + TeamPlaybook | 🔴 No iniciado |
 | **F** | Partidos, estadísticas, entrenamientos | 🔴 No iniciado |
 
