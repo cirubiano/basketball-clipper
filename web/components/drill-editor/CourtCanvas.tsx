@@ -109,6 +109,7 @@ export function CourtCanvas({
     const { x: svgX, y: svgY } = getSvgCoords(e as unknown as React.MouseEvent);
     const { x, y } = fromSvg(svgX, svgY, layout);
 
+    const isPlayer = type === "player_offense" || type === "player_defense";
     const newEl: SketchElement = {
       id:       crypto.randomUUID(),
       type,
@@ -117,6 +118,7 @@ export function CourtCanvas({
       rotation: 0,
       color:    defaultColor(type),
       label:    defaultLabel(type),
+      ...(isPlayer && { playerId: crypto.randomUUID() }),
     };
     updateElements([...node.elements, newEl]);
     onSelectElement(newEl.id);
