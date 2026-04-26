@@ -1,6 +1,12 @@
 name: Web CI
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "shared/**"
+      - ".github/workflows/web.yml"
   pull_request:
     paths:
       - "web/**"
@@ -21,15 +27,23 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Install dependencies
+      - name: Install shared dependencies
+        working-directory: shared
+        run: npm ci
+
+      - name: Install web dependencies
         working-directory: web
         run: npm ci
+
+      - name: Type check shared
+        working-directory: shared
+        run: npx tsc --noEmit
 
       - name: Lint
         working-directory: web
         run: npm run lint
 
-      - name: Type check
+      - name: Type check web
         working-directory: web
         run: npm run type-check
 
