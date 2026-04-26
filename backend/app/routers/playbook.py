@@ -21,7 +21,7 @@ from app.models.playbook import TeamPlaybookEntry
 from app.models.profile import Profile, UserRole
 from app.models.team import Team
 from app.models.user import User
-from app.routers.clubs import _get_club_or_404, _require_club_access
+from app.routers.clubs import _get_club_or_404
 from app.schemas.playbook import AddToPlaybookRequest, PlaybookEntryResponse
 
 router = APIRouter()
