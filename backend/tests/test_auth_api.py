@@ -5,7 +5,10 @@ Tests de los endpoints de autenticación y gestión de perfiles.
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
+
+import base64
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -168,12 +171,11 @@ def test_switch_profile_returns_token_with_profile_id():
     )
     assert r.status_code == 200, r.text
     # El token devuelto debe contener profile_id=7
-    import base64, json as _json
     token = r.json()["access_token"]
     payload_b64 = token.split(".")[1]
     # Añadir padding si es necesario
     payload_b64 += "=" * (-len(payload_b64) % 4)
-    payload = _json.loads(base64.b64decode(payload_b64))
+    payload = json.loads(base64.b64decode(payload_b64))
     assert payload.get("profile_id") == 7
 
 
@@ -211,9 +213,8 @@ def test_clear_profile_returns_token_without_profile_id():
         headers=_auth_headers(user_id=user.id, profile_id=5),
     )
     assert r.status_code == 200, r.text
-    import base64, json as _json
     token = r.json()["access_token"]
     payload_b64 = token.split(".")[1]
     payload_b64 += "=" * (-len(payload_b64) % 4)
-    payload = _json.loads(base64.b64decode(payload_b64))
+    payload = json.loads(base64.b64decode(payload_b64))
     assert "profile_id" not in payload

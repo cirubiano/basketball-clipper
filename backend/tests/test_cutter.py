@@ -3,7 +3,7 @@ Tests for app.services.cutter.
 
 ffmpeg.input is mocked so no FFmpeg binary or real video file is required.
 """
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import ffmpeg
 import pytest

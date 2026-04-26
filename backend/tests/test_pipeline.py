@@ -5,6 +5,7 @@ All external dependencies (DB, Redis, S3, YOLO, FFmpeg) are mocked so the
 suite runs without any infrastructure. Tests cover orchestration only:
 status transitions, early-exit paths, sequencing of stages.
 """
+from contextlib import ExitStack
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -60,14 +61,15 @@ async def test_pipeline_happy_path_sets_status_completed(tmp_path):
     session = _make_session_mock(mock_video)
     engine = _make_engine_mock()
 
-    with (
-        *_patch_infrastructure(session, engine, tmp_path),
-        patch("app.services.storage.download_file"),
-        patch("app.services.detector.detect_possessions", return_value=fake_segments),
-        patch("app.services.cutter.cut_clips", return_value=fake_clip_paths),
-        patch("app.services.storage.upload_file") as mock_upload,
-        patch("os.makedirs"),
-    ):
+    with ExitStack() as stack:
+        for ctx in _patch_infrastructure(session, engine, tmp_path):
+            stack.enter_context(ctx)
+        stack.enter_context(patch("app.services.storage.download_file"))
+        stack.enter_context(patch("app.services.detector.detect_possessions", return_value=fake_segments))
+        stack.enter_context(patch("app.services.cutter.cut_clips", return_value=fake_clip_paths))
+        mock_upload = stack.enter_context(patch("app.services.storage.upload_file"))
+        stack.enter_context(patch("os.makedirs"))
+
         await _run_pipeline(1)
 
     assert mock_video.status == VideoStatus.completed
@@ -87,14 +89,15 @@ async def test_pipeline_happy_path_creates_correct_clip_s3_keys(tmp_path):
     session = _make_session_mock(mock_video)
     engine = _make_engine_mock()
 
-    with (
-        *_patch_infrastructure(session, engine, tmp_path),
-        patch("app.services.storage.download_file"),
-        patch("app.services.detector.detect_possessions", return_value=fake_segments),
-        patch("app.services.cutter.cut_clips", return_value=fake_clip_paths),
-        patch("app.services.storage.upload_file") as mock_upload,
-        patch("os.makedirs"),
-    ):
+    with ExitStack() as stack:
+        for ctx in _patch_infrastructure(session, engine, tmp_path):
+            stack.enter_context(ctx)
+        stack.enter_context(patch("app.services.storage.download_file"))
+        stack.enter_context(patch("app.services.detector.detect_possessions", return_value=fake_segments))
+        stack.enter_context(patch("app.services.cutter.cut_clips", return_value=fake_clip_paths))
+        mock_upload = stack.enter_context(patch("app.services.storage.upload_file"))
+        stack.enter_context(patch("os.makedirs"))
+
         await _run_pipeline(7)
 
     upload_call = mock_upload.call_args_list[0]
@@ -115,13 +118,14 @@ async def test_pipeline_marks_error_when_no_segments_detected(tmp_path):
     session = _make_session_mock(mock_video)
     engine = _make_engine_mock()
 
-    with (
-        *_patch_infrastructure(session, engine, tmp_path),
-        patch("app.services.storage.download_file"),
-        patch("app.services.detector.detect_possessions", return_value=[]),
-        patch("app.services.cutter.cut_clips") as mock_cut,
-        patch("os.makedirs"),
-    ):
+    with ExitStack() as stack:
+        for ctx in _patch_infrastructure(session, engine, tmp_path):
+            stack.enter_context(ctx)
+        stack.enter_context(patch("app.services.storage.download_file"))
+        stack.enter_context(patch("app.services.detector.detect_possessions", return_value=[]))
+        mock_cut = stack.enter_context(patch("app.services.cutter.cut_clips"))
+        stack.enter_context(patch("os.makedirs"))
+
         await _run_pipeline(3)
 
     assert mock_video.status == VideoStatus.error
@@ -134,11 +138,12 @@ async def test_pipeline_exits_gracefully_when_video_not_found(tmp_path):
     session = _make_session_mock(video_mock=None)
     engine = _make_engine_mock()
 
-    with (
-        *_patch_infrastructure(session, engine, tmp_path),
-        patch("app.services.storage.download_file") as mock_download,
-        patch("os.makedirs"),
-    ):
+    with ExitStack() as stack:
+        for ctx in _patch_infrastructure(session, engine, tmp_path):
+            stack.enter_context(ctx)
+        mock_download = stack.enter_context(patch("app.services.storage.download_file"))
+        stack.enter_context(patch("os.makedirs"))
+
         await _run_pipeline(999)
 
     mock_download.assert_not_called()
@@ -156,14 +161,15 @@ async def test_pipeline_marks_error_on_unexpected_exception(tmp_path):
     session = _make_session_mock(mock_video)
     engine = _make_engine_mock()
 
-    with (
-        *_patch_infrastructure(session, engine, tmp_path),
-        patch(
+    with ExitStack() as stack:
+        for ctx in _patch_infrastructure(session, engine, tmp_path):
+            stack.enter_context(ctx)
+        stack.enter_context(patch(
             "app.services.storage.download_file",
             side_effect=RuntimeError("S3 unreachable"),
-        ),
-        patch("os.makedirs"),
-    ):
+        ))
+        stack.enter_context(patch("os.makedirs"))
+
         with pytest.raises(RuntimeError, match="S3 unreachable"):
             await _run_pipeline(4)
 
