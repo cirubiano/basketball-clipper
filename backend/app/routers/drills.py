@@ -147,7 +147,11 @@ async def list_drills(
     stmt = (
         select(Drill)
         .options(selectinload(Drill.tags))
-        .where(Drill.user_id == current_user.id)
+        .where(
+            Drill.user_id == current_user.id,
+            Drill.is_catalog_copy.is_(False),
+            Drill.is_team_owned.is_(False),
+        )
     )
     if type is not None:
         stmt = stmt.where(Drill.type == type)

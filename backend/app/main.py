@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.routers import auth, clips, video, ws
 from app.routers import clubs, seasons, teams, profiles, players
-from app.routers import drills
+from app.routers import drills, catalog, playbook
 
 app = FastAPI(
     title="Basketball Club Management API",
@@ -38,3 +38,7 @@ app.include_router(ws.router, tags=["websocket"])
 
 # ── Personal Library — Drills & Plays ─────────────────────────────────────────
 app.include_router(drills.router, prefix="/drills", tags=["drills"])
+
+# ── Club Catalog + Team Playbook ──────────────────────────────────────────────
+app.include_router(catalog.router, prefix="/clubs", tags=["catalog"])
+app.include_router(playbook.router, prefix="/clubs", tags=["playbook"])

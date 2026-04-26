@@ -378,17 +378,27 @@ backend/
 │   │   ├── profile.py        # Profile + UserRole enum
 │   │   ├── video.py          # Video + VideoStatus enum (+ team_id FK)
 │   │   ├── clip.py           # Clip
-│   │   └── exercise.py       # Exercise (stub)
+│   │   ├── exercise.py       # Exercise (stub)
+│   │   ├── drill.py          # Drill, Tag, DrillType, CourtLayoutType, drill_tags M2M
+│   │   ├── club_tag.py       # ClubTag — tags del catálogo del club
+│   │   ├── catalog.py        # ClubCatalogEntry + catalog_entry_tags M2M
+│   │   └── playbook.py       # TeamPlaybookEntry
 │   └── schemas/
 │       ├── auth.py           # Login, Register, TokenResponse, UserResponse, SwitchProfileRequest
 │       ├── club.py           # Club, Season, Team, ClubMember, Profile schemas
 │       ├── video.py          # InitUpload, CompleteUpload, etc.
-│       └── clip.py
+│       ├── clip.py
+│       ├── drill.py          # Drill, Tag schemas
+│       ├── catalog.py        # ClubTag, CatalogEntry schemas
+│       └── playbook.py       # PlaybookEntry schemas
 ├── alembic/versions/
 │   ├── 0001_initial_schema.py
 │   ├── 0002_multipart_upload.py
 │   ├── 0003_add_video_title.py
-│   └── 0004_phase_a_org_structure.py
+│   ├── 0004_phase_a_org_structure.py
+│   ├── 0005_phase_c_players.py
+│   ├── 0006_phase_d_drills.py
+│   └── 0007_phase_e_catalog_playbook.py
 ├── models/
 │   └── README.md             # Cómo usar modelos custom de YOLO
 ├── scripts/
@@ -567,6 +577,20 @@ y sus tipos en `shared/types/`. Web y mobile nunca llaman al backend directament
 | DELETE | /drills/{id} | author | Archivar drill/play |
 | POST | /drills/{id}/clone | author | Clonar en biblioteca personal (RF-151) |
 | POST | /drills/{id}/variants | author | Crear variante (RF-140) |
+| GET | /clubs/{id}/catalog/tags | member | Listar tags del catálogo del club |
+| POST | /clubs/{id}/catalog/tags | tech_director | Crear tag del club |
+| PATCH | /clubs/{id}/catalog/tags/{tag_id} | tech_director | Actualizar tag del club |
+| DELETE | /clubs/{id}/catalog/tags/{tag_id} | tech_director | Archivar tag del club |
+| GET | /clubs/{id}/catalog | member | Listar entradas del catálogo |
+| POST | /clubs/{id}/catalog | member | Publicar drill al catálogo (RF-120) |
+| GET | /clubs/{id}/catalog/{entry_id} | member | Detalle de entrada del catálogo |
+| POST | /clubs/{id}/catalog/{entry_id}/update-copy | author | Actualizar copia con original (RF-122) |
+| POST | /clubs/{id}/catalog/{entry_id}/copy-to-library | member | Copiar a biblioteca personal (RF-150) |
+| PATCH | /clubs/{id}/catalog/{entry_id}/tags | author_or_td | Actualizar tags de la entrada |
+| DELETE | /clubs/{id}/catalog/{entry_id} | author_or_td | Retirar del catálogo (RF-123) |
+| GET | /clubs/{id}/teams/{tid}/playbook | team_member | Listar playbook del equipo (RF-167) |
+| POST | /clubs/{id}/teams/{tid}/playbook | team_member | Añadir drill al playbook (RF-160) |
+| DELETE | /clubs/{id}/teams/{tid}/playbook/{eid} | team_member | Quitar drill del playbook (RF-166) |
 
 ---
 
@@ -578,7 +602,7 @@ y sus tipos en `shared/types/`. Web y mobile nunca llaman al backend directament
 | **B** | Módulo de vídeo integrado en equipos | ✅ Completado |
 | **C** | Gestión de jugadores | ✅ Completado |
 | **D** | Editor de jugadas/ejercicios (sketch + árbol) | ✅ Completado |
-| **E** | Catálogo del club + TeamPlaybook | 🔴 No iniciado |
+| **E** | Catálogo del club + TeamPlaybook | ✅ Completado |
 | **F** | Partidos, estadísticas, entrenamientos | 🔴 No iniciado |
 
 Consulta `PROGRESS.md` para el detalle de cada fase y su estado.
