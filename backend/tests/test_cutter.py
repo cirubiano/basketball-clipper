@@ -46,7 +46,8 @@ def test_cut_clips_passes_correct_seek_and_duration(tmp_path):
     assert out_kwargs["t"] == pytest.approx(10.0)
 
 
-def test_cut_clips_uses_h264_aac_faststart(tmp_path):
+def test_cut_clips_uses_stream_copy_and_faststart(tmp_path):
+    """Cutter uses stream copy (-c copy) for speed; moov atom at start for streaming."""
     segments = [(0.0, 5.0, "team_a")]
     stream = _ffmpeg_mock()
 
@@ -54,8 +55,7 @@ def test_cut_clips_uses_h264_aac_faststart(tmp_path):
         cut_clips("source.mp4", segments, str(tmp_path))
 
     _, out_kwargs = stream.output.call_args
-    assert out_kwargs["vcodec"] == "libx264"
-    assert out_kwargs["acodec"] == "aac"
+    assert out_kwargs["c"] == "copy"
     assert out_kwargs["movflags"] == "+faststart"
 
 

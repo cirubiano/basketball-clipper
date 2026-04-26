@@ -65,6 +65,7 @@ async def test_pipeline_happy_path_sets_status_completed(tmp_path):
         for ctx in _patch_infrastructure(session, engine, tmp_path):
             stack.enter_context(ctx)
         stack.enter_context(patch("app.services.storage.download_file"))
+        stack.enter_context(patch("os.path.getsize", return_value=100 * 1024 * 1024))
         stack.enter_context(patch("app.services.detector.detect_possessions", return_value=fake_segments))
         stack.enter_context(patch("app.services.cutter.cut_clips", return_value=fake_clip_paths))
         mock_upload = stack.enter_context(patch("app.services.storage.upload_file"))
@@ -93,6 +94,7 @@ async def test_pipeline_happy_path_creates_correct_clip_s3_keys(tmp_path):
         for ctx in _patch_infrastructure(session, engine, tmp_path):
             stack.enter_context(ctx)
         stack.enter_context(patch("app.services.storage.download_file"))
+        stack.enter_context(patch("os.path.getsize", return_value=100 * 1024 * 1024))
         stack.enter_context(patch("app.services.detector.detect_possessions", return_value=fake_segments))
         stack.enter_context(patch("app.services.cutter.cut_clips", return_value=fake_clip_paths))
         mock_upload = stack.enter_context(patch("app.services.storage.upload_file"))
@@ -122,6 +124,7 @@ async def test_pipeline_marks_error_when_no_segments_detected(tmp_path):
         for ctx in _patch_infrastructure(session, engine, tmp_path):
             stack.enter_context(ctx)
         stack.enter_context(patch("app.services.storage.download_file"))
+        stack.enter_context(patch("os.path.getsize", return_value=100 * 1024 * 1024))
         stack.enter_context(patch("app.services.detector.detect_possessions", return_value=[]))
         mock_cut = stack.enter_context(patch("app.services.cutter.cut_clips"))
         stack.enter_context(patch("os.makedirs"))

@@ -5,13 +5,19 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "basketball-clipper",
-    "platforms": ["ios", "android"],
-    "assetBundlePatterns": ["**/*"],
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "Necesitamos acceso a tu galería para seleccionar vídeos de partidos.",
-        "NSCameraUsageDescription": "Acceso a la cámara para grabar partidos directamente."
+        "NSPhotoLibraryUsageDescription": "Necesitamos acceso a tu galer\u00eda para seleccionar v\u00eddeos de partidos.",
+        "NSCameraUsageDescription": "Acceso a la c\u00e1mara para grabar partidos directamente."
       }
     },
     "android": {

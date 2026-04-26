@@ -22,6 +22,11 @@ app.add_middleware(
 )
 
 # ── Auth & Profiles ───────────────────────────────────────────────────────────
+@app.get("/health", tags=["health"])
+async def health_check() -> dict:
+    return {"status": "ok"}
+
+
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(profiles.router, prefix="/profiles", tags=["profiles"])
 

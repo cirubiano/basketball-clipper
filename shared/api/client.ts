@@ -12,6 +12,9 @@
 
 // ── URL resolution ────────────────────────────────────────────────────────────
 
+// Allow process.env access without requiring @types/node in every consumer
+declare const process: { env: Record<string, string | undefined> } | undefined;
+
 function resolveBaseUrl(): string {
   // `process` may be undefined in some browser/Expo environments
   if (typeof process !== "undefined") {
