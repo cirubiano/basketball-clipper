@@ -53,3 +53,5 @@ tmp/
 
 # Pesos YOLO custom (no se distribuyen vía git)
 backend/models/*.pt
+
+.claude/worktrees/
