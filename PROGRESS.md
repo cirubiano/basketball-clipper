@@ -146,7 +146,20 @@ interactivo para crear y editar jugadas (`Play`) y ejercicios (`Drill`).
 - Variantes entre jugadas/ejercicios (RF-140 a RF-144)
 - Autoría: solo el autor puede editar (RF-126)
 
-**Estado**: 🔴 No iniciado — la fase más compleja, planificar con detalle antes de empezar
+**Completado en sesión 12:**
+- [x] Modelo `Drill` + `Tag` + enums `DrillType`/`CourtLayoutType` + M2M `drill_tags`
+- [x] Migración `0006_phase_d_drills.py`: tablas `tags`, `drills`, `drill_tags`; enums idempotentes
+- [x] Router `drills.py`: 11 endpoints — tags CRUD + drills CRUD + clone + variants
+- [x] `shared/types/drill.ts`: `DrillType`, `CourtLayoutType`, `SketchElement`, `SequenceNode`, `Tag`, `DrillSummary`, `Drill`
+- [x] `shared/api/drills.ts`: funciones completas para tags y drills
+- [x] Canvas editor: `CourtBackground.tsx`, `ElementRenderer.tsx`, `ElementPalette.tsx`, `PropertiesPanel.tsx`, `CourtCanvas.tsx`
+- [x] Árbol de secuencias: `tree-utils.ts`, `SequenceTreePanel.tsx` (herencia de posición RF-188)
+- [x] `useUndoRedo.ts`: hook genérico con historial inmutable (RF-250 a RF-252)
+- [x] `DrillEditor.tsx`: orquestador — tabs, Ctrl+Z/Y/S, auto-save
+- [x] Web `/drills`: biblioteca personal con tabs tipo/jugada, clone, archive
+- [x] Web `/drills/[id]/edit`: página de edición con auto-save
+
+**Estado**: ✅ Completado — ver sesión 12 del historial
 
 ---
 
@@ -211,6 +224,11 @@ personal, el catálogo del club y los playbooks de los equipos.
 - `Player` — id, club_id, first_name, last_name, date_of_birth, position (PlayerPosition enum), photo_url, archived_at
 - `RosterEntry` — id, player_id, team_id, season_id, jersey_number, position, ppg/rpg/apg/mpg, archived_at
 - `Exercise` — stub
+- `Drill` — id, user_id, type (DrillType enum), court_layout (CourtLayoutType enum), title, description, root_sequence (JSON), is_catalog_copy, is_team_owned, owned_team_id, archived_at
+- `Tag` — id, user_id, name, color, archived_at + M2M `drill_tags`
+- `ClubTag` — id, club_id, name, color, archived_at
+- `ClubCatalogEntry` — id, club_id, drill_id, published_by, archived_at + M2M `catalog_entry_tags`
+- `TeamPlaybookEntry` — id, team_id, drill_id, added_by, is_frozen, archived_at
 
 **Migraciones**
 - `0001_initial_schema.py` — tablas base
@@ -218,6 +236,8 @@ personal, el catálogo del club y los playbooks de los equipos.
 - `0003_add_video_title.py` — columna title
 - `0004_phase_a_org_structure.py` — clubs, seasons, teams, club_members, profiles; is_admin en users; team_id en videos
 - `0005_phase_c_players.py` — tablas players + roster_entries; enum playerposition (idempotente)
+- `0006_phase_d_drills.py` — tablas tags, drills, drill_tags; enums DrillType, CourtLayoutType; DROP DEFAULT antes del ALTER TYPE
+- `0007_phase_e_catalog_playbook.py` — columnas is_catalog_copy/is_team_owned/owned_team_id en drills; tablas club_tags, club_catalog_entries, catalog_entry_tags, team_playbook_entries
 
 **Routers**
 - `auth.py` — register, login, switch-profile, clear-profile, me
@@ -230,20 +250,24 @@ personal, el catálogo del club y los playbooks de los equipos.
 - `ws.py` — WebSocket progreso
 - `players.py` — CRUD jugadores + CRUD plantilla; permisos TD/HC/Admin; soft-delete RF-090
 - `exercises.py` — stub
+- `drills.py` — 11 endpoints: tags CRUD + drills CRUD + clone + variants; filtro is_catalog_copy/is_team_owned en GET
+- `catalog.py` — 11 endpoints bajo prefix /clubs: tags del club CRUD + catálogo CRUD (RF-115 a RF-125)
+- `playbook.py` — 3 endpoints bajo prefix /clubs: GET/POST/DELETE playbook del equipo (RF-160 a RF-169)
 
 **Servicios**
 - `storage.py` — S3/MinIO completo
 - `detector.py` — YOLOv8, LAB, K-means, sliding window, progress callbacks
 - `cutter.py` — FFmpeg, corte por segmentos, subida a S3
 - `queue.py` — Celery, orquesta pipeline, actualiza BD, notifica WS
+- `catalog.py` — lógica de negocio del catálogo: create_catalog_copy, copy_drill_to_library, push_changes_to_catalog, freeze_playbook_entries, break_catalog_references
 
 ### Shared (`shared/`)
-- Tipos: `Video`, `VideoStatus`, `Clip`, `User`, `AuthTokens`, multipart types + `Club`, `Season`, `Team`, `ClubMember`, `Profile`, `UserRole`, `SeasonStatus`, `profileLabel()` + `Player`, `RosterEntry`, `PlayerPosition`, `POSITION_LABELS`
-- API: `uploadVideo()` con progreso/concurrencia/reanudación, CRUD vídeos y clips, clubs/seasons/teams/profiles API, `switchProfile()`, `clearProfile()` + `listPlayers`, `createPlayer`, `updatePlayer`, `archivePlayer`, `listRoster`, `addToRoster`, `updateRosterEntry`, `removeFromRoster`
+- Tipos: `Video`, `VideoStatus`, `Clip`, `User`, `AuthTokens`, multipart types + `Club`, `Season`, `Team`, `ClubMember`, `Profile`, `UserRole`, `SeasonStatus`, `profileLabel()` + `Player`, `RosterEntry`, `PlayerPosition`, `POSITION_LABELS` + `DrillType`, `CourtLayoutType`, `SketchElement`, `SequenceNode`, `Tag`, `DrillSummary`, `Drill` + `ClubTag`, `CatalogEntry`, `PlaybookEntry`
+- API: `uploadVideo()` con progreso/concurrencia/reanudación, CRUD vídeos y clips, clubs/seasons/teams/profiles API, `switchProfile()`, `clearProfile()` + `listPlayers`, `createPlayer`, `updatePlayer`, `archivePlayer`, `listRoster`, `addToRoster`, `updateRosterEntry`, `removeFromRoster` + drills API (tags CRUD + drills CRUD + clone) + catalog API (tags del club + catálogo completo) + `listPlaybook`, `addToPlaybook`, `removeFromPlaybook`
 
 ### Web (`web/`)
-- Páginas: `/`, `/upload`, `/videos`, `/videos/[id]`, `/videos/[id]/clips/[clipId]`, auth, `/players`, `/teams/[teamId]/roster`
-- Componentes: `FloatingUploadWidget`, `VideoUploader`, `VideoCard`, `ClipCard`, `ClipPlayer`, `ProcessingStatus`, `DeleteVideoDialog`, `ProfileSelector`
+- Páginas: `/`, `/upload`, `/videos`, `/videos/[id]`, `/videos/[id]/clips/[clipId]`, auth, `/players`, `/teams/[teamId]/roster`, `/drills`, `/drills/[id]/edit`, `/clubs/[clubId]/catalog`, `/teams/[teamId]/playbook`
+- Componentes: `FloatingUploadWidget`, `VideoUploader`, `VideoCard`, `ClipCard`, `ClipPlayer`, `ProcessingStatus`, `DeleteVideoDialog`, `ProfileSelector` + drill-editor: `CourtBackground`, `CourtCanvas`, `ElementRenderer`, `ElementPalette`, `PropertiesPanel`, `SequenceTreePanel`, `DrillEditor`
 - Lib: auth context (con `activeProfile`, `switchProfile`, `clearActiveProfile`), uploadJob context, React Query
 
 ---
@@ -412,16 +436,4 @@ Sin commits — sesión de análisis y documentación.
 ### 2026-04-24 — Sesión 2 (multipart upload)
 **Commit**: `0f5d12b`
 - Multipart upload S3 completo en `storage.py` y `video.py`
-- `shared/api/videoUpload.ts` — cliente multipart con progreso, concurrencia y reanudación
-- Migración `0002_multipart_upload.py`
-- `tests/test_multipart_upload.py`
-- `scripts/preflight.py`
-
-### 2026-04-24 — Sesión 1 (inicial)
-**Commits**: `434fa5e` + `c8b9753`
-- Estructura base del monorepo
-- Backend: modelos, routers, servicios, auth, Alembic
-- Web: Next.js 14 setup, componentes base, auth
-- Mobile: estructura y scaffolding
-- CI/CD GitHub Actions
-- Migración `0001_initial_schema.py`
+- `shared/api/videoUpload.ts` — cliente multipart con progreso, concurrencia y rea
