@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -20,7 +20,6 @@ from app.core.security import get_current_user
 from app.models.club import Club
 from app.models.player import Player, RosterEntry
 from app.models.profile import Profile, UserRole
-from app.models.season import Season
 from app.models.team import Team
 from app.models.user import User
 from app.schemas.player import (

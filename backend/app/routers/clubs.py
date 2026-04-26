@@ -5,7 +5,7 @@ Solo un Admin puede crear clubs (RF-022).
 Solo un TechnicalDirector o Admin puede gestionar miembros y perfiles.
 Cualquier miembro del club puede consultarlo.
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload

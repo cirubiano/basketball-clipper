@@ -22,12 +22,19 @@ export function VideoUploader({ onFile, disabled = false }: VideoUploaderProps) 
     if (disabled || picking) return;
     setPicking(true);
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result = await DocumentPicker.getDocumentAsync({
         type: "video/*",
         copyToCacheDirectory: true,
-      });
+      }) as any;
+      // expo-document-picker ≥10: {canceled, assets[]}
       if (result.canceled) return;
-      const asset = result.assets[0];
+      const asset = result.assets[0] as {
+        uri: string;
+        name: string;
+        mimeType?: string;
+        size?: number;
+      };
       setSelected({ name: asset.name, size: asset.size ?? 0 });
       onFile({
         uri: asset.uri,

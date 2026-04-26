@@ -14,7 +14,6 @@ arranque el contenedor para descubrir que falta el .env.
 from __future__ import annotations
 
 import ast
-import os
 import subprocess
 import sys
 from pathlib import Path

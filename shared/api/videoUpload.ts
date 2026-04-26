@@ -257,6 +257,22 @@ export function uploadVideoMultipart(
   return { done, abort };
 }
 
+
+// ── Simple convenience wrapper for mobile ───────────────────────────────────
+
+/**
+ * Sube un archivo y devuelve el video_id. No ofrece progreso ni cancelación.
+ * Para subidas con progreso, usa uploadVideoMultipart() directamente.
+ */
+export async function uploadVideo(
+  file: File,
+  token: string,
+): Promise<{ id: number }> {
+  const ctrl = uploadVideoMultipart(file, { token, title: file.name });
+  const job = await ctrl.done;
+  return { id: job.id };
+}
+
 // ── Single-part upload with retry ───────────────────────────────────────────
 
 async function uploadPartWithRetry(

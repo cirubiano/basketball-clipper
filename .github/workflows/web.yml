@@ -38,8 +38,8 @@ jobs:
         run: npm install
 
       - name: Type check shared
-        working-directory: shared
-        run: npx tsc --noEmit
+        working-directory: web
+        run: npx tsc --project ../shared/tsconfig.json --noEmit
 
       - name: Lint
         working-directory: web

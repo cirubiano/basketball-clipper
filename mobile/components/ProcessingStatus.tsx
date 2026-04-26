@@ -10,7 +10,7 @@ interface Step {
 
 const STEPS: Step[] = [
   {
-    statuses: ["validating"],
+    statuses: ["pending"],
     label: "Validando",
     description: "Comprobando que el vídeo es un partido de baloncesto",
   },
@@ -32,7 +32,7 @@ const STEPS: Step[] = [
 ];
 
 const STATUS_STEP_INDEX: Partial<Record<VideoStatus, number>> = {
-  validating: 0,
+  pending: 0,
   processing: 1,
   completed: 3,
 };
