@@ -14,7 +14,7 @@
 | **B** | Módulo de vídeo integrado en equipos | ✅ Completado | Backend + web + mobile + tests |
 | **C** | Gestión de jugadores | ✅ Completado | Backend + shared + web completos |
 | **D** | Editor de jugadas/ejercicios | ✅ Completado | Backend + shared + web (canvas + árbol + undo/redo) |
-| **E** | Catálogo del club + TeamPlaybook | 🔴 No iniciado | Requiere Fase D |
+| **E** | Catálogo del club + TeamPlaybook | ✅ Completado | Backend + shared + web |
 | **F** | Partidos, estadísticas, entrenamientos | 🔴 No iniciado | Requiere Fase E |
 
 ---
@@ -153,14 +153,25 @@ interactivo para crear y editar jugadas (`Play`) y ejercicios (`Drill`).
 **Objetivo**: sistema de compartición de jugadas/ejercicios entre la biblioteca
 personal, el catálogo del club y los playbooks de los equipos.
 
-**Qué incluye** (según `REQUIREMENTS.md` §9.3-9.6):
-- `ClubCatalog`: ejercicios/jugadas publicados al club (copias con referencia al original)
-- `TeamPlaybookEntry`: vínculo vivo entre una jugada y un equipo
-- Reglas de copia congelada cuando el autor sale del equipo (RF-164)
-- Tags personales vs. tags del club (RF-115 a RF-119)
-- Gestión del catálogo por el `TechnicalDirector` (RF-130)
+**Completado en sesión 13:**
+- [x] Modelo `ClubTag` — etiquetas del catálogo del club (gestionadas por TD)
+- [x] Modelo `ClubCatalogEntry` + M2M `catalog_entry_tags` — copias publicadas al catálogo
+- [x] Modelo `TeamPlaybookEntry` — vínculo vivo drill ↔ equipo; soporta `is_frozen`
+- [x] Drill model: añadidos flags `is_catalog_copy`, `is_team_owned`, `owned_team_id`
+- [x] Migración `0007_phase_e_catalog_playbook.py`: nuevas columnas en drills + 4 tablas nuevas
+- [x] Service `catalog.py`: `create_catalog_copy`, `copy_drill_to_library`, `push_changes_to_catalog`, `freeze_playbook_entries`, `freeze_all_club_playbook_entries`, `break_catalog_references`
+- [x] Router `catalog.py` (prefix `/clubs`): tags CRUD + catálogo CRUD con 10 endpoints
+- [x] Router `playbook.py` (prefix `/clubs`): 3 endpoints de playbook del equipo
+- [x] `profiles.py` actualizado: archivado de perfil desencadena RF-164 (freezing) y RF-124 (ruptura de referencia)
+- [x] `drills.py` actualizado: `GET /drills` filtra `is_catalog_copy` y `is_team_owned`
+- [x] `shared/types/catalog.ts`: tipos `ClubTag`, `CatalogEntry`, `PlaybookEntry` + requests
+- [x] `shared/api/catalog.ts`: funciones completas para tags + catálogo
+- [x] `shared/api/playbook.ts`: `listPlaybook`, `addToPlaybook`, `removeFromPlaybook`
+- [x] Web `/clubs/[clubId]/catalog`: vista del catálogo con publicar, copiar a biblioteca, actualizar copia, retirar
+- [x] Web `/teams/[teamId]/playbook`: vista del playbook con añadir desde biblioteca, quitar, indicador de congelado
+- [x] `Navbar.tsx` actualizado: enlaces contextuales a Catálogo y Playbook según perfil activo
 
-**Estado**: 🔴 No iniciado — requiere Fase D completa
+**Estado**: ✅ Completado — ver sesión 13 del historial
 
 ---
 
@@ -236,6 +247,37 @@ personal, el catálogo del club y los playbooks de los equipos.
 ---
 
 ## Historial de sesiones
+
+### 2026-04-26 — Sesión 13 (Fase E — Catálogo del club + TeamPlaybook)
+
+**E1 — Backend:**
+- **`backend/app/models/club_tag.py`**: modelo `ClubTag` — tags del catálogo del club
+- **`backend/app/models/catalog.py`**: modelo `ClubCatalogEntry` + tabla M2M `catalog_entry_tags`
+- **`backend/app/models/playbook.py`**: modelo `TeamPlaybookEntry` con `is_frozen` para RF-164
+- **`backend/app/models/drill.py`**: añadidos `is_catalog_copy`, `is_team_owned`, `owned_team_id`
+- **`backend/app/models/__init__.py`**: exports actualizados
+- **`backend/app/schemas/catalog.py`**: schemas `ClubTagCreate/Update/Response`, `PublishToCatalogRequest`, `CatalogEntryResponse`, `UpdateCatalogTagsRequest`
+- **`backend/app/schemas/playbook.py`**: schemas `AddToPlaybookRequest`, `PlaybookEntryResponse`
+- **`backend/app/services/catalog.py`**: toda la lógica de negocio — copiar al catálogo, copiar a biblioteca, actualizar copia, congelar entradas, romper referencias
+- **`backend/app/routers/catalog.py`**: 10 endpoints bajo prefix `/clubs` — tags CRUD + catálogo CRUD
+- **`backend/app/routers/playbook.py`**: 3 endpoints bajo prefix `/clubs` — playbook GET/POST/DELETE
+- **`backend/app/routers/profiles.py`**: cascade RF-164 (freeze) + RF-124 (break references) al archivar perfil
+- **`backend/app/routers/drills.py`**: filtro `is_catalog_copy=False` + `is_team_owned=False` en GET /drills
+- **`backend/app/main.py`**: registro de nuevos routers catalog y playbook
+- **`backend/alembic/versions/0007_phase_e_catalog_playbook.py`**: migración completa
+
+**E2 — Shared:**
+- **`shared/types/catalog.ts`**: tipos `ClubTag`, `CatalogEntry`, `PlaybookEntry` + requests
+- **`shared/api/catalog.ts`**: funciones para tags del club + catálogo completo (RF-120 a RF-125)
+- **`shared/api/playbook.ts`**: `listPlaybook`, `addToPlaybook`, `removeFromPlaybook`
+- **`shared/types/index.ts`** + **`shared/api/index.ts`**: exports actualizados
+
+**E3 — Web:**
+- **`web/app/clubs/[clubId]/catalog/page.tsx`**: catálogo del club — publicar, copiar a biblioteca, actualizar copia, retirar
+- **`web/app/teams/[teamId]/playbook/page.tsx`**: playbook del equipo — añadir desde biblioteca, quitar, indicador de congelado (RF-164)
+- **`web/components/layout/Navbar.tsx`**: enlaces contextuales a Catálogo y Playbook según perfil activo
+
+**RFs implementados:** RF-115 a RF-119 (tags), RF-120 a RF-125 (catálogo), RF-130 (gestión TD), RF-150 (copia a biblioteca), RF-160 a RF-169 (playbook), RF-164 (copias congeladas), RF-124 (ruptura de referencias)
 
 ### 2026-04-25 — Sesión 12 (Fase D — editor de jugadas/ejercicios + arranque y fixes)
 

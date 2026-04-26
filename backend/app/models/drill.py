@@ -12,6 +12,7 @@ import uuid as _uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     Enum as SAEnum,
     ForeignKey,
@@ -112,6 +113,17 @@ class Drill(Base):
     parent_id: Mapped[int | None] = mapped_column(
         ForeignKey("drills.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Flags para copias especiales (no aparecen en la biblioteca personal)
+    is_catalog_copy: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )
+    is_team_owned: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )
+    owned_team_id: Mapped[int | None] = mapped_column(
+        ForeignKey("teams.id", ondelete="SET NULL"), nullable=True
+    )
+
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

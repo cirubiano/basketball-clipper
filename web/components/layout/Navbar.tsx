@@ -8,22 +8,30 @@ import { Button } from "@/components/ui/button";
 import { ProfileSelector } from "@/components/layout/ProfileSelector";
 import { cn } from "@/lib/utils";
 
-const navLinks = [
-  { href: "/", label: "Dashboard" },
-  { href: "/videos", label: "Mis vídeos" },
-  { href: "/players", label: "Jugadores" },
-  { href: "/drills", label: "Biblioteca" },
-];
-
 export function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, activeProfile } = useAuth();
 
   function handleLogout() {
     logout();
     router.push("/login");
   }
+
+  const navLinks = [
+    { href: "/", label: "Dashboard" },
+    { href: "/videos", label: "Mis vídeos" },
+    ...(activeProfile?.club_id
+      ? [{ href: `/players`, label: "Jugadores" }]
+      : []),
+    { href: "/drills", label: "Biblioteca" },
+    ...(activeProfile?.club_id
+      ? [{ href: `/clubs/${activeProfile.club_id}/catalog`, label: "Catálogo" }]
+      : []),
+    ...(activeProfile?.team_id
+      ? [{ href: `/teams/${activeProfile.team_id}/playbook`, label: "Playbook" }]
+      : []),
+  ];
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
