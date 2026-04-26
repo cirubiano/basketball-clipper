@@ -115,11 +115,13 @@ equipo/temporada (datos deportivos, plantillas).
 - [x] Navbar actualizada con enlace "Jugadores"
 - [x] `py_compile` sobre todos los archivos Python ✅ ALL OK
 
-**Pendiente:**
-- [ ] Tests de integración (players + roster)
-- [ ] Mobile: pantallas de jugadores y plantilla
+**Completado en sesión 14:**
+- [x] Tests de integración (players + roster) — `backend/tests/test_players_api.py` (15 tests: acceso, CRUD, RF-090 cascade, duplicados)
+- [x] Mobile: pantalla de jugadores (`mobile/app/players/index.tsx`) — lista, crear, editar, archivar con confirmación
+- [x] Mobile: pantalla de plantilla (`mobile/app/teams/[teamId]/roster.tsx`) — lista, añadir, editar stats, retirar
+- [x] `mobile/app/_layout.tsx` actualizado con rutas `players/index` y `teams/[teamId]/roster`
 
-**Estado**: ✅ Completado — ver sesión 11 del historial
+**Estado**: ✅ Completado — ver sesión 14 del historial
 
 ---
 
@@ -247,6 +249,14 @@ personal, el catálogo del club y los playbooks de los equipos.
 ---
 
 ## Historial de sesiones
+
+### 2026-04-26 — Sesión 14 (Fase C — tests de integración + mobile jugadores/plantilla)
+
+- **`backend/tests/test_players_api.py`** (nuevo): 15 tests — acceso sin perfil (403), creación (201/403), actualización, jugador archivado (409), soft-delete RF-090 (cascade a roster_entries), lista de plantilla, añadir a plantilla, duplicado (409), jugador archivado (404), actualizar stats, retirar (204), retirar ya archivado (409)
+- **`mobile/app/players/index.tsx`** (nuevo): pantalla de jugadores — FlatList + modal crear/editar (TextInput + picker de posición en bottom sheet), confirmación de archivado con Alert
+- **`mobile/app/teams/[teamId]/roster.tsx`** (nuevo): pantalla de plantilla — FlatList con dorsal/avatar/nombre/stats, modal añadir jugador (picker scrollable de disponibles), modal editar con stats (ppg/rpg/apg/mpg), confirmación de retirada
+- **`mobile/app/_layout.tsx`** actualizado: registradas rutas `players/index` y `teams/[teamId]/roster` en el Stack
+- Verificaciones: `py_compile tests/test_players_api.py` ✅ ALL OK
 
 ### 2026-04-26 — Sesión 13 (Fase E — Catálogo del club + TeamPlaybook)
 

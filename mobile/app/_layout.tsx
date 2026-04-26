@@ -50,6 +50,8 @@ function RootStack() {
         <Stack.Screen name="upload" options={{ title: "Subir vídeo" }} />
         <Stack.Screen name="clips/index" options={{ title: "Mis clips" }} />
         <Stack.Screen name="clips/[id]" options={{ title: "Detalle" }} />
+        <Stack.Screen name="players/index" options={{ title: "Jugadores" }} />
+        <Stack.Screen name="teams/[teamId]/roster" options={{ title: "Plantilla" }} />
         <Stack.Screen
           name="select-profile"
           options={{ title: "Selecciona tu perfil", headerBackVisible: false }}
