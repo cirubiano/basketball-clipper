@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Upload, Film, LogOut } from "lucide-react";
+import { Upload, Film, LogOut, UserCircle } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { ProfileSelector } from "@/components/layout/ProfileSelector";
@@ -18,6 +18,8 @@ export function Navbar() {
     router.push("/login");
   }
 
+  const isTD = activeProfile?.role === "technical_director";
+
   const navLinks = [
     { href: "/", label: "Dashboard" },
     { href: "/videos", label: "Mis vídeos" },
@@ -30,6 +32,13 @@ export function Navbar() {
       : []),
     ...(activeProfile?.team_id
       ? [{ href: `/teams/${activeProfile.team_id}/playbook`, label: "Playbook" }]
+      : []),
+    // Gestión del club — solo Director Técnico
+    ...(isTD && activeProfile?.club_id
+      ? [
+          { href: `/clubs/${activeProfile.club_id}/teams`, label: "Equipos" },
+          { href: `/clubs/${activeProfile.club_id}/seasons`, label: "Temporadas" },
+        ]
       : []),
   ];
 
@@ -69,9 +78,16 @@ export function Navbar() {
           </Button>
 
           {user && (
-            <Button variant="ghost" size="icon" onClick={handleLogout} title="Cerrar sesión">
-              <LogOut className="h-4 w-4" />
-            </Button>
+            <>
+              <Button variant="ghost" size="icon" asChild title="Mi perfil">
+                <Link href="/profile" aria-label="Mi perfil">
+                  <UserCircle className="h-4 w-4" />
+                </Link>
+              </Button>
+              <Button variant="ghost" size="icon" onClick={handleLogout} title="Cerrar sesión" aria-label="Cerrar sesión">
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </>
           )}
         </div>
       </div>

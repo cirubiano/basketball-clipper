@@ -68,3 +68,21 @@ export async function clearProfile(token: string): Promise<TokenResponse> {
     token,
   });
 }
+
+/**
+ * PATCH /auth/me/password
+ *
+ * Cambia la contraseña del usuario autenticado.
+ * Lanza ApiError(400) si la contraseña actual es incorrecta.
+ */
+export async function changePassword(
+  token: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  return apiRequest<void>("/auth/me/password", {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+}

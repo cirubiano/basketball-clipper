@@ -6,6 +6,7 @@
 export interface User {
   id: number;
   email: string;
+  is_admin: boolean;
   created_at: string; // ISO 8601
 }
 

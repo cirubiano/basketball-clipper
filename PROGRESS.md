@@ -274,6 +274,26 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ## Historial de sesiones
 
+### 2026-04-27 — Sesión 15 (Gaps de UI — temporadas, equipos, perfil de usuario)
+
+**Pantallas nuevas implementadas** (§9.1 de WEB_DESIGN_REQUIREMENTS.md):
+- **`web/app/clubs/[clubId]/seasons/page.tsx`** (nuevo): gestión de temporadas del club — lista con badge de estado, crear nueva temporada (nombre, fechas opcionales), activar/archivar con confirmación destructiva para archivado; permisos TD en cliente
+- **`web/app/clubs/[clubId]/teams/page.tsx`** (nuevo): gestión de equipos del club — lista filtrable por temporada, crear equipo (nombre + temporada), archivar con confirmación; aviso si no hay temporadas; permisos TD en cliente
+- **`web/app/profile/page.tsx`** (nuevo): perfil de usuario — info de cuenta (email, tipo, fecha registro) + formulario de cambio de contraseña (contraseña actual, nueva, confirmación); feedback de éxito inline
+
+**Backend:**
+- **`backend/app/schemas/auth.py`**: añadido `ChangePasswordRequest` con validador mínimo 8 chars
+- **`backend/app/routers/auth.py`**: añadido `PATCH /auth/me/password` (204) — verifica contraseña actual antes de actualizar
+
+**Shared:**
+- **`shared/api/auth.ts`**: añadida función `changePassword(token, currentPassword, newPassword)`
+- **`shared/types/user.ts`**: añadido campo `is_admin: boolean` al tipo `User` (faltaba, backend ya lo devolvía)
+
+**Navbar:**
+- **`web/components/layout/Navbar.tsx`**: añadidos enlaces "Equipos" y "Temporadas" (solo TD con club activo); botón de perfil (`UserCircle`) para todos los usuarios; `aria-label` en botones de icono
+
+**Verificaciones:** `py_compile schemas/auth.py routers/auth.py` ✅ ALL OK; archivos web sin truncamiento ✅; URLs coherentes con backend ✅; `grep apiClient shared/api/` → 0 ✅
+
 ### 2026-04-26 — Sesión 14 (Fase C — tests de integración + mobile jugadores/plantilla)
 
 - **`backend/tests/test_players_api.py`** (nuevo): 15 tests — acceso sin perfil (403), creación (201/403), actualización, jugador archivado (409), soft-delete RF-090 (cascade a roster_entries), lista de plantilla, añadir a plantilla, duplicado (409), jugador archivado (404), actualizar stats, retirar (204), retirar ya archivado (409)

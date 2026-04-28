@@ -157,6 +157,7 @@ Iconos frecuentes por contexto:
 │   ├── login/                 → Formulario de login
 │   └── register/              → Formulario de registro
 ├── select-profile/            → Selector de perfil a pantalla completa
+├── profile/                   → Perfil de usuario (info cuenta + cambio contraseña)
 ├── upload/                    → Subida y procesado de vídeo
 ├── videos/                    → Lista completa de vídeos
 │   └── [id]/                  → Detalle de vídeo + grid de clips
@@ -168,7 +169,9 @@ Iconos frecuentes por contexto:
 ├── drills/                    → Biblioteca personal de ejercicios/jugadas
 │   └── [id]/edit/             → Editor de ejercicio/jugada (canvas + árbol)
 └── clubs/[clubId]/
-    └── catalog/               → Catálogo del club
+    ├── catalog/               → Catálogo del club
+    ├── seasons/               → Gestión de temporadas (DT)
+    └── teams/                 → Gestión de equipos (DT)
 ```
 
 ### 3.2 Acceso condicional por perfil
@@ -968,13 +971,13 @@ Navbar → "Cambiar de club"
 
 ### 9.1 Pantallas no implementadas
 
-| Pantalla | Justificación |
-|---|---|
-| Gestión de clubs (admin) | Solo existe la API; no hay UI para crear/editar clubs |
-| Gestión de temporadas | Solo existe la API; Tech Director no puede gestionar temporadas desde la web |
-| Gestión de equipos | Solo existe la API; no hay UI para crear equipos dentro de un club |
-| Dashboard de admin | Sin UI para gestión de usuarios y clubs a nivel plataforma |
-| Perfil de usuario | Sin página de configuración de cuenta (cambio de contraseña, etc.) |
+| Pantalla | Estado | Notas |
+|---|---|---|
+| Gestión de clubs (admin) | ❌ Pendiente | `PATCH /clubs/{id}` requiere admin; no hay UI para crear/editar clubs |
+| Gestión de temporadas | ✅ Implementado | `/clubs/[clubId]/seasons` — crear, activar, archivar (RF-100 a RF-103) |
+| Gestión de equipos | ✅ Implementado | `/clubs/[clubId]/teams` — crear y archivar equipos por temporada |
+| Dashboard de admin | ❌ Pendiente | Sin UI para gestión de usuarios y clubs a nivel plataforma |
+| Perfil de usuario | ✅ Implementado | `/profile` — info de cuenta + cambio de contraseña |
 
 ### 9.2 Feedback de acciones exitosas
 
