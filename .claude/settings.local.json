@@ -6,7 +6,12 @@
       "Bash(where.exe python3:*)",
       "Read(//c/Users/Maxim/AppData/Local/Programs/Python//**)",
       "Bash(ls /c/Python*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }
