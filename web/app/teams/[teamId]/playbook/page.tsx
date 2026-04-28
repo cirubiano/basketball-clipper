@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, use } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
@@ -35,9 +35,9 @@ import { COURT_LAYOUT_LABELS } from "@basketball-clipper/shared/types";
 export default function PlaybookPage({
   params,
 }: {
-  params: Promise<{ teamId: string }>;
+  params: { teamId: string };
 }) {
-  const { teamId: teamIdStr } = use(params);
+  const { teamId: teamIdStr } = params;
   const teamId = Number(teamIdStr);
   const { token, activeProfile, user } = useAuth();
   const clubId = activeProfile?.club_id;

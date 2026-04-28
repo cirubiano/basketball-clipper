@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Users, Plus, Archive } from "lucide-react";
 import {
@@ -49,9 +49,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function TeamsPage({
   params,
 }: {
-  params: Promise<{ clubId: string }>;
+  params: { clubId: string };
 }) {
-  const { clubId: clubIdStr } = use(params);
+  const { clubId: clubIdStr } = params;
   const clubId = Number(clubIdStr);
   const { token, activeProfile } = useAuth();
   const qc = useQueryClient();

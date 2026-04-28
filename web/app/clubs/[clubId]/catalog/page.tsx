@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, use } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
@@ -39,9 +39,9 @@ import { cn } from "@/lib/utils";
 export default function ClubCatalogPage({
   params,
 }: {
-  params: Promise<{ clubId: string }>;
+  params: { clubId: string };
 }) {
-  const { clubId: clubIdStr } = use(params);
+  const { clubId: clubIdStr } = params;
   const clubId = Number(clubIdStr);
   const { token, user } = useAuth();
   const qc = useQueryClient();

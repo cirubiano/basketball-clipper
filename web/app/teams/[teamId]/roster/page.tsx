@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { use } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { UserPlus, Trash2, Pencil } from "lucide-react";
 import {
@@ -45,9 +44,9 @@ const POSITIONS: PlayerPosition[] = [
 export default function RosterPage({
   params,
 }: {
-  params: Promise<{ teamId: string }>;
+  params: { teamId: string };
 }) {
-  const { teamId: teamIdStr } = use(params);
+  const { teamId: teamIdStr } = params;
   const teamId = Number(teamIdStr);
   const { activeProfile, token } = useAuth();
   const clubId = activeProfile?.club_id;

@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CalendarRange, Plus, ChevronRight } from "lucide-react";
 import {
@@ -64,9 +64,9 @@ const EMPTY_FORM: SeasonCreate = { name: "", starts_at: undefined, ends_at: unde
 export default function SeasonsPage({
   params,
 }: {
-  params: Promise<{ clubId: string }>;
+  params: { clubId: string };
 }) {
-  const { clubId: clubIdStr } = use(params);
+  const { clubId: clubIdStr } = params;
   const clubId = Number(clubIdStr);
   const { token, activeProfile } = useAuth();
   const qc = useQueryClient();
