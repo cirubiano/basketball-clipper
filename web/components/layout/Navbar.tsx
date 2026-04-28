@@ -1,5 +1,6 @@
 "use client";
 
+import type { Route } from "next";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Upload, Film, LogOut, UserCircle } from "lucide-react";
@@ -20,24 +21,24 @@ export function Navbar() {
 
   const isTD = activeProfile?.role === "technical_director";
 
-  const navLinks = [
+  const navLinks: Array<{ href: Route; label: string }> = [
     { href: "/", label: "Dashboard" },
     { href: "/videos", label: "Mis vídeos" },
     ...(activeProfile?.club_id
-      ? [{ href: `/players`, label: "Jugadores" }]
+      ? [{ href: `/players` as Route, label: "Jugadores" }]
       : []),
     { href: "/drills", label: "Biblioteca" },
     ...(activeProfile?.club_id
-      ? [{ href: `/clubs/${activeProfile.club_id}/catalog`, label: "Catálogo" }]
+      ? [{ href: `/clubs/${activeProfile.club_id}/catalog` as Route, label: "Catálogo" }]
       : []),
     ...(activeProfile?.team_id
-      ? [{ href: `/teams/${activeProfile.team_id}/playbook`, label: "Playbook" }]
+      ? [{ href: `/teams/${activeProfile.team_id}/playbook` as Route, label: "Playbook" }]
       : []),
     // Gestión del club — solo Director Técnico
     ...(isTD && activeProfile?.club_id
       ? [
-          { href: `/clubs/${activeProfile.club_id}/teams`, label: "Equipos" },
-          { href: `/clubs/${activeProfile.club_id}/seasons`, label: "Temporadas" },
+          { href: `/clubs/${activeProfile.club_id}/teams` as Route, label: "Equipos" },
+          { href: `/clubs/${activeProfile.club_id}/seasons` as Route, label: "Temporadas" },
         ]
       : []),
   ];
