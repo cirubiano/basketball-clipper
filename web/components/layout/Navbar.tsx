@@ -54,7 +54,7 @@ export function Navbar() {
           {navLinks.map(({ href, label }) => (
             <Link
               key={href}
-              href={href as `/${string}`}
+              href={href}
               className={cn(
                 "px-3 py-1.5 text-sm rounded-md transition-colors",
                 pathname === href
