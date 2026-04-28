@@ -7,7 +7,6 @@
  */
 "use client";
 
-import React from "react";
 import type { CourtLayoutType } from "@basketball-clipper/shared";
 import { COURT_SIZE, FIBA, tpArcCornerX } from "./court-utils";
 

@@ -4,7 +4,6 @@
  */
 "use client";
 
-import React from "react";
 import type { SketchElement } from "@basketball-clipper/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
