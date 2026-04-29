@@ -121,7 +121,32 @@ grep -r "body: data" shared/api/  # debe devolver 0 resultados
 ```
 - Si se añade un nuevo sub-módulo, actualizar el `exports` en `shared/package.json`.
 
-**6. Componentes UI de shadcn/ui — los que existen y los que hay que crear:**
+**6. Select de shadcn/ui — nunca usar `value=""` en `<SelectItem>`:**
+Radix UI usa el string vacío internamente para limpiar la selección. Un `<SelectItem value="">` lanza un error en runtime.
+- ✗ `<SelectItem value="">Sin posición</SelectItem>`
+- ✓ `<SelectItem value="none">Sin posición</SelectItem>`
+
+El estado del formulario también debe usar `"none"` como valor inicial (no `""`), y la conversión a `null` se hace al enviar:
+```tsx
+// Estado inicial
+const [form, setForm] = useState({ position: "none" });
+
+// Select
+<Select value={form.position} onValueChange={(v) => setForm(f => ({ ...f, position: v }))}>
+  <SelectItem value="none">Sin posición</SelectItem>
+  {POSITIONS.map(p => <SelectItem key={p} value={p}>...</SelectItem>)}
+</Select>
+
+// Al enviar
+position: form.position === "none" ? null : form.position as PlayerPosition
+```
+Para campos opcionales que vienen del servidor como `null`:
+```tsx
+value={entry.position ?? "none"}
+onValueChange={(v) => setForm(f => ({ ...f, position: (v === "none" ? null : v) as PlayerPosition | null }))}
+```
+
+**7. Componentes UI de shadcn/ui — los que existen y los que hay que crear:**
 Los siguientes componentes ya están creados en `web/components/ui/`:
 `alert`, `alert-dialog`, `badge`, `button`, `card`, `dialog`, `input`, `label`, `progress`, `select`, `skeleton`
 

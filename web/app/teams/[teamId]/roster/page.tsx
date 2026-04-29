@@ -54,7 +54,7 @@ export default function RosterPage({
 
   const [addOpen, setAddOpen] = useState(false);
   const [editEntry, setEditEntry] = useState<number | null>(null);
-  const [addForm, setAddForm] = useState({ playerId: "", jersey: "", position: "" });
+  const [addForm, setAddForm] = useState({ playerId: "", jersey: "", position: "none" });
   const [editForm, setEditForm] = useState<RosterEntryUpdate>({});
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -220,7 +220,7 @@ export default function RosterPage({
                 <Select value={addForm.position} onValueChange={(v) => setAddForm((f) => ({ ...f, position: v }))}>
                   <SelectTrigger><SelectValue placeholder="Sin posicion" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Sin posicion</SelectItem>
+                    <SelectItem value="none">Sin posicion</SelectItem>
                     {POSITIONS.map((pos) => (
                       <SelectItem key={pos} value={pos}>{POSITION_LABELS[pos]}</SelectItem>
                     ))}
@@ -237,7 +237,7 @@ export default function RosterPage({
               onClick={() => addMutation.mutate({
                 player_id: Number(addForm.playerId),
                 jersey_number: addForm.jersey ? Number(addForm.jersey) : null,
-                position: (addForm.position || null) as PlayerPosition | null,
+                position: (addForm.position === "none" ? null : addForm.position) as PlayerPosition | null,
               })}
             >
               {addMutation.isPending ? "Anadiendo..." : "Anadir"}
@@ -268,12 +268,12 @@ export default function RosterPage({
               <div className="space-y-1.5">
                 <Label>Posicion</Label>
                 <Select
-                  value={editForm.position ?? ""}
-                  onValueChange={(v) => setEditForm((f) => ({ ...f, position: (v || null) as PlayerPosition | null }))}
+                  value={editForm.position ?? "none"}
+                  onValueChange={(v) => setEditForm((f) => ({ ...f, position: (v === "none" ? null : v) as PlayerPosition | null }))}
                 >
                   <SelectTrigger><SelectValue placeholder="Sin posicion" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Sin posicion</SelectItem>
+                    <SelectItem value="none">Sin posicion</SelectItem>
                     {POSITIONS.map((pos) => (
                       <SelectItem key={pos} value={pos}>{POSITION_LABELS[pos]}</SelectItem>
                     ))}
