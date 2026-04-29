@@ -16,6 +16,7 @@ class PlayerCreate(BaseModel):
     date_of_birth: Optional[date] = None
     position: Optional[PlayerPosition] = None
     photo_url: Optional[str] = Field(None, max_length=512)
+    phone: Optional[str] = Field(None, max_length=30)
 
 
 class PlayerUpdate(BaseModel):
@@ -24,6 +25,7 @@ class PlayerUpdate(BaseModel):
     date_of_birth: Optional[date] = None
     position: Optional[PlayerPosition] = None
     photo_url: Optional[str] = Field(None, max_length=512)
+    phone: Optional[str] = Field(None, max_length=30)
 
 
 class PlayerResponse(BaseModel):
@@ -34,6 +36,7 @@ class PlayerResponse(BaseModel):
     date_of_birth: Optional[date]
     position: Optional[PlayerPosition]
     photo_url: Optional[str]
+    phone: Optional[str]
     archived_at: Optional[datetime]
     created_at: datetime
 

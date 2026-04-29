@@ -2,55 +2,60 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/lib/auth";
-import { PageShell } from "@/components/layout/PageShell";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Plus, Trash2, RefreshCw, BookCopy, Tag } from "lucide-react";
+  BookOpen,
+  Dumbbell,
+  Copy,
+  Trash2,
+  ChevronRight,
+  Tag,
+} from "lucide-react";
 import {
   listCatalog,
-  listClubTags,
-  listDrills,
-  publishToCatalog,
-  removeFromCatalog,
-  updateCatalogCopy,
   copyToCatalogLibrary,
+  removeFromCatalog,
 } from "@basketball-clipper/shared/api";
-import type { CatalogEntry, DrillSummary } from "@basketball-clipper/shared/types";
-import { COURT_LAYOUT_LABELS } from "@basketball-clipper/shared/types";
-import { cn } from "@/lib/utils";
+import type { CatalogEntry } from "@basketball-clipper/shared/types";
+import { PageShell } from "@/components/layout/PageShell";
+import { useAuth } from "@/lib/auth";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 
-export default function ClubCatalogPage({
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+const typeLabel = { drill: "Ejercicio", play: "Jugada" } as const;
+const typeBadgeClass = {
+  drill: "bg-amber-100 text-amber-800 border-amber-200",
+  play: "bg-blue-100 text-blue-800 border-blue-200",
+} as const;
+
+// ── page ──────────────────────────────────────────────────────────────────────
+
+export default function CatalogPage({
   params,
 }: {
   params: { clubId: string };
 }) {
-  const { clubId: clubIdStr } = params;
-  const clubId = Number(clubIdStr);
-  const { token, user } = useAuth();
+  const clubId = Number(params.clubId);
+  const { token, activeProfile } = useAuth();
   const qc = useQueryClient();
-  const router = useRouter();
+  const isTD = activeProfile?.role === "technical_director";
 
-  const [publishOpen, setPublishOpen] = useState(false);
-  const [selectedDrillId, setSelectedDrillId] = useState<number | null>(null);
-  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [copySuccess, setCopySuccess] = useState<number | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
 
   const { data: entries = [], isLoading } = useQuery({
     queryKey: ["catalog", clubId],
@@ -58,258 +63,188 @@ export default function ClubCatalogPage({
     enabled: !!token,
   });
 
-  const { data: clubTags = [] } = useQuery({
-    queryKey: ["clubTags", clubId],
-    queryFn: () => listClubTags(token!, clubId),
-    enabled: !!token,
-  });
-
-  const { data: myDrills = [] } = useQuery({
-    queryKey: ["drills", "all"],
-    queryFn: () => listDrills(token!),
-    enabled: !!token && publishOpen,
-  });
-
-  const publishMut = useMutation({
-    mutationFn: () =>
-      publishToCatalog(token!, clubId, {
-        drill_id: selectedDrillId!,
-        tag_ids: selectedTagIds,
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["catalog", clubId] });
-      setPublishOpen(false);
-      setSelectedDrillId(null);
-      setSelectedTagIds([]);
-      setError(null);
+  const copyMut = useMutation({
+    mutationFn: (entryId: number) => copyToCatalogLibrary(token!, clubId, entryId),
+    onSuccess: (_, entryId) => {
+      setCopySuccess(entryId);
+      setCopyError(null);
+      setTimeout(() => setCopySuccess(null), 2500);
     },
-    onError: (e: Error) => setError(e.message),
+    onError: () => setCopyError("No se ha podido copiar el elemento. Inténtalo de nuevo."),
   });
 
   const removeMut = useMutation({
     mutationFn: (entryId: number) => removeFromCatalog(token!, clubId, entryId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["catalog", clubId] }),
-  });
-
-  const updateCopyMut = useMutation({
-    mutationFn: (entryId: number) => updateCatalogCopy(token!, clubId, entryId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["catalog", clubId] }),
-  });
-
-  const copyToLibraryMut = useMutation({
-    mutationFn: (entryId: number) => copyToCatalogLibrary(token!, clubId, entryId),
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ["drills"] });
-      router.push(`/drills/${data.drill_id}/edit`);
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["catalog", clubId] });
     },
   });
 
-  function toggleTag(id: number) {
-    setSelectedTagIds((prev) =>
-      prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id],
-    );
-  }
+  const active = entries.filter((e) => !e.archived_at);
 
   return (
     <PageShell>
-      <div className="container mx-auto px-4 py-6 max-w-4xl">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold">Catálogo del club</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Ejercicios y jugadas publicados por los miembros del club
-            </p>
-          </div>
-          <Button onClick={() => setPublishOpen(true)} className="gap-2">
-            <Plus className="h-4 w-4" />
-            Publicar
-          </Button>
+      <div className="max-w-3xl mx-auto space-y-6">
+
+        {/* Header */}
+        <div>
+          <h1 className="text-2xl font-bold">Catálogo del club</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Jugadas y ejercicios compartidos por el club.
+            Copia cualquiera a tu biblioteca personal para editarlo.
+          </p>
         </div>
 
+        {copyError && (
+          <Alert variant="destructive">
+            <AlertDescription>{copyError}</AlertDescription>
+          </Alert>
+        )}
+
+        {/* Content */}
         {isLoading ? (
-          <p className="text-muted-foreground text-sm">Cargando catálogo...</p>
-        ) : entries.length === 0 ? (
-          <div className="text-center py-16 text-muted-foreground">
-            <p className="mb-3">El catálogo está vacío.</p>
-            <Button variant="outline" onClick={() => setPublishOpen(true)}>
-              Publicar el primero
-            </Button>
+          <div className="space-y-3">
+            {[1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="h-20 w-full rounded-lg" />
+            ))}
+          </div>
+        ) : active.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-12 text-center">
+            <BookOpen className="h-8 w-8 mx-auto mb-3 text-muted-foreground/40" />
+            <p className="text-sm font-medium mb-1">El catálogo está vacío</p>
+            <p className="text-xs text-muted-foreground max-w-xs mx-auto">
+              Los miembros del club pueden publicar jugadas y ejercicios de su
+              biblioteca personal en este catálogo.
+            </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
-            {entries.map((entry) => (
-              <CatalogEntryRow
+          <div className="border rounded-lg divide-y">
+            {active.map((entry) => (
+              <CatalogRow
                 key={entry.id}
                 entry={entry}
-                isOwnEntry={entry.published_by === user?.id}
-                onUpdateCopy={() => updateCopyMut.mutate(entry.id)}
-                onCopyToLibrary={() => copyToLibraryMut.mutate(entry.id)}
+                isTD={isTD}
+                isCopying={copyMut.isPending && copyMut.variables === entry.id}
+                copyDone={copySuccess === entry.id}
+                isRemoving={removeMut.isPending && removeMut.variables === entry.id}
+                onCopy={() => copyMut.mutate(entry.id)}
                 onRemove={() => removeMut.mutate(entry.id)}
-                isUpdating={updateCopyMut.isPending}
-                isCopying={copyToLibraryMut.isPending}
-                isRemoving={removeMut.isPending}
               />
             ))}
           </div>
         )}
       </div>
-
-      {/* Publish dialog */}
-      <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Publicar en el catálogo</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            <div className="space-y-1.5">
-              <p className="text-sm font-medium">Ejercicio o jugada</p>
-              <Select
-                value={selectedDrillId?.toString() ?? ""}
-                onValueChange={(v) => setSelectedDrillId(Number(v))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona un elemento..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {myDrills.map((d) => (
-                    <SelectItem key={d.id} value={d.id.toString()}>
-                      {d.name}{" "}
-                      <span className="text-muted-foreground text-xs ml-1">
-                        ({d.type === "play" ? "Jugada" : "Ejercicio"})
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {clubTags.length > 0 && (
-              <div className="space-y-1.5">
-                <p className="text-sm font-medium flex items-center gap-1.5">
-                  <Tag className="h-3.5 w-3.5" />
-                  Tags del club (opcional)
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {clubTags.map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => toggleTag(t.id)}
-                      className={cn(
-                        "px-2.5 py-0.5 rounded-full text-xs border transition-colors",
-                        selectedTagIds.includes(t.id)
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "border-border text-muted-foreground hover:border-foreground",
-                      )}
-                    >
-                      {t.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPublishOpen(false)}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={() => publishMut.mutate()}
-              disabled={!selectedDrillId || publishMut.isPending}
-            >
-              {publishMut.isPending ? "Publicando..." : "Publicar"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </PageShell>
   );
 }
 
-function CatalogEntryRow({
+// ── CatalogRow ────────────────────────────────────────────────────────────────
+
+function CatalogRow({
   entry,
-  isOwnEntry,
-  onUpdateCopy,
-  onCopyToLibrary,
-  onRemove,
-  isUpdating,
+  isTD,
   isCopying,
+  copyDone,
   isRemoving,
+  onCopy,
+  onRemove,
 }: {
   entry: CatalogEntry;
-  isOwnEntry: boolean;
-  onUpdateCopy: () => void;
-  onCopyToLibrary: () => void;
-  onRemove: () => void;
-  isUpdating: boolean;
+  isTD: boolean;
   isCopying: boolean;
+  copyDone: boolean;
   isRemoving: boolean;
+  onCopy: () => void;
+  onRemove: () => void;
 }) {
-  const drill = entry.drill;
+  const { drill } = entry;
+  const typeClass = typeBadgeClass[drill.type] ?? "";
+
   return (
-    <div className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-accent/30 transition-colors group">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          <Badge
-            variant={drill.type === "play" ? "default" : "secondary"}
-            className="text-xs"
-          >
-            {drill.type === "play" ? "Jugada" : "Ejercicio"}
-          </Badge>
-          <span className="text-sm font-medium truncate">{drill.name}</span>
-          {!entry.original_drill_id && (
-            <Badge variant="outline" className="text-xs text-muted-foreground">
-              desvinculado
-            </Badge>
-          )}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          {COURT_LAYOUT_LABELS[drill.court_layout]} ·{" "}
-          {new Date(entry.updated_at).toLocaleDateString("es-ES")}
-          {entry.tags.length > 0 && (
-            <> · {entry.tags.map((t) => t.name).join(", ")}</>
-          )}
-        </p>
+    <div className="flex items-start gap-4 px-4 py-4">
+      {/* Icon */}
+      <div className="mt-0.5 shrink-0 h-9 w-9 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
+        {drill.type === "play" ? (
+          <ChevronRight className="h-4 w-4" />
+        ) : (
+          <Dumbbell className="h-4 w-4" />
+        )}
       </div>
 
-      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={onCopyToLibrary}
-          disabled={isCopying}
-          title="Copiar a mi biblioteca"
-        >
-          <BookCopy className="h-4 w-4" />
-        </Button>
-        {isOwnEntry && entry.original_drill_id && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={onUpdateCopy}
-            disabled={isUpdating}
-            title="Actualizar copia con mi versión actual"
+      {/* Info */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-medium text-sm">{drill.name}</span>
+          <span
+            className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-medium ${typeClass}`}
           >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
+            {typeLabel[drill.type]}
+          </span>
+        </div>
+
+        {drill.description && (
+          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+            {drill.description}
+          </p>
         )}
-        {isOwnEntry && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-destructive hover:text-destructive"
-            onClick={onRemove}
-            disabled={isRemoving}
-            title="Retirar del catálogo"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+
+        {entry.tags.length > 0 && (
+          <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+            <Tag className="h-3 w-3 text-muted-foreground/60 shrink-0" />
+            {entry.tags.map((t) => (
+              <Badge key={t.id} variant="secondary" className="text-xs px-1.5 py-0">
+                {t.name}
+              </Badge>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-1 shrink-0">
+        <Button
+          size="sm"
+          variant={copyDone ? "default" : "outline"}
+          onClick={onCopy}
+          disabled={isCopying || copyDone}
+          className="text-xs h-8 gap-1.5"
+        >
+          <Copy className="h-3.5 w-3.5" />
+          {copyDone ? "Copiado" : isCopying ? "Copiando…" : "Copiar"}
+        </Button>
+
+        {isTD && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                disabled={isRemoving}
+                aria-label="Quitar del catálogo"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Quitar del catálogo?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  <strong>{drill.name}</strong> dejará de estar disponible para los
+                  miembros del club. Las copias ya realizadas no se ven afectadas.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={onRemove}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Quitar
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
       </div>
     </div>

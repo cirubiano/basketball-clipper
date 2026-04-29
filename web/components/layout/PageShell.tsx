@@ -8,22 +8,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 interface PageShellProps {
   children: ReactNode;
-  /** Si true (default), redirige a /login cuando no hay usuario autenticado. */
   requireAuth?: boolean;
-  /**
-   * Si true (default), redirige a /select-profile cuando el usuario está
-   * autenticado pero no tiene un perfil activo seleccionado.
-   * Ponlo a false en la propia página /select-profile para evitar bucle.
-   */
   requireProfile?: boolean;
+  hideNav?: boolean;
 }
 
 export function PageShell({
   children,
   requireAuth = true,
   requireProfile = true,
+  hideNav = false,
 }: PageShellProps) {
-  const { user, activeProfile, isLoading } = useAuth();
+  const { user, activeProfile, profiles, isLoading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -32,10 +28,13 @@ export function PageShell({
       router.replace("/login");
       return;
     }
-    if (requireAuth && requireProfile && user && !activeProfile) {
+    // Redirigir a /select-profile SOLO cuando el usuario tiene perfiles pero
+    // ninguno activo (ej. después de "Cambiar de perfil").
+    // Si no tiene perfiles todavía, se le permite el acceso en modo personal.
+    if (requireAuth && requireProfile && user && !activeProfile && profiles.length > 0) {
       router.replace("/select-profile");
     }
-  }, [isLoading, requireAuth, requireProfile, user, activeProfile, router]);
+  }, [isLoading, requireAuth, requireProfile, user, activeProfile, profiles, router]);
 
   if (isLoading) {
     return (
@@ -55,11 +54,11 @@ export function PageShell({
   }
 
   if (requireAuth && !user) return null;
-  if (requireAuth && requireProfile && !activeProfile) return null;
+  if (requireAuth && requireProfile && !activeProfile && profiles.length > 0) return null;
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar />
+      {!hideNav && <Navbar />}
       <main className="flex-1 container mx-auto px-4 py-8">{children}</main>
     </div>
   );

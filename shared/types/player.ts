@@ -25,6 +25,7 @@ export interface Player {
   date_of_birth: string | null;
   position: PlayerPosition | null;
   photo_url: string | null;
+  phone: string | null;
   archived_at: string | null;
   created_at: string;
 }
@@ -35,6 +36,7 @@ export interface PlayerCreate {
   date_of_birth?: string | null;
   position?: PlayerPosition | null;
   photo_url?: string | null;
+  phone?: string | null;
 }
 
 export interface PlayerUpdate {
@@ -43,6 +45,7 @@ export interface PlayerUpdate {
   date_of_birth?: string | null;
   position?: PlayerPosition | null;
   photo_url?: string | null;
+  phone?: string | null;
 }
 
 // ── RosterEntry ───────────────────────────────────────────────────────────────

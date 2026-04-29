@@ -35,6 +35,7 @@ class Player(Base):
         Enum(PlayerPosition, name="playerposition")
     )
     photo_url: Mapped[str | None] = mapped_column(String(512))
+    phone: Mapped[str | None] = mapped_column(String(30))
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

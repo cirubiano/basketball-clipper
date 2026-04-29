@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Upload } from "lucide-react";
+import { Video } from "lucide-react";
 import {
   deleteVideo,
   listVideos,
@@ -14,7 +14,6 @@ import { PageShell } from "@/components/layout/PageShell";
 import { VideoCard } from "@/components/video/VideoCard";
 import { DeleteVideoDialog } from "@/components/video/DeleteVideoDialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getStoredToken } from "@/lib/auth";
 
@@ -25,8 +24,6 @@ export default function VideosPage() {
   const { data: videos, isLoading } = useQuery({
     queryKey: ["videos"],
     queryFn: () => listVideos(getStoredToken()!),
-    // Auto-refresh cada 5s si hay algún vídeo no terminal — para que el
-    // listado refleje progreso sin que el usuario tenga que recargar.
     refetchInterval: (query) => {
       const data = query.state.data as VideoListItem[] | undefined;
       const hasOngoing = data?.some((v) =>
@@ -60,21 +57,13 @@ export default function VideosPage() {
   return (
     <PageShell>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Mis vídeos</h1>
-            {videos && (
-              <p className="text-muted-foreground text-sm mt-1">
-                {videos.length} {videos.length === 1 ? "trabajo" : "trabajos"}
-              </p>
-            )}
-          </div>
-          <Button asChild>
-            <Link href="/upload">
-              <Upload className="h-4 w-4 mr-2" />
-              Subir vídeo
-            </Link>
-          </Button>
+        <div>
+          <h1 className="text-2xl font-bold">Mis vídeos</h1>
+          {videos && (
+            <p className="text-muted-foreground text-sm mt-1">
+              {videos.length} {videos.length === 1 ? "vídeo procesado" : "vídeos procesados"}
+            </p>
+          )}
         </div>
 
         {retryError && (
@@ -90,11 +79,18 @@ export default function VideosPage() {
             ))}
           </div>
         ) : !videos || videos.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <p className="text-muted-foreground">Todavía no has subido ningún vídeo.</p>
-            <Button asChild variant="link" className="mt-2">
-              <Link href="/upload">Sube tu primer vídeo</Link>
-            </Button>
+          <div className="rounded-lg border border-dashed p-14 text-center">
+            <Video className="h-8 w-8 mx-auto mb-3 text-muted-foreground/40" />
+            <p className="text-sm font-medium mb-1">Todavía no has subido ningún vídeo</p>
+            <p className="text-xs text-muted-foreground mb-4">
+              Sube un partido y generaremos un clip por cada posesión automáticamente.
+            </p>
+            <Link
+              href="/upload"
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              Subir primer vídeo
+            </Link>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

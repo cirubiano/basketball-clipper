@@ -11,7 +11,13 @@
       "Bash(python:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(curl:*)",
+      "Bash(python3 -m json.tool)",
+      "Bash(docker-compose up:*)",
+      "Bash(pytest -v)",
+      "Bash(git -C /mnt/c/Users/Maxim/projects/github/basketball-clipper add -A)",
+      "Bash(git -C /mnt/c/Users/Maxim/projects/github/basketball-clipper status --short)"
     ]
   }
 }

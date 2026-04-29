@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Users, Plus, Archive } from "lucide-react";
+import { Users, Plus, Archive, ChevronRight } from "lucide-react";
 import {
   getTeams,
   getSeasons,
@@ -43,8 +43,7 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-
-// ── component ─────────────────────────────────────────────────────────────────
+import Link from "next/link";
 
 export default function TeamsPage({
   params,
@@ -62,7 +61,6 @@ export default function TeamsPage({
   const [form, setForm] = useState<TeamCreate>({ name: "", season_id: 0 });
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Queries
   const { data: seasons = [], isLoading: seasonsLoading } = useQuery({
     queryKey: ["seasons", clubId],
     queryFn: () => getSeasons(token!, clubId),
@@ -77,14 +75,13 @@ export default function TeamsPage({
       getTeams(
         token!,
         clubId,
-        filterSeasonId !== "all" ? Number(filterSeasonId) : undefined
+        filterSeasonId !== "all" ? Number(filterSeasonId) : undefined,
       ),
     enabled: !!token,
   });
 
   const isLoading = seasonsLoading || teamsLoading;
 
-  // Mutations
   const createMutation = useMutation({
     mutationFn: (data: TeamCreate) => createTeam(token!, clubId, data),
     onSuccess: () => {
@@ -109,18 +106,11 @@ export default function TeamsPage({
   }
 
   function handleSubmit() {
-    if (!form.name.trim()) {
-      setFormError("El nombre es obligatorio");
-      return;
-    }
-    if (!form.season_id) {
-      setFormError("Debes seleccionar una temporada");
-      return;
-    }
+    if (!form.name.trim()) { setFormError("El nombre es obligatorio"); return; }
+    if (!form.season_id) { setFormError("Debes seleccionar una temporada"); return; }
     createMutation.mutate(form);
   }
 
-  /** Devuelve el nombre de la temporada dado su id */
   function seasonName(id: number): string {
     return seasons.find((s) => s.id === id)?.name ?? `Temporada ${id}`;
   }
@@ -128,15 +118,12 @@ export default function TeamsPage({
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-8 max-w-3xl">
-        {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold">Equipos</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
               {teams.length} equipo{teams.length !== 1 ? "s" : ""}
-              {filterSeasonId !== "all" && (
-                <> · {seasonName(Number(filterSeasonId))}</>
-              )}
+              {filterSeasonId !== "all" && <> · {seasonName(Number(filterSeasonId))}</>}
             </p>
           </div>
           {isTD && (
@@ -147,7 +134,6 @@ export default function TeamsPage({
           )}
         </div>
 
-        {/* Filtro por temporada */}
         {seasons.length > 0 && (
           <div className="mb-4 flex items-center gap-2">
             <Label className="text-sm shrink-0">Temporada</Label>
@@ -167,7 +153,6 @@ export default function TeamsPage({
           </div>
         )}
 
-        {/* Aviso si no hay temporadas */}
         {!seasonsLoading && seasons.length === 0 && isTD && (
           <Alert className="mb-4">
             <AlertDescription>
@@ -180,21 +165,16 @@ export default function TeamsPage({
           </Alert>
         )}
 
-        {/* Content */}
         {isLoading ? (
           <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-16 w-full rounded-lg" />
-            ))}
+            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}
           </div>
         ) : teams.length === 0 ? (
           <div className="border rounded-lg p-12 text-center text-muted-foreground">
             <Users className="h-8 w-8 mx-auto mb-3 opacity-40" />
             <p>No hay equipos todavía.</p>
             {isTD && activeSeasons.length > 0 && (
-              <Button variant="link" onClick={openCreate}>
-                Crea el primero
-              </Button>
+              <Button variant="link" onClick={openCreate}>Crea el primero</Button>
             )}
           </div>
         ) : (
@@ -213,7 +193,6 @@ export default function TeamsPage({
         )}
       </div>
 
-      {/* Dialog crear equipo */}
       <Dialog
         open={dialogOpen}
         onOpenChange={(open) => {
@@ -267,9 +246,7 @@ export default function TeamsPage({
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancelar
-            </Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
             <Button
               onClick={handleSubmit}
               disabled={createMutation.isPending || !form.name.trim() || !form.season_id}
@@ -282,8 +259,6 @@ export default function TeamsPage({
     </PageShell>
   );
 }
-
-// ── TeamRow ───────────────────────────────────────────────────────────────────
 
 function TeamRow({
   team,
@@ -299,52 +274,67 @@ function TeamRow({
   onArchive: () => void;
 }) {
   return (
-    <div className="flex items-center gap-4 px-4 py-3 group">
+    <div className="flex items-center gap-3 px-4 py-3">
       <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center text-sm font-semibold text-muted-foreground shrink-0">
         {team.name.charAt(0).toUpperCase()}
       </div>
 
-      <div className="flex-1 min-w-0">
+      {/* Nombre + temporada — clicable al roster */}
+      <Link
+        href={`/teams/${team.id}/roster`}
+        className="flex-1 min-w-0 hover:underline"
+      >
         <p className="font-medium text-sm">
           {team.name}
           {team.archived_at && (
-            <Badge variant="secondary" className="ml-2 text-xs">
-              Archivado
-            </Badge>
+            <Badge variant="secondary" className="ml-2 text-xs">Archivado</Badge>
           )}
         </p>
         <p className="text-xs text-muted-foreground">{seasonLabel}</p>
-      </div>
+      </Link>
 
+      {/* Flecha de navegación — siempre visible */}
+      <Link
+        href={`/teams/${team.id}/roster`}
+        className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+        aria-label={`Ver equipo ${team.name}`}
+      >
+        <ChevronRight className="h-4 w-4" />
+      </Link>
+
+      {/* Archivar — solo DT, siempre visible, siempre rojo */}
       {isTD && !team.archived_at && (
-        <div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                disabled={isArchiving}
-                aria-label={`Archivar equipo ${team.name}`}
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+              disabled={isArchiving}
+              aria-label={`Archivar equipo ${team.name}`}
+            >
+              <Archive className="h-3.5 w-3.5" />
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Archivar equipo?</AlertDialogTitle>
+              <AlertDialogDescription>
+                El equipo <strong>{team.name}</strong> quedará archivado y ya no
+                aparecerá en los selectores activos.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={onArchive}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >
-                <Archive className="h-3.5 w-3.5" />
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>¿Archivar equipo?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  El equipo <strong>{team.name}</strong> quedará archivado y ya no
-                  aparecerá en los selectores activos.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                <AlertDialogAction onClick={onArchive}>Archivar</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
+                Archivar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
     </div>
   );

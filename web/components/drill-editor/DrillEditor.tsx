@@ -185,15 +185,16 @@ export function DrillEditor({ drill, onSave }: Props) {
       {/* ── Toolbar superior ──────────────────────────────────────────────── */}
       <header className="flex items-center gap-2 px-3 py-2 bg-zinc-900 border-b border-zinc-700 shrink-0">
         <Button
-          variant="ghost" size="icon"
+          variant="ghost"
           onClick={() => router.push("/drills")}
-          className="h-8 w-8 text-zinc-400"
-          title="Volver"
+          className="h-8 gap-1 px-2 text-zinc-300 hover:text-zinc-100 hover:bg-zinc-700"
         >
-          <ChevronLeft className="h-5 w-5" />
+          <ChevronLeft className="h-4 w-4" />
+          <span className="text-xs">Biblioteca</span>
         </Button>
 
-        <span className="text-xs text-zinc-500 shrink-0">{typeLabel}</span>
+        <div className="w-px h-5 bg-zinc-700 shrink-0" />
+        <span className="text-xs text-zinc-400 shrink-0">{typeLabel}</span>
 
         <Input
           value={name}

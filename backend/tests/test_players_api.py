@@ -73,6 +73,7 @@ def _fake_player(player_id: int = 42, club_id: int = 1) -> MagicMock:
     p.date_of_birth = None
     p.position = "center"
     p.photo_url = None
+    p.phone = None
     p.archived_at = None
     p.created_at = now
     return p

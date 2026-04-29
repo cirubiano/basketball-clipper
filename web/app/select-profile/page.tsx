@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Film } from "lucide-react";
 
 const roleColor: Record<string, string> = {
   technical_director: "bg-purple-100 text-purple-800",
@@ -45,9 +46,13 @@ export default function SelectProfilePage() {
   }
 
   return (
-    // requireProfile=false evita el bucle de redirección
-    <PageShell requireProfile={false}>
-      <div className="flex flex-col items-center justify-center min-h-[60vh]">
+    <PageShell requireProfile={false} hideNav>
+      <div className="flex flex-col items-center justify-center min-h-screen -mt-8">
+        <div className="flex items-center gap-2 font-semibold text-primary mb-8">
+          <Film className="h-5 w-5" />
+          <span>Basketball Clipper</span>
+        </div>
+
         <Card className="w-full max-w-md">
           <CardHeader>
             <CardTitle>Selecciona tu perfil</CardTitle>
@@ -64,11 +69,19 @@ export default function SelectProfilePage() {
             )}
 
             {profiles.length === 0 ? (
-              <div className="py-8 text-center text-muted-foreground">
-                <p className="text-sm">No tienes perfiles asignados.</p>
-                <p className="text-sm mt-1">
-                  Contacta con el administrador de tu club para que te añada.
-                </p>
+              <div className="py-6 text-center space-y-4">
+                <div className="text-muted-foreground">
+                  <p className="text-sm font-medium">Aún no tienes un perfil de club</p>
+                  <p className="text-sm mt-1">
+                    Pide al director técnico de tu club que te invite a Basketball Clipper.
+                  </p>
+                </div>
+                <button
+                  onClick={() => router.replace("/")}
+                  className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  Continuar con mi espacio personal
+                </button>
               </div>
             ) : (
               <ul className="space-y-2">
@@ -86,7 +99,7 @@ export default function SelectProfilePage() {
                       >
                         {roleLabel[profile.role] ?? profile.role}
                       </span>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-medium text-gray-900">
                           {profile.team_name ?? profile.club_name}
                         </div>

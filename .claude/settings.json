@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 C:/Users/Maxim/projects/github/basketball-clipper/.claude/hooks/post_backend_check.py"
+          }
+        ]
+      }
+    ]
+  }
+}

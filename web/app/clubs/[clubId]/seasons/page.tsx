@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CalendarRange, Plus, ChevronRight } from "lucide-react";
+import { CalendarRange, Plus, ChevronRight, Users } from "lucide-react";
+import Link from "next/link";
 import {
   getSeasons,
   createSeason,
@@ -157,6 +158,7 @@ export default function SeasonsPage({
               <SeasonRow
                 key={s.id}
                 season={s}
+                clubId={clubId}
                 isTD={isTD}
                 isPending={statusMutation.isPending && statusMutation.variables?.seasonId === s.id}
                 onStatusChange={(status) =>
@@ -242,11 +244,13 @@ export default function SeasonsPage({
 
 function SeasonRow({
   season,
+  clubId,
   isTD,
   isPending,
   onStatusChange,
 }: {
   season: Season;
+  clubId: number;
   isTD: boolean;
   isPending: boolean;
   onStatusChange: (status: SeasonStatus) => void;
@@ -283,6 +287,15 @@ function SeasonRow({
           </p>
         )}
       </div>
+
+      <Link
+        href={`/clubs/${clubId}/teams?season_id=${season.id}`}
+        className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent transition-colors shrink-0"
+        title={`Ver equipos de ${season.name}`}
+      >
+        <Users className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">Equipos</span>
+      </Link>
 
       {isTD && transitions.length > 0 && (
         <div className="flex gap-1.5 shrink-0">

@@ -61,7 +61,7 @@ export function ProfileSelector() {
         {activeProfile ? (
           <>
             <span
-              className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+              className={`rounded px-1.5 py-0.5 text-xs font-medium shrink-0 ${
                 roleColor[activeProfile.role] ?? "bg-gray-100"
               }`}
             >
@@ -71,10 +71,10 @@ export function ProfileSelector() {
                 ? "Coach"
                 : "Staff"}
             </span>
-            <span className="max-w-[180px] truncate font-medium text-gray-900">
+            <span className="max-w-[140px] truncate font-medium text-gray-900 text-sm">
               {activeProfile.team_name ?? activeProfile.club_name}
             </span>
-            <span className="text-xs text-gray-400">{activeProfile.season_name}</span>
+            <span className="text-xs text-gray-400 shrink-0 hidden lg:inline">{activeProfile.season_name}</span>
           </>
         ) : (
           <span className="text-gray-500 italic">Selecciona perfil</span>
@@ -146,10 +146,10 @@ export function ProfileSelector() {
                 onClick={clearActiveProfile}
                 className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-gray-500 hover:bg-gray-50 transition-colors"
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
                 </svg>
-                Cambiar de club
+                Cambiar de perfil o club
               </button>
             </>
           )}

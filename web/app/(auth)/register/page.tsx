@@ -35,7 +35,7 @@ export default function RegisterPage() {
       await register({ email, password });
       router.replace("/");
     } catch {
-      setError("No se pudo crear la cuenta. Comprueba que el email no esté ya en uso.");
+      setError("No se pudo crear la cuenta. El email puede estar ya registrado.");
     } finally {
       setLoading(false);
     }
@@ -45,7 +45,9 @@ export default function RegisterPage() {
     <Card className="w-full max-w-sm">
       <CardHeader>
         <CardTitle>Crear cuenta</CardTitle>
-        <CardDescription>Empieza a generar clips de posesión hoy</CardDescription>
+        <CardDescription>
+          Crea tu cuenta y únete a un club o crea el tuyo propio para empezar.
+        </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-4">
