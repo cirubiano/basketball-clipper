@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
-import { UserPlus, Archive, Pencil, Search, Eye, EyeOff, Phone, Upload, X, Loader2 } from "lucide-react";
+import { UserPlus, Archive, Pencil, Search, Eye, EyeOff, Phone, Upload, X, Loader2, ZoomIn, ZoomOut, Check } from "lucide-react";
 import {
   listPlayers,
   createPlayer,
@@ -58,9 +58,15 @@ const EMPTY_FORM: PlayerCreate = {
 
 // ── Avatar ────────────────────────────────────────────────────────────────────
 
-function PlayerAvatar({ player, size = "md" }: { player: Player; size?: "sm" | "md" }) {
+const PREVIEW_SIZE = 200; // px — tamaño del círculo en el editor de recorte
+const OUTPUT_SIZE  = 400; // px — resolución de salida del canvas recortado
+
+function PlayerAvatar({ player, size = "md" }: { player: Player; size?: "sm" | "md" | "lg" }) {
   const initials = `${player.first_name[0] ?? ""}${player.last_name[0] ?? ""}`.toUpperCase();
-  const dim = size === "sm" ? "h-8 w-8 text-xs" : "h-10 w-10 text-sm";
+  const dim =
+    size === "sm" ? "h-8 w-8 text-xs" :
+    size === "lg" ? "h-16 w-16 text-xl" :
+    "h-10 w-10 text-sm";
 
   if (player.photo_url) {
     return (
@@ -101,6 +107,13 @@ export default function PlayersPage() {
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Crop editor ────────────────────────────────────────────────────────────
+  const [cropState, setCropState] = useState<{ file: File; objectUrl: string } | null>(null);
+  const [cropOffset, setCropOffset] = useState({ x: 0, y: 0 });
+  const [cropScale, setCropScale] = useState(1);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef({ startX: 0, startY: 0, startOX: 0, startOY: 0 });
 
   // ── Data ───────────────────────────────────────────────────────────────────
 
@@ -215,16 +228,26 @@ export default function PlayersPage() {
     setDialogOpen(true);
   }
 
+  function resetCrop() {
+    if (cropState) URL.revokeObjectURL(cropState.objectUrl);
+    setCropState(null);
+    setCropOffset({ x: 0, y: 0 });
+    setCropScale(1);
+    setIsDragging(false);
+    if (photoInputRef.current) photoInputRef.current.value = "";
+  }
+
   function closeDialog() {
     setDialogOpen(false);
     setEditPlayer(null);
     setForm(EMPTY_FORM);
     setFormError(null);
     setPhotoError(null);
-    if (photoInputRef.current) photoInputRef.current.value = "";
+    resetCrop();
   }
 
-  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+  // Selección de archivo → abre editor de recorte (sin subir aún)
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -234,30 +257,69 @@ export default function PlayersPage() {
       return;
     }
 
+    setPhotoError(null);
+    if (cropState) URL.revokeObjectURL(cropState.objectUrl);
+    setCropState({ file, objectUrl: URL.createObjectURL(file) });
+    setCropOffset({ x: 0, y: 0 });
+    setCropScale(1);
+  }
+
+  // Aplica el recorte: canvas → blob → S3 → photo_url
+  async function applyCrop() {
+    if (!cropState) return;
     setPhotoUploading(true);
     setPhotoError(null);
 
     try {
-      const { upload_url, photo_url } = await getPlayerPhotoUploadUrl(
-        token!,
-        clubId!,
-        file.name,
-        file.type,
+      const img = new Image();
+      img.src = cropState.objectUrl;
+      await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(); });
+
+      const canvas = document.createElement("canvas");
+      canvas.width  = OUTPUT_SIZE;
+      canvas.height = OUTPUT_SIZE;
+      const ctx = canvas.getContext("2d")!;
+
+      // Replicamos: object-fit:cover en PREVIEW_SIZE, luego scale+translate
+      const ratio    = OUTPUT_SIZE / PREVIEW_SIZE;
+      const fitScale = Math.max(OUTPUT_SIZE / img.naturalWidth, OUTPUT_SIZE / img.naturalHeight);
+      const rw = img.naturalWidth  * fitScale * cropScale;
+      const rh = img.naturalHeight * fitScale * cropScale;
+      const cx = OUTPUT_SIZE / 2 + cropOffset.x * ratio;
+      const cy = OUTPUT_SIZE / 2 + cropOffset.y * ratio;
+      ctx.drawImage(img, cx - rw / 2, cy - rh / 2, rw, rh);
+
+      const blob = await new Promise<Blob>((res, rej) =>
+        canvas.toBlob((b) => (b ? res(b) : rej()), "image/jpeg", 0.92),
       );
-      // Subida directa a S3 — no pasa por el backend
-      await fetch(upload_url, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type },
-      });
+
+      const { upload_url, photo_url } = await getPlayerPhotoUploadUrl(
+        token!, clubId!, "photo.jpg", "image/jpeg",
+      );
+      await fetch(upload_url, { method: "PUT", body: blob, headers: { "Content-Type": "image/jpeg" } });
+
+      resetCrop();
       setForm((f) => ({ ...f, photo_url }));
     } catch {
       setPhotoError("Error al subir la foto. Inténtalo de nuevo.");
     } finally {
       setPhotoUploading(false);
-      if (photoInputRef.current) photoInputRef.current.value = "";
     }
   }
+
+  // Drag handlers para el editor de recorte
+  function onCropPointerDown(e: React.PointerEvent) {
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setIsDragging(true);
+    dragRef.current = { startX: e.clientX, startY: e.clientY, startOX: cropOffset.x, startOY: cropOffset.y };
+  }
+  function onCropPointerMove(e: React.PointerEvent) {
+    if (!isDragging) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    setCropOffset({ x: dragRef.current.startOX + dx, y: dragRef.current.startOY + dy });
+  }
+  function onCropPointerUp() { setIsDragging(false); }
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -460,8 +522,87 @@ export default function PlayersPage() {
           </DialogHeader>
 
           <div className="grid gap-4 py-2">
-            {/* Photo picker + avatar preview */}
-            <div className="flex items-center gap-4">
+
+            {/* ── Editor de recorte ─────────────────────────────────── */}
+            {cropState ? (
+              <div className="flex flex-col items-center gap-3">
+                <p className="text-sm font-medium">Ajusta la foto</p>
+                <p className="text-xs text-muted-foreground -mt-2">
+                  Arrastra para centrar · Usa el control de zoom
+                </p>
+
+                {/* Círculo interactivo */}
+                <div
+                  className="relative overflow-hidden rounded-full border-2 border-primary/40 select-none"
+                  style={{ width: PREVIEW_SIZE, height: PREVIEW_SIZE, cursor: isDragging ? "grabbing" : "grab" }}
+                  onPointerDown={onCropPointerDown}
+                  onPointerMove={onCropPointerMove}
+                  onPointerUp={onCropPointerUp}
+                  onPointerCancel={onCropPointerUp}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={cropState.objectUrl}
+                    alt="Recorte"
+                    draggable={false}
+                    style={{
+                      position: "absolute",
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                      transform: `translate(${cropOffset.x}px, ${cropOffset.y}px) scale(${cropScale})`,
+                      transformOrigin: "center",
+                      pointerEvents: "none",
+                      userSelect: "none",
+                    }}
+                  />
+                </div>
+
+                {/* Zoom */}
+                <div className="flex items-center gap-3 w-full max-w-xs">
+                  <Button
+                    variant="outline" size="icon"
+                    className="h-7 w-7 shrink-0"
+                    type="button"
+                    onClick={() => setCropScale((s) => Math.max(1, +(s - 0.1).toFixed(1)))}
+                  >
+                    <ZoomOut className="h-3.5 w-3.5" />
+                  </Button>
+                  <input
+                    type="range" min={100} max={300} step={5}
+                    value={Math.round(cropScale * 100)}
+                    onChange={(e) => setCropScale(Number(e.target.value) / 100)}
+                    className="flex-1 h-1.5 rounded-full accent-primary"
+                  />
+                  <Button
+                    variant="outline" size="icon"
+                    className="h-7 w-7 shrink-0"
+                    type="button"
+                    onClick={() => setCropScale((s) => Math.min(3, +(s + 0.1).toFixed(1)))}
+                  >
+                    <ZoomIn className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+
+                {photoError && <p className="text-xs text-destructive">{photoError}</p>}
+
+                {/* Acciones del editor */}
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" type="button" onClick={resetCrop} disabled={photoUploading}>
+                    Cancelar
+                  </Button>
+                  <Button size="sm" type="button" onClick={applyCrop} disabled={photoUploading}>
+                    {photoUploading ? (
+                      <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Subiendo...</>
+                    ) : (
+                      <><Check className="h-3.5 w-3.5 mr-1.5" />Aplicar</>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+            /* ── Foto normal + picker ────────────────────────────────── */
+            <div className="flex flex-col items-center gap-3">
               <PlayerAvatar
                 player={{
                   ...(editPlayer ?? { id: 0, club_id: 0, date_of_birth: null, position: null, phone: null, archived_at: null, created_at: "" }),
@@ -469,56 +610,39 @@ export default function PlayersPage() {
                   last_name: form.last_name || editPlayer?.last_name || "?",
                   photo_url: form.photo_url ?? null,
                 }}
-                size="md"
+                size="lg"
               />
-              <div className="flex-1 min-w-0">
-                <Label className="text-sm font-medium">Foto</Label>
-                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap justify-center">
+                <Button
+                  variant="outline" size="sm" type="button"
+                  disabled={photoUploading}
+                  onClick={() => photoInputRef.current?.click()}
+                >
+                  <Upload className="h-3.5 w-3.5 mr-1.5" />
+                  {form.photo_url ? "Cambiar foto" : "Subir foto"}
+                </Button>
+                {form.photo_url && (
                   <Button
-                    variant="outline"
-                    size="sm"
-                    type="button"
-                    disabled={photoUploading}
-                    onClick={() => photoInputRef.current?.click()}
+                    variant="destructive" size="sm" type="button"
+                    onClick={() => setForm((f) => ({ ...f, photo_url: null }))}
                   >
-                    {photoUploading ? (
-                      <>
-                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                        Subiendo...
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="h-3.5 w-3.5 mr-1.5" />
-                        {form.photo_url ? "Cambiar foto" : "Subir foto"}
-                      </>
-                    )}
+                    <X className="h-3.5 w-3.5 mr-1" />
+                    Quitar foto
                   </Button>
-                  {form.photo_url && !photoUploading && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      type="button"
-                      className="text-muted-foreground"
-                      onClick={() => setForm((f) => ({ ...f, photo_url: null }))}
-                    >
-                      <X className="h-3.5 w-3.5 mr-1" />
-                      Quitar
-                    </Button>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">JPG, PNG o WebP · Máx. 5 MB</p>
-                {photoError && (
-                  <p className="text-xs text-destructive mt-1">{photoError}</p>
                 )}
               </div>
-              <input
-                ref={photoInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="sr-only"
-                onChange={handlePhotoChange}
-              />
+              <p className="text-xs text-muted-foreground">JPG, PNG o WebP · Máx. 5 MB</p>
+              {photoError && <p className="text-xs text-destructive">{photoError}</p>}
             </div>
+            )}
+
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="sr-only"
+              onChange={handlePhotoChange}
+            />
 
             {/* Name */}
             <div className="grid grid-cols-2 gap-3">
@@ -572,6 +696,8 @@ export default function PlayersPage() {
               onClick={() => saveMutation.mutate(form)}
               disabled={
                 saveMutation.isPending ||
+                !!cropState ||
+                photoUploading ||
                 !form.first_name.trim() ||
                 !form.last_name.trim()
               }
