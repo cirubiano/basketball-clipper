@@ -171,10 +171,9 @@ async def get_photo_upload_url(
     upload_url = await asyncio.to_thread(
         storage.generate_presigned_put_url, s3_key, body.content_type
     )
-    # TTL largo (~10 años) — en producción se sustituye por una URL de CloudFront sin expiración
-    photo_url = await asyncio.to_thread(
-        storage.get_presigned_url, s3_key, 315_360_000
-    )
+    # En dev (MinIO): URL directa sin firma — el bucket tiene anonymous download.
+    # En prod (S3): URL pre-firmada con TTL máximo de 7 días. Reemplazar por CloudFront.
+    photo_url = await asyncio.to_thread(storage.get_photo_url, s3_key)
 
     return PhotoUploadResponse(upload_url=upload_url, photo_url=photo_url)
 

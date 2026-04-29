@@ -119,6 +119,21 @@ def generate_presigned_put_url(
     )
 
 
+def get_photo_url(s3_key: str) -> str:
+    """
+    URL para servir una foto de jugador desde el navegador.
+
+    - Dev (MinIO con S3_PUBLIC_URL configurado): el bucket tiene anonymous
+      download, así que devolvemos la URL directa sin firma — nunca expira.
+    - Prod (S3 sin S3_PUBLIC_URL): devuelve URL pre-firmada con el TTL
+      máximo de S3 v4 (7 días). Reemplazar por CloudFront en producción.
+    """
+    if settings.s3_public_url:
+        return f"{settings.s3_public_url}/{settings.s3_bucket_name}/{s3_key}"
+    # Prod fallback — máximo TTL permitido por S3 Signature v4: 604 800 s (7 días)
+    return get_presigned_url(s3_key, expires_in=604_800)
+
+
 def get_presigned_url(s3_key: str, expires_in: int = 3600) -> str:
     """Pre-signed GET URL para que el navegador descargue un objeto."""
     try:
