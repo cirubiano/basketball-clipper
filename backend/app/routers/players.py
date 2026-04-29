@@ -8,7 +8,9 @@ Permisos:
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
@@ -23,6 +25,8 @@ from app.models.profile import Profile, UserRole
 from app.models.team import Team
 from app.models.user import User
 from app.schemas.player import (
+    PhotoUploadRequest,
+    PhotoUploadResponse,
     PlayerCreate,
     PlayerResponse,
     PlayerUpdate,
@@ -30,6 +34,7 @@ from app.schemas.player import (
     RosterEntryResponse,
     RosterEntryUpdate,
 )
+from app.services import storage
 
 router = APIRouter()
 
@@ -132,6 +137,46 @@ async def create_player(
     await db.commit()
     await db.refresh(player)
     return player
+
+
+# ── POST /clubs/{club_id}/players/photo-upload-url ───────────────────────────
+
+_ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
+_MAX_SIZE_LABEL = "5 MB"
+
+@router.post("/{club_id}/players/photo-upload-url", response_model=PhotoUploadResponse)
+async def get_photo_upload_url(
+    club_id: int,
+    body: PhotoUploadRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PhotoUploadResponse:
+    """Devuelve una URL pre-firmada PUT para subir una foto de jugador directamente
+    a S3/MinIO desde el navegador, y la URL pública que se guardará en photo_url."""
+    await _get_club_or_404(club_id, db)
+    await _require_manage_access(club_id, None, current_user, db)
+
+    if not body.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="El content_type debe ser una imagen.")
+
+    ext = body.filename.rsplit(".", 1)[-1].lower() if "." in body.filename else ""
+    if ext not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Formato no permitido. Usa: {', '.join(_ALLOWED_EXTENSIONS)}.",
+        )
+
+    s3_key = f"player-photos/{club_id}/{uuid4().hex}.{ext}"
+
+    upload_url = await asyncio.to_thread(
+        storage.generate_presigned_put_url, s3_key, body.content_type
+    )
+    # TTL largo (~10 años) — en producción se sustituye por una URL de CloudFront sin expiración
+    photo_url = await asyncio.to_thread(
+        storage.get_presigned_url, s3_key, 315_360_000
+    )
+
+    return PhotoUploadResponse(upload_url=upload_url, photo_url=photo_url)
 
 
 # ── GET /clubs/{club_id}/players/{player_id} ─────────────────────────────────

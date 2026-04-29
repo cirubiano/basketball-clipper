@@ -681,6 +681,7 @@ y sus tipos en `shared/types/`. Web y mobile nunca llaman al backend directament
 | GET | /clips/{id} | user | Detalle de clip |
 | DELETE | /clips/{id} | user | Eliminar clip |
 | WS | /ws/{video_id} | — | Progreso en tiempo real |
+| POST | /clubs/{id}/players/photo-upload-url | td_or_hc | Presigned PUT URL para subir foto de jugador a S3 |
 | GET | /clubs/{id}/players | member | Listar jugadores del club |
 | POST | /clubs/{id}/players | td_or_hc | Crear jugador |
 | GET | /clubs/{id}/players/{pid} | member | Detalle de jugador |

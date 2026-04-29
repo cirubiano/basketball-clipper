@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
-import { UserPlus, Archive, Pencil, Search, Eye, EyeOff, Phone } from "lucide-react";
+import { UserPlus, Archive, Pencil, Search, Eye, EyeOff, Phone, Upload, X, Loader2 } from "lucide-react";
 import {
   listPlayers,
   createPlayer,
@@ -10,6 +10,7 @@ import {
   archivePlayer,
   listRoster,
   getTeams,
+  getPlayerPhotoUploadUrl,
 } from "@basketball-clipper/shared/api";
 import type { Player, PlayerCreate } from "@basketball-clipper/shared/types";
 import { PageShell } from "@/components/layout/PageShell";
@@ -97,6 +98,9 @@ export default function PlayersPage() {
   const [editPlayer, setEditPlayer] = useState<Player | null>(null);
   const [form, setForm] = useState<PlayerCreate>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   // ── Data ───────────────────────────────────────────────────────────────────
 
@@ -216,6 +220,43 @@ export default function PlayersPage() {
     setEditPlayer(null);
     setForm(EMPTY_FORM);
     setFormError(null);
+    setPhotoError(null);
+    if (photoInputRef.current) photoInputRef.current.value = "";
+  }
+
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      setPhotoError("La foto no puede superar 5 MB.");
+      if (photoInputRef.current) photoInputRef.current.value = "";
+      return;
+    }
+
+    setPhotoUploading(true);
+    setPhotoError(null);
+
+    try {
+      const { upload_url, photo_url } = await getPlayerPhotoUploadUrl(
+        token!,
+        clubId!,
+        file.name,
+        file.type,
+      );
+      // Subida directa a S3 — no pasa por el backend
+      await fetch(upload_url, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type },
+      });
+      setForm((f) => ({ ...f, photo_url }));
+    } catch {
+      setPhotoError("Error al subir la foto. Inténtalo de nuevo.");
+    } finally {
+      setPhotoUploading(false);
+      if (photoInputRef.current) photoInputRef.current.value = "";
+    }
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -419,20 +460,65 @@ export default function PlayersPage() {
           </DialogHeader>
 
           <div className="grid gap-4 py-2">
-            {/* Avatar preview */}
-            {(form.photo_url || editPlayer) && (
-              <div className="flex justify-center">
-                <PlayerAvatar
-                  player={{
-                    ...(editPlayer ?? { id: 0, club_id: 0, date_of_birth: null, position: null, phone: null, archived_at: null, created_at: "" }),
-                    first_name: form.first_name || editPlayer?.first_name || "?",
-                    last_name: form.last_name || editPlayer?.last_name || "?",
-                    photo_url: form.photo_url ?? null,
-                  }}
-                  size="md"
-                />
+            {/* Photo picker + avatar preview */}
+            <div className="flex items-center gap-4">
+              <PlayerAvatar
+                player={{
+                  ...(editPlayer ?? { id: 0, club_id: 0, date_of_birth: null, position: null, phone: null, archived_at: null, created_at: "" }),
+                  first_name: form.first_name || editPlayer?.first_name || "?",
+                  last_name: form.last_name || editPlayer?.last_name || "?",
+                  photo_url: form.photo_url ?? null,
+                }}
+                size="md"
+              />
+              <div className="flex-1 min-w-0">
+                <Label className="text-sm font-medium">Foto</Label>
+                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    disabled={photoUploading}
+                    onClick={() => photoInputRef.current?.click()}
+                  >
+                    {photoUploading ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        Subiendo...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-3.5 w-3.5 mr-1.5" />
+                        {form.photo_url ? "Cambiar foto" : "Subir foto"}
+                      </>
+                    )}
+                  </Button>
+                  {form.photo_url && !photoUploading && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      className="text-muted-foreground"
+                      onClick={() => setForm((f) => ({ ...f, photo_url: null }))}
+                    >
+                      <X className="h-3.5 w-3.5 mr-1" />
+                      Quitar
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">JPG, PNG o WebP · Máx. 5 MB</p>
+                {photoError && (
+                  <p className="text-xs text-destructive mt-1">{photoError}</p>
+                )}
               </div>
-            )}
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="sr-only"
+                onChange={handlePhotoChange}
+              />
+            </div>
 
             {/* Name */}
             <div className="grid grid-cols-2 gap-3">
@@ -454,23 +540,6 @@ export default function PlayersPage() {
                   placeholder="Gasol"
                 />
               </div>
-            </div>
-
-            {/* Photo URL */}
-            <div className="space-y-1.5">
-              <Label htmlFor="photo_url">
-                Foto{" "}
-                <span className="text-muted-foreground font-normal">(URL, opcional)</span>
-              </Label>
-              <Input
-                id="photo_url"
-                type="url"
-                value={form.photo_url ?? ""}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, photo_url: e.target.value || null }))
-                }
-                placeholder="https://ejemplo.com/foto.jpg"
-              />
             </div>
 
             {/* Phone */}

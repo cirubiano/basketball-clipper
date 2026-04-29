@@ -8,6 +8,18 @@ from pydantic import BaseModel, Field
 from app.models.player import PlayerPosition
 
 
+# ── Photo upload ───────────────────────────────────────────────────────────────
+
+class PhotoUploadRequest(BaseModel):
+    filename: str = Field(..., max_length=255)
+    content_type: str = Field(..., max_length=100)
+
+
+class PhotoUploadResponse(BaseModel):
+    upload_url: str
+    photo_url: str
+
+
 # ── Player ────────────────────────────────────────────────────────────────────
 
 class PlayerCreate(BaseModel):

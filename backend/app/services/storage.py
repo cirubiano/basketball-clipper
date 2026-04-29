@@ -102,6 +102,23 @@ def delete_prefix(prefix: str) -> int:
     return deleted_count
 
 
+def generate_presigned_put_url(
+    s3_key: str,
+    content_type: str = "image/jpeg",
+    expires_in: int = 900,
+) -> str:
+    """Pre-signed PUT URL para que el navegador suba un objeto directamente a S3/MinIO."""
+    return _public_client().generate_presigned_url(
+        "put_object",
+        Params={
+            "Bucket": settings.s3_bucket_name,
+            "Key": s3_key,
+            "ContentType": content_type,
+        },
+        ExpiresIn=expires_in,
+    )
+
+
 def get_presigned_url(s3_key: str, expires_in: int = 3600) -> str:
     """Pre-signed GET URL para que el navegador descargue un objeto."""
     try:

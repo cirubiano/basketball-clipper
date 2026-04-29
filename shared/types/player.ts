@@ -48,6 +48,11 @@ export interface PlayerUpdate {
   phone?: string | null;
 }
 
+export interface PhotoUploadUrls {
+  upload_url: string;
+  photo_url: string;
+}
+
 // ── RosterEntry ───────────────────────────────────────────────────────────────
 
 export interface RosterEntry {
