@@ -55,3 +55,4 @@ tmp/
 backend/models/*.pt
 
 .claude/worktrees/
+.claude/settings2.local.json
