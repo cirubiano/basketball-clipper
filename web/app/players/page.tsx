@@ -63,6 +63,7 @@ function PlayerAvatar({ player, size = "md" }: { player: Player; size?: "sm" | "
 
   if (player.photo_url) {
     return (
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={player.photo_url}
         alt={`${player.first_name} ${player.last_name}`}
@@ -286,7 +287,7 @@ export default function PlayersPage() {
           <div className="border rounded-lg p-12 text-center text-muted-foreground">
             <UserPlus className="h-8 w-8 mx-auto mb-3 opacity-40" />
             {search ? (
-              <p className="font-medium">No hay jugadores que coincidan con "{search}"</p>
+              <p className="font-medium">No hay jugadores que coincidan con &quot;{search}&quot;</p>
             ) : (
               <>
                 <p className="font-medium mb-1">No hay jugadores en el club todavía</p>

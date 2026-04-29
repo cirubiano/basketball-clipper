@@ -75,7 +75,17 @@ op.execute(sa.text(
 ### Después de cada bloque de cambios en shared/ o web/
 Ejecuta siempre estas verificaciones antes de declarar el trabajo terminado:
 
-**1. Type-check de TypeScript — shared y web:**
+**1. Lint de Next.js — ejecutar SIEMPRE antes de declarar terminado:**
+```bash
+cd web && npm run lint 2>&1 | tail -20
+```
+Errores frecuentes que bloquean CI:
+- `@next/next/no-img-element`: usar `<Image />` de `next/image`, o si la URL es externa y no se puede configurar en `next.config.js`, añadir `{/* eslint-disable-next-line @next/next/no-img-element */}` en la línea anterior.
+- `react/no-unescaped-entities`: los caracteres `"`, `'`, `>`, `{` dentro de texto JSX deben escaparse con `&quot;`, `&apos;`, `&gt;`, `&#123;` — o extraerse a una variable JS.
+  - ✗ `<p>Resultados de "{search}"</p>`
+  - ✓ `<p>Resultados de &quot;{search}&quot;</p>`
+
+**2. Type-check de TypeScript — shared y web:**
 ```bash
 # Verificar shared/ (sin emitir archivos)
 cd /path/to/project
