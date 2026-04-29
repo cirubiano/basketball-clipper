@@ -303,7 +303,7 @@ function SeasonRow({
             t.destructive ? (
               <AlertDialog key={t.status}>
                 <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm" disabled={isPending} aria-label={`${t.label} temporada ${season.name}`}>
+                  <Button variant="destructive" size="sm" disabled={isPending} aria-label={`${t.label} temporada ${season.name}`}>
                     {t.label}
                   </Button>
                 </AlertDialogTrigger>
@@ -317,7 +317,10 @@ function SeasonRow({
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => onStatusChange(t.status)}>
+                    <AlertDialogAction
+                      onClick={() => onStatusChange(t.status)}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
                       Archivar
                     </AlertDialogAction>
                   </AlertDialogFooter>

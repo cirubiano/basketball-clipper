@@ -146,7 +146,36 @@ value={entry.position ?? "none"}
 onValueChange={(v) => setForm(f => ({ ...f, position: (v === "none" ? null : v) as PlayerPosition | null }))}
 ```
 
-**7. Componentes UI de shadcn/ui — los que existen y los que hay que crear:**
+**7. Botones de acción destructiva (archivar, eliminar) — siempre rojos:**
+Todo botón que archive o elimine datos debe ser visualmente rojo en **dos niveles**:
+- El botón que abre el dialog de confirmación: `variant="destructive"` (si es un botón de texto) o `className="text-destructive hover:text-destructive hover:bg-destructive/10"` (si es un icono ghost).
+- El `AlertDialogAction` de confirmación: siempre con `className="bg-destructive text-destructive-foreground hover:bg-destructive/90"`.
+
+```tsx
+{/* ✓ Botón texto que abre el dialog */}
+<AlertDialogTrigger asChild>
+  <Button variant="destructive" size="sm">Archivar</Button>
+</AlertDialogTrigger>
+
+{/* ✓ Botón icono que abre el dialog */}
+<AlertDialogTrigger asChild>
+  <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive hover:bg-destructive/10">
+    <Archive className="h-3.5 w-3.5" />
+  </Button>
+</AlertDialogTrigger>
+
+{/* ✓ Acción de confirmación — siempre rojo */}
+<AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+  Archivar
+</AlertDialogAction>
+```
+
+Detección rápida de `AlertDialogAction` sin clase destructiva:
+```bash
+grep -A2 "AlertDialogAction" web/app/**/*.tsx | grep -v "className.*destructive" | grep -v "Cancelar" | grep "AlertDialogAction"
+```
+
+**8. Componentes UI de shadcn/ui — los que existen y los que hay que crear:**
 Los siguientes componentes ya están creados en `web/components/ui/`:
 `alert`, `alert-dialog`, `badge`, `button`, `card`, `dialog`, `input`, `label`, `progress`, `select`, `skeleton`
 
