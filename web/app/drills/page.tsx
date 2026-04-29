@@ -36,9 +36,9 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Plus, Archive, Copy, ChevronRight, BookOpen, Pencil } from "lucide-react";
-import { listDrills, createDrill, archiveDrill, cloneDrill } from "@basketball-clipper/shared";
-import type { DrillSummary, DrillType, CourtLayoutType } from "@basketball-clipper/shared";
-import { COURT_LAYOUT_LABELS } from "@basketball-clipper/shared";
+import { listDrills, createDrill, archiveDrill, cloneDrill } from "@basketball-clipper/shared/api";
+import type { DrillSummary, DrillType, CourtLayoutType } from "@basketball-clipper/shared/types";
+import { COURT_LAYOUT_LABELS } from "@basketball-clipper/shared/types";
 import { cn } from "@/lib/utils";
 
 // ── Court preview SVG ─────────────────────────────────────────────────────────

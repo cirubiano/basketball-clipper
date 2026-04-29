@@ -214,6 +214,66 @@ Si cualquiera de estos tres pasos falla, el login del frontend fallará — aunq
 
 ---
 
+## Errores frecuentes detectados en auditoría (2026-04-29)
+
+Esta sección documenta los patrones de error encontrados en la auditoría web de la sesión 16.
+
+### Error 1 — Comentario ESLint dentro de JSX como nodo hermano
+
+**Archivo afectado**: `web/app/players/page.tsx`
+**Síntoma**: `Parsing error: ')' expected` (ESLint) y cascada de errores TypeScript.
+**Causa**: La forma `{/* eslint-disable-next-line */}` es un nodo JSX. Si se pone dentro de una función que retorna un solo elemento, se convierte en un segundo nodo junto con el siguiente elemento y JSX no puede tener dos nodos sin wrapper:
+
+```tsx
+// ✗ MAL — el comentario es un nodo JSX, el <img> es otro → parse error
+return (
+  {/* eslint-disable-next-line @next/next/no-img-element */}
+  <img src={...} />
+);
+```
+
+**Solución**: usar el comentario JS (`//`) directamente dentro del bloque `return (...)`, inmediatamente antes del elemento:
+
+```tsx
+// ✓ BIEN — comentario JS dentro del JSX, justo encima del elemento
+return (
+  // eslint-disable-next-line @next/next/no-img-element
+  <img src={...} />
+);
+```
+
+**Nota**: Si el eslint-disable-next-line se pone fuera del return (en la línea anterior al `return (`), Next.js lint seguirá reportando el warning porque el comment se aplica al `return`, no al `<img>`.
+
+**Detección automática**: si el archivo falla `npm run lint` con `Parsing error: ')' expected` en una línea `<img`, buscar `{/* eslint-disable` justo antes.
+
+### Error 2 — Import desde root de `@basketball-clipper/shared` en lugar de sub-paths
+
+**Archivo afectado**: `web/app/drills/page.tsx`
+**Síntoma**: Funciona en runtime (si `shared/index.ts` re-exporta todo) pero viola la regla de sub-paths y puede causar problemas con tree-shaking, type resolution, y cambios futuros en `shared/package.json`.
+
+```tsx
+// ✗ MAL — import desde root
+import { listDrills, createDrill } from "@basketball-clipper/shared";
+import type { DrillSummary } from "@basketball-clipper/shared";
+import { COURT_LAYOUT_LABELS } from "@basketball-clipper/shared";
+```
+
+```tsx
+// ✓ BIEN — imports desde sub-paths
+import { listDrills, createDrill } from "@basketball-clipper/shared/api";
+import type { DrillSummary } from "@basketball-clipper/shared/types";
+import { COURT_LAYOUT_LABELS } from "@basketball-clipper/shared/types";
+```
+
+**Detección automática**:
+```bash
+grep -rn "from '@basketball-clipper/shared'" web/   # debe dar 0 resultados (solo las líneas con /api o /types están OK)
+# Afina: sólo los imports sin sub-path:
+grep -rn "from '@basketball-clipper/shared'" web/ | grep -v "/api" | grep -v "/types"
+```
+
+---
+
 ## ¿Qué es este proyecto?
 
 Plataforma integral de gestión de clubs de baloncesto. Permite a clubs organizar

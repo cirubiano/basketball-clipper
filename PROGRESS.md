@@ -274,6 +274,41 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ## Historial de sesiones
 
+### 2026-04-29 — Sesión 16 (Auditoría completa del frontend web)
+
+**Auditoría ejecutada** — análisis estático + revisión visual de todas las páginas:
+
+**Herramientas:**
+- `docker exec basketball-clipper-web-1 npm run lint` → ESLint sobre toda la carpeta `web/`
+- `docker exec basketball-clipper-web-1 npx tsc --noEmit` → TypeScript sobre `web/`
+- Grep de patrones críticos: `apiClient`, `body: {`, `body: data`, imports root de shared, `<img>`, `value=""`
+- Smoke test login completo (3 endpoints: `/auth/login`, `/auth/me`, `/profiles`)
+
+**Errores encontrados y corregidos:**
+
+1. **`web/app/players/page.tsx` — Parse error por comentario ESLint como nodo JSX**
+   - Causa: `{/* eslint-disable-next-line @next/next/no-img-element */}` puesto como expresión dentro del `return()`, creando dos nodos hermanos sin wrapper (el comentario + el `<img>`). Tanto ESLint (`Parsing error: ')' expected`) como TypeScript fallaban con cascada de 8 errores.
+   - Fix: reemplazado por `// eslint-disable-next-line` (comentario JS) dentro del bloque `return(...)` directamente antes del `<img>`.
+
+2. **`web/app/drills/page.tsx` — Imports desde root de `@basketball-clipper/shared`**
+   - Causa: tres imports usaban `@basketball-clipper/shared` (root) en lugar de los sub-paths `/api` y `/types` exigidos por CLAUDE.md.
+   - Fix: reemplazados todos por `@basketball-clipper/shared/api` y `@basketball-clipper/shared/types`.
+
+**Resultado final:**
+- `npm run lint` → `✔ No ESLint warnings or errors`
+- `npx tsc --noEmit` → 0 errores
+- Smoke test: `/auth/login` ✅ · `/auth/me` ✅ · `/profiles` ✅
+
+**Documentación añadida:**
+- `CLAUDE.md`: nueva sección "Errores frecuentes detectados en auditoría" con descripción, causa, fix y comando de detección para cada patrón.
+
+**Páginas revisadas sin errores** (auditoría visual):
+- `app/page.tsx` (dashboard), `app/videos/page.tsx`, `app/clubs/[clubId]/catalog/page.tsx`
+- `app/clubs/[clubId]/seasons/page.tsx`, `app/clubs/[clubId]/teams/page.tsx`
+- `app/clubs/[clubId]/matches/page.tsx`, `app/clubs/[clubId]/training/page.tsx`
+- `app/(auth)/register/page.tsx`, `app/select-profile/page.tsx`
+- `components/layout/Navbar.tsx`
+
 ### 2026-04-27 — Sesión 15 (Gaps de UI — temporadas, equipos, perfil de usuario)
 
 **Pantallas nuevas implementadas** (§9.1 de WEB_DESIGN_REQUIREMENTS.md):

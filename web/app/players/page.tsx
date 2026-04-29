@@ -63,7 +63,7 @@ function PlayerAvatar({ player, size = "md" }: { player: Player; size?: "sm" | "
 
   if (player.photo_url) {
     return (
-      {/* eslint-disable-next-line @next/next/no-img-element */}
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={player.photo_url}
         alt={`${player.first_name} ${player.last_name}`}
