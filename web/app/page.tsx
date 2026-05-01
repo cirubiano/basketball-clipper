@@ -14,6 +14,9 @@ import {
   ClipboardList,
   Trophy,
   Dumbbell,
+  BarChart2,
+  UserCheck,
+  Star,
 } from "lucide-react";
 import {
   deleteVideo,
@@ -230,6 +233,104 @@ export default function DashboardPage() {
   const tdLoading = loadingSeasons || loadingTeams || loadingPlayers;
   const matchesLoading = matchQueries.some((q) => q.isLoading);
   const trainingsLoading = trainingQueries.some((q) => q.isLoading);
+
+  // ── Sección 1: Stats por equipo ──────────────────────────────────────────────
+  const teamStats = activeTeamsTD.map((team, idx) => {
+    const q = matchQueries[idx];
+    const finished = (q?.data ?? []).filter((m) => m.status === "finished" && !m.archived_at);
+    const played = finished.length;
+    const wins = finished.filter((m) => (m.our_score ?? -1) > (m.their_score ?? -2)).length;
+    const losses = finished.filter((m) => (m.our_score ?? -1) < (m.their_score ?? -2)).length;
+    const avgOur = played > 0
+      ? finished.reduce((s, m) => s + (m.our_score ?? 0), 0) / played
+      : null;
+    const avgTheir = played > 0
+      ? finished.reduce((s, m) => s + (m.their_score ?? 0), 0) / played
+      : null;
+    return { team, isError: q?.isError ?? false, played, wins, losses, avgOur, avgTheir };
+  });
+
+  // ── Sección 2: Resumen de asistencia ────────────────────────────────────────
+  const attendanceSummaries = activeTeamsTD.map((team, idx) => {
+    const q = trainingQueries[idx];
+    const trainings = (q?.data ?? []).filter((t) => !t.archived_at);
+    const totalTrainings = trainings.length;
+
+    const playerMap = new Map<number, { name: string; present: number; total: number }>();
+    trainings.forEach((tr) => {
+      tr.training_attendances.forEach((att) => {
+        const name =
+          [att.player_first_name, att.player_last_name].filter(Boolean).join(" ") ||
+          `Jugador #${att.player_id}`;
+        const prev = playerMap.get(att.player_id) ?? { name, present: 0, total: 0 };
+        playerMap.set(att.player_id, {
+          name: prev.name,
+          present: prev.present + (att.attended ? 1 : 0),
+          total: prev.total + 1,
+        });
+      });
+    });
+
+    const allPlayerStats = Array.from(playerMap.values());
+    const avgPct =
+      allPlayerStats.length > 0
+        ? allPlayerStats.reduce(
+            (s, p) => s + (p.total > 0 ? (p.present / p.total) * 100 : 0),
+            0,
+          ) / allPlayerStats.length
+        : null;
+
+    const bottom3 = allPlayerStats
+      .map((p) => ({ ...p, pct: p.total > 0 ? Math.round((p.present / p.total) * 100) : 0 }))
+      .sort((a, b) => a.pct - b.pct)
+      .slice(0, 3);
+
+    return { team, isError: q?.isError ?? false, totalTrainings, avgPct, bottom3 };
+  });
+
+  // ── Sección 3: Top performers ────────────────────────────────────────────────
+  const playerTotalsMap = new Map<number, { name: string; points: number; assists: number; rebounds: number }>();
+  matchQueries.forEach((q) => {
+    (q.data ?? [])
+      .filter((m) => m.status === "finished" && !m.archived_at)
+      .forEach((m) => {
+        const nameOf = (pid: number) => {
+          const mp = m.match_players.find((p) => p.player_id === pid);
+          return mp
+            ? [mp.player_first_name, mp.player_last_name].filter(Boolean).join(" ") ||
+                `Jugador #${pid}`
+            : `Jugador #${pid}`;
+        };
+        m.match_stats.forEach((s) => {
+          const prev = playerTotalsMap.get(s.player_id) ?? {
+            name: nameOf(s.player_id),
+            points: 0,
+            assists: 0,
+            rebounds: 0,
+          };
+          playerTotalsMap.set(s.player_id, {
+            name: prev.name,
+            points: prev.points + (s.points ?? 0),
+            assists: prev.assists + (s.assists ?? 0),
+            rebounds: prev.rebounds + (s.defensive_rebounds ?? 0) + (s.offensive_rebounds ?? 0),
+          });
+        });
+      });
+  });
+  const allPlayerTotals = Array.from(playerTotalsMap.values());
+  const topScorer = allPlayerTotals.length > 0
+    ? allPlayerTotals.reduce((a, b) => (a.points >= b.points ? a : b))
+    : null;
+  const topAssist = allPlayerTotals.length > 0
+    ? allPlayerTotals.reduce((a, b) => (a.assists >= b.assists ? a : b))
+    : null;
+  const topRebounder = allPlayerTotals.length > 0
+    ? allPlayerTotals.reduce((a, b) => (a.rebounds >= b.rebounds ? a : b))
+    : null;
+  const hasTopStats =
+    (topScorer?.points ?? 0) > 0 ||
+    (topAssist?.assists ?? 0) > 0 ||
+    (topRebounder?.rebounds ?? 0) > 0;
 
   // ── Videos query (non-TD) ───────────────────────────────────────────────────
 
@@ -524,6 +625,172 @@ export default function DashboardPage() {
                         </Link>
                       </div>
                     ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            {/* Sección 1 — Estadísticas por equipo */}
+            <div className="space-y-3">
+              <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                <BarChart2 className="h-3.5 w-3.5" />
+                Estadísticas — temporada actual
+              </h2>
+              {matchesLoading ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {Array.from({ length: Math.max(activeTeamsTD.length, 1) }).map((_, i) => (
+                    <Skeleton key={i} className="h-28 rounded-lg" />
+                  ))}
+                </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {teamStats.map(({ team, isError, played, wins, losses, avgOur, avgTheir }) => (
+                    <Card key={team.id}>
+                      <CardHeader className="pb-1 pt-3 px-4">
+                        <CardTitle className="text-sm font-semibold">{team.name}</CardTitle>
+                      </CardHeader>
+                      <CardContent className="px-4 pb-3">
+                        {isError ? (
+                          <p className="text-xs text-destructive">Error al cargar los datos.</p>
+                        ) : played === 0 ? (
+                          <p className="text-xs text-muted-foreground">Sin partidos jugados esta temporada.</p>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                            <span className="text-muted-foreground">Jugados</span>
+                            <span className="font-medium">{played}</span>
+                            <span className="text-muted-foreground">Victorias / Derrotas</span>
+                            <span className="font-medium">{wins} / {losses}</span>
+                            {avgOur !== null && avgTheir !== null && (
+                              <>
+                                <span className="text-muted-foreground">Pts anotados / encajados</span>
+                                <span className="font-medium">
+                                  {avgOur.toFixed(1)} / {avgTheir.toFixed(1)}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Sección 2 — Resumen de asistencia */}
+            <div className="space-y-3">
+              <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                <UserCheck className="h-3.5 w-3.5" />
+                Asistencia a entrenamientos
+              </h2>
+              {trainingsLoading ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {Array.from({ length: Math.max(activeTeamsTD.length, 1) }).map((_, i) => (
+                    <Skeleton key={i} className="h-28 rounded-lg" />
+                  ))}
+                </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {attendanceSummaries.map(({ team, isError, totalTrainings, avgPct, bottom3 }) => (
+                    <Card key={team.id}>
+                      <CardHeader className="pb-1 pt-3 px-4">
+                        <CardTitle className="text-sm font-semibold">{team.name}</CardTitle>
+                      </CardHeader>
+                      <CardContent className="px-4 pb-3">
+                        {isError ? (
+                          <p className="text-xs text-destructive">Error al cargar los datos.</p>
+                        ) : totalTrainings === 0 ? (
+                          <p className="text-xs text-muted-foreground">Sin entrenamientos registrados.</p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <div className="grid grid-cols-2 gap-x-4 text-xs">
+                              <span className="text-muted-foreground">Entrenamientos</span>
+                              <span className="font-medium">{totalTrainings}</span>
+                              {avgPct !== null && (
+                                <>
+                                  <span className="text-muted-foreground">Asistencia media</span>
+                                  <span className="font-medium">{Math.round(avgPct)}%</span>
+                                </>
+                              )}
+                            </div>
+                            {bottom3.length > 0 && (
+                              <div className="pt-1 border-t">
+                                <p className="text-xs text-muted-foreground mb-1">Menor asistencia</p>
+                                {bottom3.map((p, i) => (
+                                  <div key={i} className="flex justify-between text-xs">
+                                    <span className="truncate max-w-[60%]">{p.name}</span>
+                                    <span className={cn(
+                                      "font-medium shrink-0",
+                                      p.pct >= 80 ? "text-green-600" : p.pct >= 60 ? "text-amber-600" : "text-destructive",
+                                    )}>
+                                      {p.pct}%
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Sección 3 — Top performers */}
+            <Card>
+              <CardHeader className="pb-2 pt-4 px-4">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Star className="h-4 w-4 text-amber-400" />
+                  Top jugadores — temporada actual
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-4 pb-4">
+                {matchesLoading ? (
+                  <div className="space-y-2">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <Skeleton key={i} className="h-4 w-64" />
+                    ))}
+                  </div>
+                ) : !hasTopStats ? (
+                  <p className="text-sm text-muted-foreground">
+                    Sin estadísticas registradas esta temporada.
+                  </p>
+                ) : (
+                  <div className="divide-y">
+                    {topScorer && topScorer.points > 0 && (
+                      <div className="py-2 first:pt-0 last:pb-0 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Máximo anotador</p>
+                          <p className="text-sm font-medium">{topScorer.name}</p>
+                        </div>
+                        <span className="text-sm font-bold tabular-nums shrink-0">
+                          {topScorer.points} pts
+                        </span>
+                      </div>
+                    )}
+                    {topAssist && topAssist.assists > 0 && (
+                      <div className="py-2 first:pt-0 last:pb-0 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Máximo asistente</p>
+                          <p className="text-sm font-medium">{topAssist.name}</p>
+                        </div>
+                        <span className="text-sm font-bold tabular-nums shrink-0">
+                          {topAssist.assists} ast
+                        </span>
+                      </div>
+                    )}
+                    {topRebounder && topRebounder.rebounds > 0 && (
+                      <div className="py-2 first:pt-0 last:pb-0 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Máximo reboteador</p>
+                          <p className="text-sm font-medium">{topRebounder.name}</p>
+                        </div>
+                        <span className="text-sm font-bold tabular-nums shrink-0">
+                          {topRebounder.rebounds} reb
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>

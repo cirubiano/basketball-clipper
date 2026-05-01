@@ -275,6 +275,40 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ## Historial de sesiones
 
+### 2026-05-01 — Sesión 32 (Dashboard DT — estadísticas de equipo, asistencia y top performers)
+
+**Objetivo**: añadir tres secciones nuevas al dashboard del Director Técnico usando datos ya cargados.
+
+**Solo frontend — sin cambios en backend.**
+
+**`web/app/page.tsx`** — tres secciones nuevas debajo de "Últimos entrenamientos":
+
+**Sección 1 — Estadísticas por equipo (temporada actual)**
+- Una card por equipo activo; usa los datos de `matchQueries` (ya cargados)
+- Filtra `status === "finished"` y calcula: partidos jugados, victorias, derrotas
+- Pts anotados / encajados: promedio por partido (solo si hay scores registrados)
+- Estado vacío: "Sin partidos jugados esta temporada."
+- Skeleton loader mientras `matchesLoading`; error no destructivo por card
+
+**Sección 2 — Resumen de asistencia**
+- Una card por equipo activo; usa los datos de `trainingQueries` (ya cargados)
+- Calcula total de entrenamientos y % medio de asistencia del equipo
+- Muestra los 3 jugadores con menor asistencia (nombre + % colorido: verde ≥80%, ámbar ≥60%, rojo <60%)
+- Estado vacío: "Sin entrenamientos registrados."
+- Skeleton loader mientras `trainingsLoading`; error no destructivo por card
+
+**Sección 3 — Top performers**
+- Una card global agregando TODOS los equipos
+- Agrega stats de partidos `finished` por jugador: puntos, asistencias, rebotes totales
+- Muestra máximo anotador, máximo asistente, máximo reboteador
+- Usa `Array.from(map.values())` para compatibilidad con TypeScript es2015
+- Estado vacío: "Sin estadísticas registradas esta temporada."
+- Skeleton loader mientras `matchesLoading`
+
+**Verificaciones**: ESLint 0 errores ✔, TSC 0 errores ✔
+
+---
+
 ### 2026-05-01 — Sesión 31 (Tests de integración — posiciones, ciclo de vida partido, asistencia)
 
 **Objetivo**: añadir tests de integración para las tres features implementadas en las sesiones 27-29.
