@@ -274,6 +274,133 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ## Historial de sesiones
 
+### 2026-05-01 — Sesión 23 (3 mejoras UX: avatares, variantes, dashboard TD)
+
+**TAREA 1 — M2: Fotos de jugador más grandes**
+- **`web/app/players/page.tsx`**: `PlayerAvatar` tamaño "md" (default de listas): `h-10 w-10` → `h-12 w-12`
+- **`web/app/teams/[teamId]/roster/page.tsx`**: avatar inline `h-9 w-9` → `h-12 w-12`
+- **`web/app/teams/[teamId]/matches/[matchId]/page.tsx`**: añadidos avatares de iniciales (`h-12 w-12`) en la sección "Convocatoria" (jugadores convocados) y en "Añadir a la convocatoria" (no convocados)
+
+**TAREA 2 — M6: Contador de variantes en DrillCard**
+- **`backend/app/schemas/drill.py`**: campo `variant_count: int = 0` añadido a `DrillSummaryResponse`
+- **`backend/app/routers/drills.py`**: `list_drills` ahora hace un GROUP BY COUNT para contar variantes por drill, luego usa `model_copy(update={"variant_count": ...})` para inyectarlo en la respuesta
+- **`shared/types/drill.ts`**: `variant_count: number` añadido a `DrillSummary`
+- **`web/app/drills/page.tsx`**: `DrillCard` muestra badge "X variante(s)" (gris neutro) cuando `!parent_id && variant_count > 0`
+
+**TAREA 3 — Dashboard del Director Técnico**
+- **`web/app/page.tsx`**: cuando el perfil activo es `technical_director`, muestra:
+  - 4 stat cards: temporada activa (nombre + fechas), equipos activos (count), jugadores activos (count), nombre del club
+  - Card "Próximo partido": el partido con `status=scheduled` más próximo de todos los equipos del club (con link al partido)
+  - Card "Últimos entrenamientos": los 3 entrenamientos más recientes de todos los equipos, mezclados y ordenados por fecha desc (con links)
+  - Skeleton loaders mientras cargan los datos
+  - Usa `useQueries` para fetch paralelo de matches y trainings por equipo
+  - Imports añadidos: `getSeasons`, `getTeams`, `listPlayers`, `listMatches`, `listTrainings`, `MATCH_LOCATION_LABELS`, `useQueries`, Card UI components, `Trophy`, `Dumbbell` icons
+
+**Verificaciones**: `py_compile` ✔, ESLint 0 errores ✔, TSC 0 errores ✔
+
+---
+
+### 2026-05-01 — Sesión 22 (4 mejoras post-auditoría Fase F)
+
+**4 tareas independientes implementadas: validación convocatoria, resultado partido, reordenar ejercicios, ejercicios únicos.**
+
+**TAREA 1 — C-2: Validación de convocatoria en stats [BLOQUEANTE]**
+- **`backend/app/routers/matches.py`** (`upsert_match_stat`): antes de crear/actualizar un stat, verifica que el jugador esté en la convocatoria (`match_players`). Si no está, devuelve HTTP 422: `"El jugador {player_id} no está en la convocatoria de este partido."`
+
+**TAREA 2 — C-8: Resultado del partido (our_score / their_score)**
+- **`backend/app/models/match.py`**: añadidos `our_score: Mapped[int | None]` y `their_score: Mapped[int | None]`
+- **`backend/app/schemas/match.py`**: campos opcionales en `MatchResponse` y `MatchUpdate`
+- **`shared/types/match.ts`**: `our_score: number | null` y `their_score: number | null` en `Match` e `MatchUpdate`
+- **`web/app/teams/[teamId]/matches/[matchId]/page.tsx`**: muestra resultado en el header (solo cuando `status==="played"`); botón "Añadir resultado" / "Editar resultado" (solo para HC/TD); Dialog con dos inputs numéricos + `useEffect` para sincronizar el formulario al abrir
+
+**TAREA 3 — M-3: Reordenar ejercicios del entrenamiento**
+- **`backend/app/schemas/training.py`**: nuevo schema `TrainingDrillReorderItem`
+- **`backend/app/routers/trainings.py`**: nuevo endpoint `PATCH .../trainings/{trid}/drills` — actualiza posiciones desde un mapping `drill_id → position`
+- **`shared/types/training.ts`**: `TrainingDrillReorderItem` interface
+- **`shared/api/trainings.ts`**: función `reorderTrainingDrills`
+- **`web/app/teams/[teamId]/trainings/[trainingId]/page.tsx`**: botones ↑/↓ (ChevronUp/ChevronDown) en cada fila de ejercicio; `moveRow` helper construye el nuevo orden y llama a `reorderMut`
+
+**TAREA 4 — M-1: Prevenir ejercicios duplicados en entrenamiento**
+- **`backend/alembic/versions/0009_match_scores_drill_unique.py`** (nueva): añade `our_score`/`their_score` a `matches`; desduplicación SQL en `training_drills` antes de crear `UNIQUE(training_id, drill_id)`
+- **`backend/app/routers/trainings.py`** (`add_training_drill`): check de duplicado (409) antes de insertar
+- **`web/app/teams/[teamId]/trainings/[trainingId]/page.tsx`**: `onError` de `addDrillMut` detecta 409 y muestra toast sin cerrar el dialog
+
+**Fix TypeScript**: `moveRow` usaba `typeof training.training_drills` (inválido si `training` es `undefined`) → reemplazado por `TrainingDrill[]` con import explícito
+
+**Verificaciones**: `py_compile` ✔, `alembic upgrade head` ✔, ESLint 0 errores ✔, TSC 0 errores ✔, smoke test ✔
+
+---
+
+### 2026-05-01 — Sesión 21 (Auditoría UX Fase F — bugs y quick wins)
+
+**Recorrido completo de los flujos de Partidos y Entrenamientos como HeadCoach.**
+
+**BUG-1 — BLOQUEANTE — `drill.title` AttributeError (backend 500)**
+- **`backend/app/routers/trainings.py`**: `td.drill.title` → `td.drill.name` (dos call sites). Cada `POST .../drills` y cada `GET` de un entrenamiento con ejercicios devolvía HTTP 500. Corregido por el agente durante la auditoría.
+
+**BUG-2 — HTML entity en toast de entrenamiento**
+- **`web/app/teams/[teamId]/trainings/page.tsx`**: `&quot;` en template literal → comillas normales. Corregido por el agente.
+
+**C-4 — Control de cambio de estado del partido [FIX]**
+- **`web/app/teams/[teamId]/matches/[matchId]/page.tsx`**: la Badge de estado se reemplaza por un `<Select>` con opciones Programado/Jugado/Cancelado para HeadCoach y TD. Llama a `updateMatch` con `{ status }`.
+
+**C-5 — Vinculación de vídeos (placeholder completado) [FIX]**
+- **`web/app/teams/[teamId]/matches/[matchId]/page.tsx`**: tab Vídeos ahora muestra los vídeos vinculados (con botón de desvincular) + formulario para vincular nuevos: Select de vídeos disponibles + Select de etiqueta (Scouting / Análisis post-partido / Otro) + botón Vincular. Se importan `updateMatch`, `addMatchVideo`, `removeMatchVideo` y se añaden las mutaciones correspondientes.
+
+**C-3 — StatRow stale form en segunda edición [FIX]**
+- **`web/app/teams/[teamId]/matches/[matchId]/page.tsx`**: `key` de `StatRow` cambiado a `stat ? \`stat-\${stat.id}\` : \`nostat-\${mp.player_id}\`` para forzar recreación del componente cuando el stat cambia.
+
+**C-1 — "Convocar a todos" button [FIX]**
+- **`web/app/teams/[teamId]/matches/[matchId]/page.tsx`**: botón "Convocar a todos" en la sección "Añadir a la convocatoria" que dispara `addPlayerMut` para todos los jugadores no convocados en paralelo.
+
+**C-6 — Tipo de ejercicio en entrenamiento mostraba inglés [FIX]**
+- **`web/app/teams/[teamId]/trainings/[trainingId]/page.tsx`**: `capitalize` + valor raw `"drill"/"play"` → `"Ejercicio"/"Jugada"` con ternario.
+
+**C-7 — Breadcrumb "Equipo" con href incorrecto [FIX]**
+- **`web/app/teams/[teamId]/trainings/page.tsx`**: eliminado `href` del item "Equipo" (el breadcrumb no debe navegar a una sección hermana).
+
+**M-6 — `completedVideos` era variable muerta [FIX]**
+- Ahora se usa realmente en la lógica de video linking (C-5).
+
+**Issues que requieren diseño/API (pendientes):**
+- **C-2**: Backend acepta stats para jugadores no convocados — requiere validación en router
+- **C-8**: No hay campos de resultado (our_score/their_score) en Match — requiere migración
+- **M-1**: API permite drill duplicado en un entrenamiento — requiere UNIQUE constraint o check
+- **M-3**: No hay reordenación de ejercicios (ni API ni UI) — requiere PATCH /drills/reorder + drag-handle
+
+**Verificaciones**: ESLint ✔, TSC ✔
+
+---
+
+### 2026-05-01 — Sesión 20 (Mejoras UX post-Fase F)
+
+**4 tareas de mejora UX aplicadas tras completar la Fase F.**
+
+**TAREA 0 — Dialog "Añadir ejercicio" con 3 opciones (RF-410b)**
+- **`web/app/teams/[teamId]/trainings/[trainingId]/page.tsx`** (reescrito): dialog de añadir ejercicio con 3 modos — "Mi biblioteca" (select de drills personales), "Catálogo del club" (select de entradas del catálogo), "Crear nuevo" (nombre + tipo → `createDrill` + `addTrainingDrill` en cadena)
+- Añadido enlace "Ver" (ExternalLink) en cada ejercicio de la lista → `/drills/${td.drill_id}/edit`
+
+**TAREA 1 — Validación de fechas en temporadas**
+- **`web/app/clubs/[clubId]/seasons/page.tsx`**: validación inline en `handleSubmit` — si `ends_at <= starts_at` muestra "La fecha de fin debe ser posterior a la fecha de inicio" sin enviar al backend
+- **`backend/app/schemas/club.py`**: `@model_validator(mode="after")` en `SeasonCreate` — rechaza con 422 si `ends_at <= starts_at` (segunda línea de defensa)
+
+**TAREA 2 — Enlace "Ver drill" en catálogo y playbook**
+- **`web/app/clubs/[clubId]/catalog/page.tsx`**: botón ExternalLink en cada fila → `/drills/${drill.id}/edit`
+- **`web/app/teams/[teamId]/playbook/page.tsx`**: botón ExternalLink siempre visible en cada fila → `/drills/${drill.id}/edit` (el botón de eliminar sigue siendo solo visible al hover)
+
+**TAREA 3 — Componente Breadcrumb + integración en 12 páginas**
+- **`web/components/layout/Breadcrumb.tsx`** (nuevo): componente con Home icon + items separados por ChevronRight; items con href son clickables, el último sin href es el título actual (bold)
+- Añadido en 12 páginas:
+  - Club: `/clubs/[clubId]/teams`, `/clubs/[clubId]/seasons`, `/clubs/[clubId]/members`, `/clubs/[clubId]/catalog`
+  - Equipo: `/teams/[teamId]/matches`, `/teams/[teamId]/trainings`, `/teams/[teamId]/roster`, `/teams/[teamId]/playbook`
+  - Detalle: `/teams/[teamId]/matches/[matchId]`, `/teams/[teamId]/trainings/[trainingId]` (reemplazan el botón ArrowLeft)
+  - Personal: `/drills`, `/players`
+- Usa `activeProfile.club_name` y `activeProfile.team_name` (no IDs)
+
+**Verificaciones**: `py_compile` backend OK, ESLint 0 errores, TSC 0 errores
+
+---
+
 ### 2026-05-01 — Sesión 19 (Fase F — Partidos y Entrenamientos)
 
 **Implementación completa de la Fase F del roadmap.**

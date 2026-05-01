@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Breadcrumb } from "@/components/layout/Breadcrumb";
 
 export default function TrainingsPage({
   params,
@@ -92,7 +93,7 @@ export default function TrainingsPage({
     mutationFn: (data: TrainingCreate) => createTraining(token!, clubId!, teamId, data),
     onSuccess: (t) => {
       void qc.invalidateQueries({ queryKey: ["trainings", teamId] });
-      toast(`Entrenamiento &quot;${t.title}&quot; creado.`);
+      toast(`Entrenamiento "${t.title}" creado.`);
       setDialogOpen(false);
       setForm({ title: "", date: "", season_id: 0 });
       setFormError(null);
@@ -129,6 +130,11 @@ export default function TrainingsPage({
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-8 max-w-3xl">
+        <Breadcrumb items={[
+          { label: activeProfile?.club_name ?? "Club", href: `/clubs/${clubId}/teams` },
+          { label: activeProfile?.team_name ?? "Equipo" },
+          { label: "Entrenamientos" },
+        ]} />
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold">Entrenamientos</h1>

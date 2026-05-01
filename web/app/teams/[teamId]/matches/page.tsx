@@ -55,6 +55,7 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Breadcrumb } from "@/components/layout/Breadcrumb";
 
 const LOCATIONS: MatchLocation[] = ["home", "away", "neutral"];
 
@@ -156,6 +157,12 @@ export default function MatchesPage({
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-8 max-w-3xl">
+        <Breadcrumb items={[
+          { label: activeProfile?.club_name ?? "Club", href: clubId ? `/clubs/${clubId}/teams` : "/" },
+          { label: activeProfile?.team_name ?? "Equipo" },
+          { label: "Partidos" },
+        ]} />
+
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold">Partidos</h1>

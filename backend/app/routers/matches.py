@@ -152,6 +152,8 @@ def _serialize_match(match: Match) -> MatchResponse:
         location=match.location,
         status=match.status,
         notes=match.notes,
+        our_score=match.our_score,
+        their_score=match.their_score,
         created_by=match.created_by,
         created_at=match.created_at,
         archived_at=match.archived_at,
@@ -449,6 +451,19 @@ async def upsert_match_stat(
     profile = await _require_team_member(club_id, team_id, current_user, db)
     _require_coach_or_td(profile, current_user)
     await _get_match_or_404(match_id, team_id, db)
+
+    # Verify the player is in the convocatoria
+    in_convocatoria = await db.scalar(
+        select(MatchPlayer).where(
+            MatchPlayer.match_id == match_id,
+            MatchPlayer.player_id == body.player_id,
+        )
+    )
+    if in_convocatoria is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"El jugador {body.player_id} no está en la convocatoria de este partido.",
+        )
 
     stat = await db.scalar(
         select(MatchStat).where(

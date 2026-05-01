@@ -99,6 +99,7 @@ export interface DrillSummary {
   created_at: string;
   updated_at: string;
   tags: Tag[];
+  variant_count: number;
 }
 
 export interface Drill extends DrillSummary {

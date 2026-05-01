@@ -45,6 +45,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import { cn } from "@/lib/utils";
 
 const EMPTY_FORM: PlayerCreate = {
@@ -66,7 +67,7 @@ function PlayerAvatar({ player, size = "md" }: { player: Player; size?: "sm" | "
   const dim =
     size === "sm" ? "h-8 w-8 text-xs" :
     size === "lg" ? "h-16 w-16 text-xl" :
-    "h-10 w-10 text-sm";
+    "h-12 w-12 text-sm";
 
   if (player.photo_url) {
     return (
@@ -326,6 +327,10 @@ export default function PlayersPage() {
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-8 max-w-4xl">
+        <Breadcrumb items={[
+          { label: activeProfile?.club_name ?? "Club", href: clubId ? `/clubs/${clubId}/teams` : "/" },
+          { label: "Jugadores" },
+        ]} />
 
         {/* Header */}
         <div className="flex items-center justify-between mb-6">

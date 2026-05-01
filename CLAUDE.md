@@ -733,6 +733,7 @@ y sus tipos en `shared/types/`. Web y mobile nunca llaman al backend directament
 | PATCH | /clubs/{id}/teams/{tid}/trainings/{trid} | hc_or_td | Actualizar entrenamiento |
 | DELETE | /clubs/{id}/teams/{tid}/trainings/{trid} | hc_or_td | Archivar entrenamiento (RF-404) |
 | POST | /clubs/{id}/teams/{tid}/trainings/{trid}/drills | hc_or_td | Añadir ejercicio al entrenamiento (RF-410) |
+| PATCH | /clubs/{id}/teams/{tid}/trainings/{trid}/drills | hc_or_td | Reordenar ejercicios del entrenamiento (body: [{drill_id, position}]) |
 | DELETE | /clubs/{id}/teams/{tid}/trainings/{trid}/drills/{did} | hc_or_td | Eliminar ejercicio del entrenamiento |
 | POST | /clubs/{id}/teams/{tid}/trainings/{trid}/attendance | hc_or_td | Registrar asistencia de jugador (RF-421) |
 

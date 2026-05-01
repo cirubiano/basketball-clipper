@@ -57,6 +57,11 @@ class TrainingDrillAdd(BaseModel):
     notes: str | None = None
 
 
+class TrainingDrillReorderItem(BaseModel):
+    drill_id: int
+    position: int
+
+
 class AttendanceUpdate(BaseModel):
     player_id: int
     attended: bool

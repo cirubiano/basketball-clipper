@@ -6,6 +6,7 @@ import type {
   TrainingCreate,
   TrainingDrill,
   TrainingDrillAdd,
+  TrainingDrillReorderItem,
   TrainingUpdate,
 } from "../types";
 
@@ -93,6 +94,19 @@ export const removeTrainingDrill = (
   apiRequest<void>(`${base(clubId, teamId)}/${trainingId}/drills/${tdId}`, {
     token,
     method: "DELETE",
+  });
+
+export const reorderTrainingDrills = (
+  token: string,
+  clubId: number,
+  teamId: number,
+  trainingId: number,
+  items: TrainingDrillReorderItem[],
+): Promise<TrainingDrill[]> =>
+  apiRequest<TrainingDrill[]>(`${base(clubId, teamId)}/${trainingId}/drills`, {
+    token,
+    method: "PATCH",
+    body: JSON.stringify(items),
   });
 
 // ── Asistencia ────────────────────────────────────────────────────────────────

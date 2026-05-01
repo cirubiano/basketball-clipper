@@ -60,6 +60,8 @@ export interface Match {
   location: MatchLocation;
   status: MatchStatus;
   notes: string | null;
+  our_score: number | null;
+  their_score: number | null;
   created_by: number | null;
   created_at: string;
   archived_at: string | null;
@@ -83,6 +85,8 @@ export interface MatchUpdate {
   location?: MatchLocation;
   status?: MatchStatus;
   notes?: string | null;
+  our_score?: number | null;
+  their_score?: number | null;
 }
 
 export interface MatchVideoAdd {

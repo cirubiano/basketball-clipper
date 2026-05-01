@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from app.models.profile import UserRole
 from app.models.season import SeasonStatus
@@ -33,6 +33,12 @@ class SeasonCreate(BaseModel):
     name: str
     starts_at: date | None = None
     ends_at: date | None = None
+
+    @model_validator(mode="after")
+    def ends_after_starts(self) -> "SeasonCreate":
+        if self.starts_at and self.ends_at and self.ends_at <= self.starts_at:
+            raise ValueError("ends_at must be after starts_at")
+        return self
 
 
 class SeasonStatusUpdate(BaseModel):

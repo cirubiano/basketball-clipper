@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -161,7 +161,29 @@ async def list_drills(
         stmt = stmt.where(Drill.archived_at.is_(None))
     stmt = stmt.order_by(Drill.updated_at.desc())
     result = await db.execute(stmt)
-    return result.scalars().all()
+    drills_list = result.scalars().all()
+
+    # Count variants for each drill (children where parent_id = drill.id)
+    variant_counts: dict[int, int] = {}
+    if drills_list:
+        drill_ids = [d.id for d in drills_list]
+        count_result = await db.execute(
+            select(Drill.parent_id, func.count(Drill.id).label("cnt"))
+            .where(
+                Drill.parent_id.in_(drill_ids),
+                Drill.archived_at.is_(None),
+            )
+            .group_by(Drill.parent_id)
+        )
+        for row in count_result:
+            variant_counts[row.parent_id] = row.cnt
+
+    return [
+        DrillSummaryResponse.model_validate(d).model_copy(
+            update={"variant_count": variant_counts.get(d.id, 0)}
+        )
+        for d in drills_list
+    ]
 
 
 @router.post("", response_model=DrillResponse, status_code=201)

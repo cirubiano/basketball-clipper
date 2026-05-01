@@ -46,6 +46,8 @@ class Match(Base):
         server_default="scheduled",
     )
     notes: Mapped[str | None] = mapped_column(Text)
+    our_score: Mapped[int | None] = mapped_column(Integer)
+    their_score: Mapped[int | None] = mapped_column(Integer)
     created_by: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

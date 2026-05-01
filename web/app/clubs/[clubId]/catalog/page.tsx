@@ -9,7 +9,9 @@ import {
   Trash2,
   ChevronRight,
   Tag,
+  ExternalLink,
 } from "lucide-react";
+import Link from "next/link";
 import {
   listCatalog,
   copyToCatalogLibrary,
@@ -33,6 +35,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Breadcrumb } from "@/components/layout/Breadcrumb";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -85,6 +88,10 @@ export default function CatalogPage({
   return (
     <PageShell>
       <div className="max-w-3xl mx-auto space-y-6">
+        <Breadcrumb items={[
+          { label: activeProfile?.club_name ?? "Club", href: `/clubs/${clubId}/teams` },
+          { label: "Catálogo" },
+        ]} />
 
         {/* Header */}
         <div>
@@ -202,6 +209,12 @@ function CatalogRow({
 
       {/* Actions */}
       <div className="flex items-center gap-1 shrink-0">
+        <Link href={`/drills/${drill.id}/edit`}>
+          <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" aria-label="Ver drill">
+            <ExternalLink className="h-3.5 w-3.5" />
+          </Button>
+        </Link>
+
         <Button
           size="sm"
           variant={copyDone ? "default" : "outline"}

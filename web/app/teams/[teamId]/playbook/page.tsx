@@ -22,7 +22,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Plus, Trash2, Lock } from "lucide-react";
+import { Plus, Trash2, Lock, ExternalLink } from "lucide-react";
+import Link from "next/link";
+import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import {
   listPlaybook,
   addToPlaybook,
@@ -84,6 +86,11 @@ export default function PlaybookPage({
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-6 max-w-4xl">
+        <Breadcrumb items={[
+          { label: activeProfile?.club_name ?? "Club", href: clubId ? `/clubs/${clubId}/teams` : "/" },
+          { label: activeProfile?.team_name ?? "Equipo", href: `/teams/${teamId}/matches` },
+          { label: "Playbook" },
+        ]} />
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold">Playbook del equipo</h1>
@@ -237,11 +244,16 @@ function PlaybookEntryRow({
         </p>
       </div>
 
-      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="flex gap-1">
+        <Link href={`/drills/${drill.id}/edit`}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Ver drill">
+            <ExternalLink className="h-4 w-4" />
+          </Button>
+        </Link>
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 text-destructive hover:text-destructive"
+          className="h-8 w-8 text-destructive hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
           onClick={onRemove}
           disabled={isRemoving}
           title="Quitar del playbook"

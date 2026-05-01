@@ -35,6 +35,7 @@ from app.schemas.training import (
     TrainingAttendanceResponse,
     TrainingCreate,
     TrainingDrillAdd,
+    TrainingDrillReorderItem,
     TrainingDrillResponse,
     TrainingResponse,
     TrainingUpdate,
@@ -106,7 +107,7 @@ def _serialize_training(training: Training) -> TrainingResponse:
             drill_id=td.drill_id,
             position=td.position,
             notes=td.notes,
-            drill_title=td.drill.title if td.drill else None,
+            drill_title=td.drill.name if td.drill else None,
             drill_type=td.drill.type.value if td.drill and td.drill.type else None,
         )
         for td in sorted(training.training_drills, key=lambda x: x.position)
@@ -276,6 +277,16 @@ async def add_training_drill(
     if drill is None or drill.archived_at is not None:
         raise HTTPException(status_code=404, detail="Drill not found")
 
+    # Check for duplicate
+    duplicate = await db.scalar(
+        select(TrainingDrill).where(
+            TrainingDrill.training_id == training_id,
+            TrainingDrill.drill_id == body.drill_id,
+        )
+    )
+    if duplicate is not None:
+        raise HTTPException(status_code=409, detail="Este ejercicio ya está en el entrenamiento.")
+
     # position = next after last
     position = len(training.training_drills)
 
@@ -296,7 +307,7 @@ async def add_training_drill(
         drill_id=td.drill_id,
         position=td.position,
         notes=td.notes,
-        drill_title=drill.title,
+        drill_title=drill.name,
         drill_type=drill.type.value if drill.type else None,
     )
 
@@ -341,6 +352,42 @@ async def remove_training_drill(
 
     await db.commit()
     return Response(status_code=204)
+
+
+@router.patch(
+    "/{club_id}/teams/{team_id}/trainings/{training_id}/drills",
+    response_model=list[TrainingDrillResponse],
+)
+async def reorder_training_drills(
+    club_id: int,
+    team_id: int,
+    training_id: int,
+    body: list[TrainingDrillReorderItem],
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[TrainingDrillResponse]:
+    """Update the position of each TrainingDrill. Body: [{ drill_id, position }]."""
+    await _get_club_or_404(club_id, db)
+    await _get_team_or_404(club_id, team_id, db)
+    profile = await _require_team_member(club_id, team_id, current_user, db)
+    _require_coach_or_td(profile, current_user)
+
+    training = await _get_training_or_404(training_id, team_id, db)
+
+    drill_id_to_td = {td.drill_id: td for td in training.training_drills}
+
+    for item in body:
+        td = drill_id_to_td.get(item.drill_id)
+        if td is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Ejercicio {item.drill_id} no está en el entrenamiento.",
+            )
+        td.position = item.position
+
+    await db.commit()
+    training = await _get_training_or_404(training_id, team_id, db)
+    return _serialize_training(training).training_drills
 
 
 # ── Asistencia ────────────────────────────────────────────────────────────────

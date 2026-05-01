@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import Link from "next/link";
 
 export default function TeamsPage({
@@ -124,6 +125,10 @@ export default function TeamsPage({
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-8 max-w-3xl">
+        <Breadcrumb items={[
+          { label: activeProfile?.club_name ?? "Club" },
+          { label: "Equipos" },
+        ]} />
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold">Equipos</h1>

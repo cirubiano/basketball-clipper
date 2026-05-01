@@ -83,5 +83,6 @@ class DrillSummaryResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     tags: list[TagResponse]
+    variant_count: int = 0
 
     model_config = {"from_attributes": True}

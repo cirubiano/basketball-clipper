@@ -32,6 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Breadcrumb } from "@/components/layout/Breadcrumb";
 
 const POSITIONS: PlayerPosition[] = [
   "point_guard",
@@ -118,6 +119,11 @@ export default function RosterPage({
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-8 max-w-4xl">
+        <Breadcrumb items={[
+          { label: activeProfile?.club_name ?? "Club", href: clubId ? `/clubs/${clubId}/teams` : "/" },
+          { label: activeProfile?.team_name ?? "Equipo", href: `/teams/${teamId}/matches` },
+          { label: "Plantilla" },
+        ]} />
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold">Plantilla</h1>
@@ -148,7 +154,7 @@ export default function RosterPage({
                 <div className="w-8 text-center font-mono text-sm font-semibold text-muted-foreground shrink-0">
                   {entry.jersey_number != null ? String(entry.jersey_number).padStart(2, "0") : "--"}
                 </div>
-                <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center text-sm font-semibold text-muted-foreground shrink-0">
+                <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center text-sm font-semibold text-muted-foreground shrink-0">
                   {entry.player.first_name[0]}{entry.player.last_name[0]}
                 </div>
                 <div className="flex-1 min-w-0">

@@ -1,15 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, UserPlus, Trash2, Film, BarChart2 } from "lucide-react";
+import { UserPlus, Trash2, Film } from "lucide-react";
 import Link from "next/link";
 import {
   getMatch,
   addMatchPlayer,
   removeMatchPlayer,
   upsertMatchStat,
-  listPlayers,
+  updateMatch,
+  addMatchVideo,
+  removeMatchVideo,
   listRoster,
   listVideos,
 } from "@basketball-clipper/shared/api";
@@ -20,16 +22,24 @@ import {
 } from "@basketball-clipper/shared/types";
 import type {
   MatchStatUpsert,
+  MatchStatus,
   MatchVideoLabel,
-  RosterEntry,
 } from "@basketball-clipper/shared/types";
 import { PageShell } from "@/components/layout/PageShell";
+import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,6 +51,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -68,6 +85,10 @@ export default function MatchDetailPage({
     activeProfile?.role === "technical_director";
 
   const [tab, setTab] = useState<TabKey>("convocatoria");
+  const [selectedVideoId, setSelectedVideoId] = useState<string>("");
+  const [selectedVideoLabel, setSelectedVideoLabel] = useState<MatchVideoLabel>("other");
+  const [scoreDialogOpen, setScoreDialogOpen] = useState(false);
+  const [scoreForm, setScoreForm] = useState({ our: "", their: "" });
 
   const { data: match, isLoading } = useQuery({
     queryKey: ["match", matchId],
@@ -90,6 +111,66 @@ export default function MatchDetailPage({
   });
 
   const completedVideos = videos.filter((v) => v.status === "completed");
+  const linkedVideoIds = new Set(match?.match_videos.map((mv) => mv.video_id) ?? []);
+  const availableVideos = completedVideos.filter((v) => !linkedVideoIds.has(v.id));
+
+  const updateStatusMut = useMutation({
+    mutationFn: (status: MatchStatus) =>
+      updateMatch(token!, clubId!, teamId, matchId, { status }),
+    onSuccess: (m) => {
+      void qc.invalidateQueries({ queryKey: ["match", matchId] });
+      toast(`Estado cambiado a ${MATCH_STATUS_LABELS[m.status]}.`);
+    },
+    onError: (e: Error) => toast(e.message, "error"),
+  });
+
+  const addVideoMut = useMutation({
+    mutationFn: () =>
+      addMatchVideo(token!, clubId!, teamId, matchId, {
+        video_id: Number(selectedVideoId),
+        label: selectedVideoLabel,
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["match", matchId] });
+      setSelectedVideoId("");
+      setSelectedVideoLabel("other");
+      toast("Vídeo vinculado al partido.");
+    },
+    onError: (e: Error) => toast(e.message, "error"),
+  });
+
+  const removeVideoMut = useMutation({
+    mutationFn: (videoId: number) =>
+      removeMatchVideo(token!, clubId!, teamId, matchId, videoId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["match", matchId] });
+      toast("Vídeo desvinculado.");
+    },
+  });
+
+  const saveScoreMut = useMutation({
+    mutationFn: () =>
+      updateMatch(token!, clubId!, teamId, matchId, {
+        our_score: scoreForm.our === "" ? null : Number(scoreForm.our),
+        their_score: scoreForm.their === "" ? null : Number(scoreForm.their),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["match", matchId] });
+      setScoreDialogOpen(false);
+      toast("Resultado guardado.");
+    },
+    onError: (e: Error) => toast(e.message, "error"),
+  });
+
+  // Sync score form when dialog opens
+  useEffect(() => {
+    if (scoreDialogOpen && match) {
+      setScoreForm({
+        our: match.our_score != null ? String(match.our_score) : "",
+        their: match.their_score != null ? String(match.their_score) : "",
+      });
+    }
+  }, [scoreDialogOpen, match]);
 
   const addPlayerMut = useMutation({
     mutationFn: (playerId: number) =>
@@ -158,12 +239,15 @@ export default function MatchDetailPage({
       <div className="container mx-auto px-4 py-8 max-w-3xl">
         {/* Header */}
         <div className="mb-6">
-          <Button asChild variant="ghost" size="sm" className="mb-4 -ml-2 text-muted-foreground">
-            <Link href={`/teams/${teamId}/matches`}>
-              <ArrowLeft className="h-4 w-4 mr-1" />
-              Partidos
-            </Link>
-          </Button>
+          <Breadcrumb
+            className="mb-4"
+            items={[
+              { label: activeProfile?.club_name ?? "Club", href: clubId ? `/clubs/${clubId}/teams` : "/" },
+              { label: activeProfile?.team_name ?? "Equipo", href: `/teams/${teamId}/matches` },
+              { label: "Partidos", href: `/teams/${teamId}/matches` },
+              { label: `vs. ${match.opponent_name}` },
+            ]}
+          />
           <div className="flex items-start justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold">vs. {match.opponent_name}</h1>
@@ -171,10 +255,50 @@ export default function MatchDetailPage({
                 {dateStr} · {timeStr} · {MATCH_LOCATION_LABELS[match.location]}
               </p>
             </div>
-            <Badge variant={STATUS_VARIANT[match.status]} className="shrink-0 mt-1">
-              {MATCH_STATUS_LABELS[match.status]}
-            </Badge>
+            {isCoachOrTD ? (
+              <Select
+                value={match.status}
+                onValueChange={(v) => updateStatusMut.mutate(v as MatchStatus)}
+                disabled={updateStatusMut.isPending}
+              >
+                <SelectTrigger className="w-36 h-8 text-xs shrink-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="scheduled">Programado</SelectItem>
+                  <SelectItem value="played">Jugado</SelectItem>
+                  <SelectItem value="cancelled">Cancelado</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <Badge variant={STATUS_VARIANT[match.status]} className="shrink-0 mt-1">
+                {MATCH_STATUS_LABELS[match.status]}
+              </Badge>
+            )}
           </div>
+
+          {/* Score (only when played) */}
+          {match.status === "played" && (
+            <div className="mt-3 flex items-center gap-3">
+              {match.our_score != null && match.their_score != null ? (
+                <span className="text-3xl font-bold tabular-nums">
+                  {match.our_score} <span className="text-muted-foreground">—</span> {match.their_score}
+                </span>
+              ) : (
+                <span className="text-xl font-medium text-muted-foreground">— — —</span>
+              )}
+              {isCoachOrTD && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-7"
+                  onClick={() => setScoreDialogOpen(true)}
+                >
+                  {match.our_score != null ? "Editar resultado" : "Añadir resultado"}
+                </Button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Tabs */}
@@ -208,6 +332,9 @@ export default function MatchDetailPage({
               <div className="border rounded-lg divide-y mb-4">
                 {match.match_players.map((mp) => (
                   <div key={mp.id} className="flex items-center gap-3 px-4 py-3">
+                    <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center text-sm font-semibold text-muted-foreground shrink-0">
+                      {(mp.player_first_name?.[0] ?? "").toUpperCase()}{(mp.player_last_name?.[0] ?? "").toUpperCase()}
+                    </div>
                     <div className="flex-1">
                       <p className="text-sm font-medium">
                         {mp.player_first_name} {mp.player_last_name}
@@ -251,10 +378,25 @@ export default function MatchDetailPage({
 
             {isCoachOrTD && notConvocado.length > 0 && (
               <div>
-                <p className="text-sm font-medium text-muted-foreground mb-2">Añadir a la convocatoria</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium text-muted-foreground">Añadir a la convocatoria</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1"
+                    disabled={addPlayerMut.isPending}
+                    onClick={() => notConvocado.forEach((re) => addPlayerMut.mutate(re.player_id))}
+                  >
+                    <UserPlus className="h-3 w-3" />
+                    Convocar a todos
+                  </Button>
+                </div>
                 <div className="border rounded-lg divide-y">
                   {notConvocado.map((re) => (
                     <div key={re.id} className="flex items-center gap-3 px-4 py-2.5">
+                      <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center text-sm font-semibold text-muted-foreground shrink-0">
+                        {(re.player.first_name?.[0] ?? "").toUpperCase()}{(re.player.last_name?.[0] ?? "").toUpperCase()}
+                      </div>
                       <p className="text-sm flex-1">{re.player.first_name} {re.player.last_name}</p>
                       <Button
                         variant="outline"
@@ -276,13 +418,13 @@ export default function MatchDetailPage({
 
         {/* Tab: Vídeos */}
         {tab === "videos" && (
-          <div>
+          <div className="space-y-4">
             {match.match_videos.length === 0 ? (
-              <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm mb-4">
+              <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
                 No hay vídeos vinculados a este partido.
               </div>
             ) : (
-              <div className="border rounded-lg divide-y mb-4">
+              <div className="border rounded-lg divide-y">
                 {match.match_videos.map((mv) => (
                   <div key={mv.id} className="flex items-center gap-3 px-4 py-3">
                     <Film className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -290,13 +432,73 @@ export default function MatchDetailPage({
                       <p className="text-sm font-medium truncate">{mv.video_title ?? `Vídeo #${mv.video_id}`}</p>
                       <p className="text-xs text-muted-foreground">{MATCH_VIDEO_LABEL_LABELS[mv.label]}</p>
                     </div>
+                    {isCoachOrTD && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
+                        disabled={removeVideoMut.isPending}
+                        onClick={() => removeVideoMut.mutate(mv.video_id)}
+                        aria-label="Desvincular vídeo"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
                 ))}
               </div>
             )}
-            <p className="text-xs text-muted-foreground">
-              La vinculación de vídeos está disponible próximamente desde esta pantalla.
-            </p>
+
+            {isCoachOrTD && (
+              <div className="border rounded-lg p-4 space-y-3">
+                <p className="text-sm font-medium">Vincular vídeo</p>
+                {availableVideos.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No hay vídeos disponibles. Sube un vídeo desde{" "}
+                    <Link href="/videos" className="underline hover:text-foreground">Mis vídeos</Link>.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2 items-end">
+                    <div className="flex-1 min-w-40 space-y-1">
+                      <Label className="text-xs">Vídeo</Label>
+                      <Select value={selectedVideoId} onValueChange={setSelectedVideoId}>
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Selecciona un vídeo..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableVideos.map((v) => (
+                            <SelectItem key={v.id} value={String(v.id)}>
+                              {v.title ?? `Vídeo #${v.id}`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Etiqueta</Label>
+                      <Select value={selectedVideoLabel} onValueChange={(v) => setSelectedVideoLabel(v as MatchVideoLabel)}>
+                        <SelectTrigger className="h-8 text-xs w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="scouting">Scouting</SelectItem>
+                          <SelectItem value="post_analysis">Análisis post-partido</SelectItem>
+                          <SelectItem value="other">Otro</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="h-8"
+                      disabled={!selectedVideoId || addVideoMut.isPending}
+                      onClick={() => addVideoMut.mutate()}
+                    >
+                      Vincular
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -327,7 +529,7 @@ export default function MatchDetailPage({
                       const stat = match.match_stats.find((s) => s.player_id === mp.player_id);
                       return (
                         <StatRow
-                          key={mp.player_id}
+                          key={stat ? `stat-${stat.id}` : `nostat-${mp.player_id}`}
                           playerId={mp.player_id}
                           name={`${mp.player_first_name ?? ""} ${mp.player_last_name ?? ""}`.trim()}
                           stat={stat}
@@ -343,6 +545,48 @@ export default function MatchDetailPage({
           </div>
         )}
       </div>
+
+      {/* Score dialog */}
+      <Dialog open={scoreDialogOpen} onOpenChange={setScoreDialogOpen}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Resultado del partido</DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center gap-3 py-2">
+            <div className="flex-1 space-y-1">
+              <Label htmlFor="our-score" className="text-xs">Nuestros puntos</Label>
+              <Input
+                id="our-score"
+                type="number"
+                min={0}
+                className="text-center h-10 text-lg"
+                value={scoreForm.our}
+                onChange={(e) => setScoreForm((f) => ({ ...f, our: e.target.value }))}
+                placeholder="—"
+              />
+            </div>
+            <span className="text-muted-foreground font-bold text-xl mt-5">—</span>
+            <div className="flex-1 space-y-1">
+              <Label htmlFor="their-score" className="text-xs">Puntos rival</Label>
+              <Input
+                id="their-score"
+                type="number"
+                min={0}
+                className="text-center h-10 text-lg"
+                value={scoreForm.their}
+                onChange={(e) => setScoreForm((f) => ({ ...f, their: e.target.value }))}
+                placeholder="—"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setScoreDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={() => saveScoreMut.mutate()} disabled={saveScoreMut.isPending}>
+              {saveScoreMut.isPending ? "Guardando..." : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageShell>
   );
 }

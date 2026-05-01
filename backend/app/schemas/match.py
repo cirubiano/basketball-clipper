@@ -49,6 +49,8 @@ class MatchResponse(BaseModel):
     location: MatchLocation
     status: MatchStatus
     notes: str | None
+    our_score: int | None = None
+    their_score: int | None = None
     created_by: int | None
     created_at: datetime
     archived_at: datetime | None
@@ -72,6 +74,8 @@ class MatchUpdate(BaseModel):
     location: MatchLocation | None = None
     status: MatchStatus | None = None
     notes: str | None = None
+    our_score: int | None = None
+    their_score: int | None = None
 
 
 class MatchVideoAdd(BaseModel):

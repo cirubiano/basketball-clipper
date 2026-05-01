@@ -49,6 +49,11 @@ export interface TrainingDrillAdd {
   notes?: string | null;
 }
 
+export interface TrainingDrillReorderItem {
+  drill_id: number;
+  position: number;
+}
+
 export interface AttendanceUpdate {
   player_id: number;
   attended: boolean;

@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Breadcrumb } from "@/components/layout/Breadcrumb";
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -184,6 +185,10 @@ export default function MembersPage({
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-8 max-w-3xl">
+        <Breadcrumb items={[
+          { label: activeProfile?.club_name ?? "Club", href: `/clubs/${clubId}/teams` },
+          { label: "Entrenadores" },
+        ]} />
 
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
