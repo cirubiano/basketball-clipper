@@ -11,11 +11,13 @@ from app.models.club_member import ClubMember
 from app.models.club_tag import ClubTag
 from app.models.drill import CourtLayoutType, Drill, DrillType, Tag, drill_tags
 from app.models.exercise import Exercise
+from app.models.match import Match, MatchLocation, MatchPlayer, MatchStat, MatchStatus, MatchVideo, MatchVideoLabel
 from app.models.player import Player, PlayerPosition, RosterEntry
 from app.models.playbook import TeamPlaybookEntry
 from app.models.profile import Profile, UserRole
 from app.models.season import Season, SeasonStatus
 from app.models.team import Team
+from app.models.training import Training, TrainingAttendance, TrainingDrill
 from app.models.user import User
 from app.models.video import Video, VideoStatus
 
@@ -31,6 +33,13 @@ __all__ = [
     "DrillType",
     "drill_tags",
     "Exercise",
+    "Match",
+    "MatchLocation",
+    "MatchPlayer",
+    "MatchStat",
+    "MatchStatus",
+    "MatchVideo",
+    "MatchVideoLabel",
     "Player",
     "PlayerPosition",
     "RosterEntry",
@@ -41,6 +50,9 @@ __all__ = [
     "SeasonStatus",
     "Tag",
     "Team",
+    "Training",
+    "TrainingAttendance",
+    "TrainingDrill",
     "User",
     "Video",
     "VideoStatus",

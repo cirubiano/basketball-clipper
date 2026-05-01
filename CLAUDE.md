@@ -717,6 +717,24 @@ y sus tipos en `shared/types/`. Web y mobile nunca llaman al backend directament
 | GET | /clubs/{id}/teams/{tid}/playbook | team_member | Listar playbook del equipo (RF-167) |
 | POST | /clubs/{id}/teams/{tid}/playbook | team_member | Añadir drill al playbook (RF-160) |
 | DELETE | /clubs/{id}/teams/{tid}/playbook/{eid} | team_member | Quitar drill del playbook (RF-166) |
+| GET | /clubs/{id}/teams/{tid}/matches | team_member | Listar partidos (filtrable por season_id) |
+| POST | /clubs/{id}/teams/{tid}/matches | hc_or_td | Crear partido |
+| GET | /clubs/{id}/teams/{tid}/matches/{mid} | team_member | Detalle de partido (con convocatoria, vídeos, stats) |
+| PATCH | /clubs/{id}/teams/{tid}/matches/{mid} | hc_or_td | Actualizar partido |
+| DELETE | /clubs/{id}/teams/{tid}/matches/{mid} | hc_or_td | Archivar partido (RF-305) |
+| POST | /clubs/{id}/teams/{tid}/matches/{mid}/players | hc_or_td | Añadir jugador a convocatoria (RF-311) |
+| DELETE | /clubs/{id}/teams/{tid}/matches/{mid}/players/{pid} | hc_or_td | Retirar jugador de convocatoria |
+| POST | /clubs/{id}/teams/{tid}/matches/{mid}/videos | hc_or_td | Vincular vídeo al partido (RF-321) |
+| DELETE | /clubs/{id}/teams/{tid}/matches/{mid}/videos/{vid} | hc_or_td | Desvincular vídeo |
+| POST | /clubs/{id}/teams/{tid}/matches/{mid}/stats | hc_or_td | Crear/actualizar estadísticas de jugador (RF-331) |
+| GET | /clubs/{id}/teams/{tid}/trainings | team_member | Listar entrenamientos (filtrable por season_id) |
+| POST | /clubs/{id}/teams/{tid}/trainings | hc_or_td | Crear entrenamiento (RF-400) |
+| GET | /clubs/{id}/teams/{tid}/trainings/{trid} | team_member | Detalle de entrenamiento (con ejercicios + asistencia) |
+| PATCH | /clubs/{id}/teams/{tid}/trainings/{trid} | hc_or_td | Actualizar entrenamiento |
+| DELETE | /clubs/{id}/teams/{tid}/trainings/{trid} | hc_or_td | Archivar entrenamiento (RF-404) |
+| POST | /clubs/{id}/teams/{tid}/trainings/{trid}/drills | hc_or_td | Añadir ejercicio al entrenamiento (RF-410) |
+| DELETE | /clubs/{id}/teams/{tid}/trainings/{trid}/drills/{did} | hc_or_td | Eliminar ejercicio del entrenamiento |
+| POST | /clubs/{id}/teams/{tid}/trainings/{trid}/attendance | hc_or_td | Registrar asistencia de jugador (RF-421) |
 
 ---
 
@@ -729,7 +747,7 @@ y sus tipos en `shared/types/`. Web y mobile nunca llaman al backend directament
 | **C** | Gestión de jugadores | ✅ Completado |
 | **D** | Editor de jugadas/ejercicios (sketch + árbol) | ✅ Completado |
 | **E** | Catálogo del club + TeamPlaybook | ✅ Completado |
-| **F** | Partidos, estadísticas, entrenamientos | 🔴 No iniciado |
+| **F** | Partidos, estadísticas, entrenamientos | ✅ Completado |
 
 Consulta `PROGRESS.md` para el detalle de cada fase y su estado.
 **No implementes funcionalidades de fases posteriores hasta que la fase activa esté sólida.**

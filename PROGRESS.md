@@ -15,7 +15,7 @@
 | **C** | Gestión de jugadores | ✅ Completado | Backend + shared + web completos |
 | **D** | Editor de jugadas/ejercicios | ✅ Completado | Backend + shared + web (canvas + árbol + undo/redo) |
 | **E** | Catálogo del club + TeamPlaybook | ✅ Completado | Backend + shared + web |
-| **F** | Partidos, estadísticas, entrenamientos | 🔴 No iniciado | Requiere Fase E |
+| **F** | Partidos, estadísticas, entrenamientos | ✅ Completado | Backend + shared + web |
 
 ---
 
@@ -273,6 +273,44 @@ personal, el catálogo del club y los playbooks de los equipos.
 ---
 
 ## Historial de sesiones
+
+### 2026-05-01 — Sesión 19 (Fase F — Partidos y Entrenamientos)
+
+**Implementación completa de la Fase F del roadmap.**
+
+**PASO 0 — REQUIREMENTS.md §11**
+- Añadidas secciones 11.1–11.4: modelo de dominio de `Match` (con `MatchVideo`, `MatchPlayer`, `MatchStat`) y `Training` (con `TrainingDrill`, `TrainingAttendance`), más RF-300 a RF-331 (Partidos) y RF-400 a RF-421 (Entrenamientos)
+- Renombrada §11 anterior a §12
+
+**PASO 1 — Backend**
+- **`backend/app/models/match.py`** (nuevo): `Match`, `MatchLocation`, `MatchStatus`, `MatchVideoLabel` enums, `MatchVideo`, `MatchPlayer`, `MatchStat`
+- **`backend/app/models/training.py`** (nuevo): `Training`, `TrainingDrill`, `TrainingAttendance`
+- **`backend/app/models/__init__.py`**: re-exports de los nuevos modelos
+- **Alembic `1f6f880ded2f_phase_f_matches_trainings.py`**: crea 7 tablas nuevas (`matches`, `trainings`, `match_players`, `match_stats`, `match_videos`, `training_attendances`, `training_drills`)
+- **`backend/app/schemas/match.py`** (nuevo): `MatchCreate`, `MatchUpdate`, `MatchResponse`, `MatchVideoResponse`, `MatchPlayerResponse`, `MatchStatResponse`, `MatchVideoAdd`, `MatchStatUpsert`
+- **`backend/app/schemas/training.py`** (nuevo): `TrainingCreate`, `TrainingUpdate`, `TrainingResponse`, `TrainingDrillResponse`, `TrainingAttendanceResponse`, `TrainingDrillAdd`, `AttendanceUpdate`
+- **`backend/app/routers/matches.py`** (nuevo): 11 endpoints bajo `/clubs/{id}/teams/{tid}/matches` (CRUD + convocatoria + vídeos + estadísticas)
+- **`backend/app/routers/trainings.py`** (nuevo): 10 endpoints bajo `/clubs/{id}/teams/{tid}/trainings` (CRUD + ejercicios + asistencia)
+- **`backend/app/main.py`**: routers `matches` y `trainings` registrados
+
+**PASO 2 — Shared**
+- **`shared/types/match.ts`** (nuevo): enums + label maps + interfaces para `Match`, `MatchVideo`, `MatchPlayer`, `MatchStat`, `MatchCreate`, `MatchUpdate`, `MatchVideoAdd`, `MatchStatUpsert`
+- **`shared/types/training.ts`** (nuevo): interfaces para `Training`, `TrainingDrill`, `TrainingAttendance`, `TrainingCreate`, `TrainingUpdate`, `TrainingDrillAdd`, `AttendanceUpdate`
+- **`shared/types/index.ts`**: re-exports de `match` y `training`
+- **`shared/api/matches.ts`** (nuevo): funciones `listMatches`, `createMatch`, `getMatch`, `updateMatch`, `archiveMatch`, `addMatchPlayer`, `removeMatchPlayer`, `addMatchVideo`, `removeMatchVideo`, `upsertMatchStat`
+- **`shared/api/trainings.ts`** (nuevo): funciones `listTrainings`, `createTraining`, `getTraining`, `updateTraining`, `archiveTraining`, `addTrainingDrill`, `removeTrainingDrill`, `upsertAttendance`
+- **`shared/api/index.ts`**: re-exports de `matches` y `trainings`
+
+**PASO 3 — Web**
+- **`web/app/teams/[teamId]/matches/page.tsx`** (nuevo): lista de partidos con filtro por temporada, dialog de creación, archivo con confirmación destructiva, navegación a detalle
+- **`web/app/teams/[teamId]/matches/[matchId]/page.tsx`** (nuevo): detalle con 3 pestañas — Convocatoria (toggle add/remove jugadores), Vídeos (vinculados al partido), Estadísticas (tabla editable inline por jugador convocado)
+- **`web/app/teams/[teamId]/trainings/page.tsx`** (nuevo): lista de entrenamientos con filtro, dialog de creación, archivo con confirmación destructiva
+- **`web/app/teams/[teamId]/trainings/[trainingId]/page.tsx`** (nuevo): detalle con 2 pestañas — Ejercicios (lista ordenada con add/remove, dialog con select de biblioteca personal) y Asistencia (toggle por jugador de la plantilla)
+- **`web/components/layout/Navbar.tsx`**: enlaces "Partidos" y "Entrenamientos" ahora apuntan a `/teams/{teamId}/matches` y `/teams/{teamId}/trainings` (quitado `soon` badge)
+
+**Verificaciones**: 114 tests pasando, ESLint 0 errores, TSC 0 errores, grep checks OK
+
+---
 
 ### 2026-05-01 — Sesión 18 (Mejoras UX del recorrido de producto)
 

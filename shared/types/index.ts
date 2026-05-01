@@ -3,6 +3,8 @@ export * from "./catalog";
 export * from "./clip";
 export * from "./club";
 export * from "./drill";
+export * from "./match";
 export * from "./player";
+export * from "./training";
 export * from "./user";
 export * from "./video";

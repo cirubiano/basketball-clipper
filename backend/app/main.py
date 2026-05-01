@@ -5,6 +5,7 @@ from app.core.config import settings
 from app.routers import auth, clips, video, ws
 from app.routers import clubs, seasons, teams, profiles, players
 from app.routers import drills, catalog, playbook
+from app.routers import matches, trainings
 
 app = FastAPI(
     title="Basketball Club Management API",
@@ -47,3 +48,7 @@ app.include_router(drills.router, prefix="/drills", tags=["drills"])
 # ── Club Catalog + Team Playbook ──────────────────────────────────────────────
 app.include_router(catalog.router, prefix="/clubs", tags=["catalog"])
 app.include_router(playbook.router, prefix="/clubs", tags=["playbook"])
+
+# ── Matches + Trainings (Phase F) ─────────────────────────────────────────────
+app.include_router(matches.router, prefix="/clubs", tags=["matches"])
+app.include_router(trainings.router, prefix="/clubs", tags=["trainings"])

@@ -444,14 +444,130 @@ Términos canónicos del dominio. Usar estos nombres (en inglés) en el código 
 
 ---
 
-## 11. Bloques pendientes de definir
+## 11. Partidos y Entrenamientos (Fase F)
+
+### 11.1 Modelo de dominio — Partido (`Match`)
+
+Un `Match` representa un partido oficial o amistoso de un equipo en una temporada.
+
+**Entidad `Match`:**
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `id` | Integer PK | Identificador único |
+| `team_id` | FK → Team | Equipo que juega el partido |
+| `season_id` | FK → Season | Temporada a la que pertenece |
+| `date` | DateTime | Fecha y hora del partido (UTC) |
+| `opponent_name` | String | Nombre del rival |
+| `location` | `MatchLocation` enum | `home` / `away` / `neutral` |
+| `status` | `MatchStatus` enum | `scheduled` / `played` / `cancelled` |
+| `notes` | Text nullable | Notas libres del entrenador |
+| `created_by` | FK → User | Quién creó el partido |
+| `created_at` | DateTime | Timestamp de creación |
+| `archived_at` | DateTime nullable | Soft-delete |
+
+**Entidad `MatchVideo` (M2M Match ↔ Video):**
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `id` | Integer PK | |
+| `match_id` | FK → Match | |
+| `video_id` | FK → Video | |
+| `label` | `MatchVideoLabel` enum | `scouting` / `post_analysis` / `other` |
+
+**Entidad `MatchPlayer` (convocatoria):**
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `id` | Integer PK | |
+| `match_id` | FK → Match | |
+| `player_id` | FK → Player | |
+
+**Entidad `MatchStat` (estadísticas por jugador por partido):**
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `id` | Integer PK | |
+| `match_id` | FK → Match | |
+| `player_id` | FK → Player | |
+| `points` | Integer nullable | Puntos |
+| `minutes` | Integer nullable | Minutos jugados |
+| `assists` | Integer nullable | Asistencias |
+| `defensive_rebounds` | Integer nullable | Rebotes defensivos |
+| `offensive_rebounds` | Integer nullable | Rebotes ofensivos |
+| `steals` | Integer nullable | Robos |
+| `turnovers` | Integer nullable | Pérdidas |
+| `fouls` | Integer nullable | Faltas |
+
+### 11.2 Modelo de dominio — Entrenamiento (`Training`)
+
+Un `Training` representa una sesión de entrenamiento de un equipo en una temporada.
+
+**Entidad `Training`:**
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `id` | Integer PK | Identificador único |
+| `team_id` | FK → Team | Equipo |
+| `season_id` | FK → Season | Temporada |
+| `date` | DateTime | Fecha y hora (UTC) |
+| `title` | String | Título de la sesión |
+| `notes` | Text nullable | Notas libres |
+| `created_by` | FK → User | Quién creó el entrenamiento |
+| `created_at` | DateTime | Timestamp de creación |
+| `archived_at` | DateTime nullable | Soft-delete |
+
+**Entidad `TrainingDrill` (ejercicios planificados en orden):**
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `id` | Integer PK | |
+| `training_id` | FK → Training | |
+| `drill_id` | FK → Drill | |
+| `position` | Integer | Orden dentro del entrenamiento (0-based) |
+| `notes` | Text nullable | Notas específicas para este ejercicio en esta sesión |
+
+**Entidad `TrainingAttendance` (asistencia por jugador):**
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `id` | Integer PK | |
+| `training_id` | FK → Training | |
+| `player_id` | FK → Player | |
+| `attended` | Boolean | True si asistió, False si no |
+
+### 11.3 Requisitos funcionales — Partidos (RF-300 a RF-331)
+
+- **RF-300.** Solo `HeadCoach` y `TechnicalDirector` pueden crear partidos de un equipo.
+- **RF-301.** Un partido pertenece a exactamente un `Team` y una `Season`.
+- **RF-302.** El campo `opponent_name` es obligatorio. `date`, `location` y `status` son obligatorios.
+- **RF-303.** El estado inicial de un partido recién creado es `scheduled`.
+- **RF-304.** Los `StaffMember` pueden ver los partidos pero no crearlos ni editarlos.
+- **RF-305.** Un partido puede archivarse (soft-delete). Solo `HeadCoach` y `TechnicalDirector`.
+- **RF-310.** La convocatoria (`MatchPlayer`) lista qué jugadores participan en el partido.
+- **RF-311.** Solo `HeadCoach` y `TechnicalDirector` pueden modificar la convocatoria.
+- **RF-312.** Un jugador puede ser convocado si pertenece a la plantilla activa del equipo en esa temporada.
+- **RF-320.** Un partido puede tener cero o más vídeos vinculados (`MatchVideo`).
+- **RF-321.** Solo `HeadCoach` y `TechnicalDirector` pueden vincular o desvincular vídeos.
+- **RF-322.** Los vídeos disponibles para vincular son los del equipo que ya han sido procesados (status=`completed`).
+- **RF-330.** Las estadísticas (`MatchStat`) se registran por jugador convocado.
+- **RF-331.** Solo `HeadCoach` y `TechnicalDirector` pueden crear o actualizar estadísticas.
+
+### 11.4 Requisitos funcionales — Entrenamientos (RF-400 a RF-421)
+
+- **RF-400.** Solo `HeadCoach` y `TechnicalDirector` pueden crear entrenamientos de un equipo.
+- **RF-401.** Un entrenamiento pertenece a exactamente un `Team` y una `Season`.
+- **RF-402.** El campo `title` y `date` son obligatorios al crear un entrenamiento.
+- **RF-403.** Los `StaffMember` pueden ver los entrenamientos pero no crearlos ni editarlos.
+- **RF-404.** Un entrenamiento puede archivarse (soft-delete). Solo `HeadCoach` y `TechnicalDirector`.
+- **RF-410.** Un entrenamiento puede incluir cero o más ejercicios/jugadas (`TrainingDrill`) en un orden definido.
+- **RF-411.** Solo `HeadCoach` y `TechnicalDirector` pueden añadir, reordenar o eliminar ejercicios del entrenamiento.
+- **RF-412.** Los ejercicios disponibles para añadir son los de la biblioteca personal del entrenador (su `PersonalLibrary`).
+- **RF-413.** El campo `position` en `TrainingDrill` determina el orden de presentación (0-based, sin huecos).
+- **RF-420.** La asistencia (`TrainingAttendance`) registra si cada jugador de la plantilla asistió o no.
+- **RF-421.** Solo `HeadCoach` y `TechnicalDirector` pueden registrar asistencia.
+
+---
+
+## 12. Bloques pendientes de definir
 
 Las siguientes áreas están identificadas pero no detalladas todavía. Cuando se aborden, se añadirán como nuevas secciones a este documento.
 
 - **Gestión de jugadores.** Datos personales a nivel de club, datos deportivos por equipo, plantillas, promoción entre equipos del mismo club, foto, contacto familiar, datos médicos, autorizaciones, documentación.
-- **Partidos.** Creación, convocatoria, resultado, estadísticas asociadas, vínculo con temporada y equipo.
-- **Estadísticas.** Catálogo de métricas, captura durante el partido, agregación por jugador / equipo / temporada, visualización.
-- **Entrenamientos / sesiones.** Planificación, asistencia, vínculo con ejercicios y jugadas.
+- **Estadísticas agregadas.** Catálogo de métricas, agregación por jugador / equipo / temporada, visualización.
 - **Dashboard de inicio.** Qué información agregada se muestra al usuario tras autenticarse y antes de seleccionar un perfil.
 - **Notificaciones y comunicación.** _(Aún no discutido.)_
 - **Aspectos no funcionales.** Plataforma (web, móvil), idiomas, modo offline, accesibilidad, rendimiento, seguridad, privacidad, cumplimiento normativo (LOPD/GDPR especialmente relevante por datos de menores).
