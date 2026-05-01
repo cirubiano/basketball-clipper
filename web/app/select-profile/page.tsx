@@ -71,9 +71,10 @@ export default function SelectProfilePage() {
             {profiles.length === 0 ? (
               <div className="py-6 text-center space-y-4">
                 <div className="text-muted-foreground">
-                  <p className="text-sm font-medium">Aún no tienes un perfil de club</p>
+                  <p className="text-sm font-medium">Tu cuenta está activa</p>
                   <p className="text-sm mt-1">
-                    Pide al director técnico de tu club que te invite a Basketball Clipper.
+                    Si eres invitado a un club, tus perfiles aparecerán aquí.
+                    Mientras tanto puedes usar tu espacio personal.
                   </p>
                 </div>
                 <button

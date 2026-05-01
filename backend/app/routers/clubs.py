@@ -8,7 +8,7 @@ Cualquier miembro del club puede consultarlo.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from app.core.database import get_db
 from app.core.security import get_current_user, require_admin
@@ -150,32 +150,53 @@ async def add_member(
     """
     Añade un usuario al club como ClubMember (RF-041).
     Solo TechnicalDirector o Admin.
+    Acepta user_id directo o email del usuario.
     """
     await _get_club_or_404(club_id, db)
     await _require_technical_director(club_id, current_user, db)
 
-    target_user = await db.get(User, body.user_id)
-    if target_user is None:
-        raise HTTPException(status_code=404, detail="User not found")
+    if body.user_id is None and body.email is None:
+        raise HTTPException(status_code=422, detail="Proporciona user_id o email.")
+
+    if body.email and body.user_id is None:
+        target_user = await db.scalar(select(User).where(User.email == body.email))
+        if target_user is None:
+            raise HTTPException(
+                status_code=404,
+                detail="No existe ningún usuario con ese email. Pídele que se registre primero en la plataforma.",
+            )
+    else:
+        target_user = await db.get(User, body.user_id)
+        if target_user is None:
+            raise HTTPException(status_code=404, detail="User not found")
 
     existing = await db.scalar(
         select(ClubMember).where(
             ClubMember.club_id == club_id,
-            ClubMember.user_id == body.user_id,
+            ClubMember.user_id == target_user.id,
             ClubMember.archived_at.is_(None),
         )
     )
     if existing:
-        raise HTTPException(status_code=409, detail="User is already a member of this club")
+        raise HTTPException(status_code=409, detail="Este usuario ya pertenece al club.")
 
     member = ClubMember(
         club_id=club_id,
-        user_id=body.user_id,
+        user_id=target_user.id,
         invited_by=current_user.id,
     )
     db.add(member)
     await db.flush()
-    return ClubMemberResponse.model_validate(member)
+    await db.refresh(member)
+    return ClubMemberResponse(
+        id=member.id,
+        club_id=member.club_id,
+        user_id=member.user_id,
+        user_email=target_user.email,
+        invited_by=member.invited_by,
+        joined_at=member.joined_at,
+        archived_at=member.archived_at,
+    )
 
 
 @router.get("/{club_id}/members", response_model=list[ClubMemberResponse])
@@ -186,12 +207,56 @@ async def list_members(
 ) -> list[ClubMemberResponse]:
     await _get_club_or_404(club_id, db)
     await _require_club_access(club_id, current_user, db)
-    stmt = select(ClubMember).where(
-        ClubMember.club_id == club_id,
-        ClubMember.archived_at.is_(None),
+    stmt = (
+        select(ClubMember)
+        .options(joinedload(ClubMember.user))
+        .where(
+            ClubMember.club_id == club_id,
+            ClubMember.archived_at.is_(None),
+        )
+        .order_by(ClubMember.joined_at)
     )
-    members = (await db.scalars(stmt)).all()
-    return [ClubMemberResponse.model_validate(m) for m in members]
+    members = (await db.scalars(stmt)).unique().all()
+    return [
+        ClubMemberResponse(
+            id=m.id,
+            club_id=m.club_id,
+            user_id=m.user_id,
+            user_email=m.user.email if m.user else None,
+            invited_by=m.invited_by,
+            joined_at=m.joined_at,
+            archived_at=m.archived_at,
+        )
+        for m in members
+    ]
+
+
+@router.get("/{club_id}/profiles", response_model=list[ProfileResponse])
+async def list_club_profiles(
+    club_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[ProfileResponse]:
+    """Lista todos los perfiles activos del club. Solo TechnicalDirector o Admin."""
+    await _get_club_or_404(club_id, db)
+    await _require_technical_director(club_id, current_user, db)
+
+    stmt = (
+        select(Profile)
+        .options(
+            selectinload(Profile.club),
+            selectinload(Profile.team),
+            selectinload(Profile.season),
+            selectinload(Profile.user),
+        )
+        .where(
+            Profile.club_id == club_id,
+            Profile.archived_at.is_(None),
+        )
+        .order_by(Profile.created_at)
+    )
+    profiles = (await db.scalars(stmt)).all()
+    return [_enrich_profile(p) for p in profiles]
 
 
 # ── Profiles ──────────────────────────────────────────────────────────────────
@@ -210,6 +275,7 @@ def _enrich_profile(profile: Profile) -> ProfileResponse:
         club_name=profile.club.name if profile.club else None,
         team_name=profile.team.name if profile.team else None,
         season_name=profile.season.name if profile.season else None,
+        user_email=profile.user.email if profile.user else None,
     )
 
 
@@ -281,6 +347,7 @@ async def assign_profile(
             selectinload(Profile.club),
             selectinload(Profile.team),
             selectinload(Profile.season),
+            selectinload(Profile.user),
         )
         .where(Profile.id == profile.id)
     )

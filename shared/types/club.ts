@@ -58,6 +58,7 @@ export interface ClubMember {
   id: number;
   club_id: number;
   user_id: number;
+  user_email: string | null;
   invited_by: number | null;
   joined_at: string;
   archived_at: string | null;
@@ -78,6 +79,7 @@ export interface Profile {
   club_name: string | null;
   team_name: string | null;
   season_name: string | null;
+  user_email: string | null;
 }
 
 /** Etiqueta legible para mostrar en el selector de perfil */

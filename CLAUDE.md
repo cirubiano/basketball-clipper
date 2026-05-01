@@ -660,7 +660,8 @@ y sus tipos en `shared/types/`. Web y mobile nunca llaman al backend directament
 | GET | /clubs/{id} | member | Detalle de club |
 | PATCH | /clubs/{id} | tech_director | Actualizar club |
 | GET | /clubs/{id}/members | member | Listar miembros |
-| POST | /clubs/{id}/members | tech_director | Añadir miembro al club |
+| POST | /clubs/{id}/members | tech_director | Añadir miembro al club (acepta email o user_id) |
+| GET | /clubs/{id}/profiles | tech_director | Listar todos los perfiles activos del club |
 | POST | /clubs/{id}/profiles | tech_director | Asignar perfil (rol) a un miembro |
 | GET | /clubs/{id}/seasons | member | Listar temporadas |
 | POST | /clubs/{id}/seasons | tech_director | Crear temporada |

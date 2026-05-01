@@ -27,6 +27,7 @@ function buildNavLinks(
         { href: `/clubs/${clubId}/teams`, label: "Equipos" },
         { href: `/clubs/${clubId}/seasons`, label: "Temporadas" },
         { href: `/players`, label: "Jugadores" },
+        { href: `/clubs/${clubId}/members`, label: "Entrenadores" },
         { href: `/clubs/${clubId}/catalog`, label: "Catálogo" },
       ],
       personal: [
@@ -50,6 +51,7 @@ function buildNavLinks(
     main: [
       { href: "/", label: "Inicio" },
       ...(teamId ? [{ href: `/teams/${teamId}/roster`, label: "Mi Equipo" }] : []),
+      ...(teamId ? [{ href: `/teams/${teamId}/playbook`, label: "Playbook" }] : []),
       { href: `/clubs/${clubId}/matches`, label: "Partidos", soon: true },
       { href: `/clubs/${clubId}/training`, label: "Entrenamientos", soon: true },
       { href: `/clubs/${clubId}/catalog`, label: "Catálogo" },

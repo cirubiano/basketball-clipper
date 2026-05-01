@@ -93,6 +93,18 @@ export const getClubMembers = (
   clubId: number
 ): Promise<ClubMember[]> => apiRequest<ClubMember[]>(`/clubs/${clubId}/members`, { token });
 
+/** Invita a un usuario al club por email (lookup automático en el backend). */
+export const addClubMemberByEmail = (
+  token: string,
+  clubId: number,
+  email: string
+): Promise<ClubMember> =>
+  apiRequest<ClubMember>(`/clubs/${clubId}/members`, {
+    token,
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+
 export const addClubMember = (
   token: string,
   clubId: number,
@@ -131,3 +143,10 @@ export const archiveProfile = (
   profileId: number
 ): Promise<void> =>
   apiRequest<void>(`/profiles/${profileId}`, { token, method: "DELETE" });
+
+/** Lista todos los perfiles activos del club (solo para TechnicalDirector). */
+export const getClubProfiles = (
+  token: string,
+  clubId: number
+): Promise<Profile[]> =>
+  apiRequest<Profile[]>(`/clubs/${clubId}/profiles`, { token });

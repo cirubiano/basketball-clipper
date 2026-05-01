@@ -12,6 +12,7 @@ import {
 import type { Season, SeasonCreate, SeasonStatus } from "@basketball-clipper/shared/types";
 import { PageShell } from "@/components/layout/PageShell";
 import { useAuth } from "@/lib/auth";
+import { useToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -71,6 +72,7 @@ export default function SeasonsPage({
   const clubId = Number(clubIdStr);
   const { token, activeProfile } = useAuth();
   const qc = useQueryClient();
+  const { toast } = useToast();
   const isTD = activeProfile?.role === "technical_director";
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -87,8 +89,9 @@ export default function SeasonsPage({
   // Mutations
   const createMutation = useMutation({
     mutationFn: (data: SeasonCreate) => createSeason(token!, clubId, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["seasons", clubId] });
+    onSuccess: (season) => {
+      void qc.invalidateQueries({ queryKey: ["seasons", clubId] });
+      toast(`Temporada &quot;${season.name}&quot; creada.`);
       setDialogOpen(false);
       setForm(EMPTY_FORM);
       setFormError(null);
@@ -99,7 +102,11 @@ export default function SeasonsPage({
   const statusMutation = useMutation({
     mutationFn: ({ seasonId, status }: { seasonId: number; status: SeasonStatus }) =>
       updateSeasonStatus(token!, clubId, seasonId, status),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["seasons", clubId] }),
+    onSuccess: (season) => {
+      void qc.invalidateQueries({ queryKey: ["seasons", clubId] });
+      const label = season.status === "active" ? "activada" : "archivada";
+      toast(`Temporada ${label}.`);
+    },
   });
 
   function openCreate() {

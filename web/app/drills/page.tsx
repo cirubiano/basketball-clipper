@@ -35,10 +35,18 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Plus, Archive, Copy, ChevronRight, BookOpen, Pencil } from "lucide-react";
-import { listDrills, createDrill, archiveDrill, cloneDrill } from "@basketball-clipper/shared/api";
+import { Plus, Archive, Copy, BookOpen, Pencil, BookMarked } from "lucide-react";
+import {
+  listDrills,
+  createDrill,
+  archiveDrill,
+  cloneDrill,
+  listCatalog,
+  publishToCatalog,
+} from "@basketball-clipper/shared/api";
 import type { DrillSummary, DrillType, CourtLayoutType } from "@basketball-clipper/shared/types";
 import { COURT_LAYOUT_LABELS } from "@basketball-clipper/shared/types";
+import { useToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 // ── Court preview SVG ─────────────────────────────────────────────────────────
@@ -99,9 +107,12 @@ const TYPE_TABS: { value: DrillType | "all"; label: string }[] = [
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DrillsPage() {
-  const { token } = useAuth();
+  const { token, activeProfile } = useAuth();
   const router    = useRouter();
   const qc        = useQueryClient();
+  const { toast } = useToast();
+
+  const clubId = activeProfile?.club_id ?? null;
 
   const [tab,        setTab]        = useState<DrillType | "all">("all");
   const [createOpen, setCreateOpen] = useState(false);
@@ -115,10 +126,24 @@ export default function DrillsPage() {
     enabled: !!token,
   });
 
+  // Load catalog to know which drills are already published
+  const { data: catalogEntries = [] } = useQuery({
+    queryKey: ["catalog", clubId],
+    queryFn: () => listCatalog(token!, clubId!),
+    enabled: !!token && !!clubId,
+  });
+
+  // Set of original drill IDs already in the catalog
+  const publishedDrillIds = new Set(
+    catalogEntries
+      .filter((e) => !e.archived_at && e.original_drill_id !== null)
+      .map((e) => e.original_drill_id as number)
+  );
+
   const createMut = useMutation({
     mutationFn: () => createDrill(token!, form),
     onSuccess: (drill) => {
-      qc.invalidateQueries({ queryKey: ["drills"] });
+      void qc.invalidateQueries({ queryKey: ["drills"] });
       setCreateOpen(false);
       router.push(`/drills/${drill.id}/edit`);
     },
@@ -126,15 +151,29 @@ export default function DrillsPage() {
 
   const archiveMut = useMutation({
     mutationFn: (id: number) => archiveDrill(token!, id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["drills"] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["drills"] });
+      toast("Drill archivado.");
+    },
   });
 
   const cloneMut = useMutation({
     mutationFn: (id: number) => cloneDrill(token!, id),
     onSuccess: (drill) => {
-      qc.invalidateQueries({ queryKey: ["drills"] });
+      void qc.invalidateQueries({ queryKey: ["drills"] });
       router.push(`/drills/${drill.id}/edit`);
     },
+  });
+
+  const publishMut = useMutation({
+    mutationFn: (drillId: number) => publishToCatalog(token!, clubId!, { drill_id: drillId }),
+    onSuccess: (_, drillId) => {
+      void qc.invalidateQueries({ queryKey: ["catalog", clubId] });
+      toast("Publicado en el catálogo del club.");
+      // Optimistically mark as published
+      publishedDrillIds.add(drillId);
+    },
+    onError: () => toast("No se pudo publicar en el catálogo.", "error"),
   });
 
   const active = drills.filter((d) => !d.archived_at);
@@ -200,7 +239,10 @@ export default function DrillsPage() {
                 onEdit={() => router.push(`/drills/${drill.id}/edit`)}
                 onClone={() => cloneMut.mutate(drill.id)}
                 onArchive={() => archiveMut.mutate(drill.id)}
+                onPublish={clubId ? () => publishMut.mutate(drill.id) : undefined}
                 isCloningThis={cloneMut.isPending && cloneMut.variables === drill.id}
+                isPublishingThis={publishMut.isPending && publishMut.variables === drill.id}
+                isPublished={publishedDrillIds.has(drill.id)}
               />
             ))}
           </div>
@@ -281,13 +323,19 @@ function DrillCard({
   onEdit,
   onClone,
   onArchive,
+  onPublish,
   isCloningThis,
+  isPublishingThis,
+  isPublished,
 }: {
   drill: DrillSummary;
   onEdit: () => void;
   onClone: () => void;
   onArchive: () => void;
+  onPublish?: () => void;
   isCloningThis: boolean;
+  isPublishingThis: boolean;
+  isPublished: boolean;
 }) {
   const isPlay = drill.type === "play";
 
@@ -418,6 +466,30 @@ function DrillCard({
             Editar
           </Button>
         </div>
+
+        {/* Publicar al catálogo — solo si hay club activo */}
+        {onPublish && (
+          <div className="pt-2">
+            {isPublished ? (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground justify-center py-1">
+                <BookMarked className="h-3.5 w-3.5 text-green-600" />
+                <span className="text-green-700 font-medium">En catálogo del club</span>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full h-7 text-xs gap-1.5"
+                onClick={onPublish}
+                disabled={isPublishingThis}
+                title="Publicar en el catálogo del club"
+              >
+                <BookMarked className="h-3.5 w-3.5" />
+                {isPublishingThis ? "Publicando…" : "Publicar al catálogo"}
+              </Button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

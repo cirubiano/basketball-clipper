@@ -43,6 +43,7 @@ def _enrich_profile(profile: Profile) -> ProfileResponse:
         club_name=profile.club.name if profile.club else None,
         team_name=profile.team.name if profile.team else None,
         season_name=profile.season.name if profile.season else None,
+        user_email=profile.user.email if profile.user else None,
     )
 
 

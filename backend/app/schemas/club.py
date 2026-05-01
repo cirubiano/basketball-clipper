@@ -72,14 +72,19 @@ class TeamResponse(BaseModel):
 # ── ClubMember ────────────────────────────────────────────────────────────────
 
 class AddMemberRequest(BaseModel):
-    """Añadir un usuario existente como miembro del club (RF-041)."""
-    user_id: int
+    """Añadir un usuario existente como miembro del club (RF-041).
+
+    Acepta user_id directo o email del usuario para lookup automático.
+    """
+    user_id: int | None = None
+    email: str | None = None
 
 
 class ClubMemberResponse(BaseModel):
     id: int
     club_id: int
     user_id: int
+    user_email: str | None = None
     invited_by: int | None
     joined_at: datetime
     archived_at: datetime | None
@@ -110,5 +115,6 @@ class ProfileResponse(BaseModel):
     club_name: str | None = None
     team_name: str | None = None
     season_name: str | None = None
+    user_email: str | None = None
 
     model_config = {"from_attributes": True}

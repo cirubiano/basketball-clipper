@@ -219,9 +219,9 @@ export default function DashboardPage() {
           <Alert className="border-blue-200 bg-blue-50 text-blue-800">
             <Info className="h-4 w-4 shrink-0 text-blue-500" />
             <AlertDescription>
-              Aún no tienes un perfil de club asignado. Pide al director técnico
-              que te invite a Basketball Clipper. Mientras tanto, puedes usar tu
-              biblioteca y subir vídeos.
+              Tu cuenta está activa. Si eres invitado a un club, tus perfiles
+              aparecerán en el selector de perfil. Mientras tanto, puedes usar
+              tu biblioteca personal y subir vídeos.
             </AlertDescription>
           </Alert>
         )}

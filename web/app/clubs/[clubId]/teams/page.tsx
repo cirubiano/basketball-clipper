@@ -12,6 +12,7 @@ import {
 import type { Team, TeamCreate, Season } from "@basketball-clipper/shared/types";
 import { PageShell } from "@/components/layout/PageShell";
 import { useAuth } from "@/lib/auth";
+import { useToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,6 +55,7 @@ export default function TeamsPage({
   const clubId = Number(clubIdStr);
   const { token, activeProfile } = useAuth();
   const qc = useQueryClient();
+  const { toast } = useToast();
   const isTD = activeProfile?.role === "technical_director";
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -84,8 +86,9 @@ export default function TeamsPage({
 
   const createMutation = useMutation({
     mutationFn: (data: TeamCreate) => createTeam(token!, clubId, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["teams", clubId] });
+    onSuccess: (team) => {
+      void qc.invalidateQueries({ queryKey: ["teams", clubId] });
+      toast(`Equipo &quot;${team.name}&quot; creado.`);
       setDialogOpen(false);
       setForm({ name: "", season_id: 0 });
       setFormError(null);
@@ -95,7 +98,10 @@ export default function TeamsPage({
 
   const archiveMutation = useMutation({
     mutationFn: (teamId: number) => archiveTeam(token!, clubId, teamId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["teams", clubId] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["teams", clubId] });
+      toast("Equipo archivado.");
+    },
   });
 
   function openCreate() {

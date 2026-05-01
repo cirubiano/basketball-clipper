@@ -7,7 +7,9 @@ import { VideoUploader } from "@/components/video/VideoUploader";
 import { ProcessingStatus } from "@/components/video/ProcessingStatus";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getStoredToken } from "@/lib/auth";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Info } from "lucide-react";
+import { getStoredToken, useAuth } from "@/lib/auth";
 import { useUploadJob } from "@/lib/uploadJob";
 
 function formatBytes(bytes: number): string {
@@ -19,10 +21,13 @@ function formatBytes(bytes: number): string {
 
 export default function UploadPage() {
   const router = useRouter();
+  const { activeProfile } = useAuth();
   const { job, startUpload, cancel, clearJob } = useUploadJob();
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const isTD = activeProfile?.role === "technical_director";
 
   const handleFile = useCallback((f: File) => {
     setFile(f);
@@ -57,6 +62,35 @@ export default function UploadPage() {
   const isDone = job?.stage === "done";
   const isError = job?.stage === "error";
   const canStartNew = !job || isDone || isError;
+
+  if (isTD) {
+    return (
+      <PageShell>
+        <div className="max-w-xl mx-auto space-y-6">
+          <div>
+            <h1 className="text-2xl font-bold">Subir vídeo</h1>
+          </div>
+          <Alert className="border-amber-200 bg-amber-50 text-amber-900">
+            <Info className="h-4 w-4 shrink-0 text-amber-600" />
+            <AlertDescription>
+              Para subir vídeos necesitas estar en el perfil de entrenador de un equipo.
+              Cámbialo desde el{" "}
+              <button
+                onClick={() => {
+                  const selector = document.querySelector<HTMLButtonElement>("[data-profile-selector]");
+                  selector?.click();
+                }}
+                className="font-medium underline underline-offset-2 hover:no-underline"
+              >
+                selector de perfil
+              </button>
+              {" "}en la barra superior.
+            </AlertDescription>
+          </Alert>
+        </div>
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell>

@@ -274,6 +274,110 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ## Historial de sesiones
 
+### 2026-05-01 — Sesión 18 (Mejoras UX del recorrido de producto)
+
+**Basado en los hallazgos del recorrido UX (sesión 17). 6 tareas implementadas.**
+
+**TAREA 1 — Página de gestión de entrenadores [B2]**
+- **`web/app/clubs/[clubId]/members/page.tsx`** (nuevo): lista de miembros con email, perfiles asignados (equipo + temporada + rol); invitar por email con dialog; asignar a equipo (select temporada → equipo) con `POST /clubs/{id}/profiles`; retirar perfil con confirmación destructiva
+- **Backend `backend/app/schemas/club.py`**: `AddMemberRequest` ahora acepta `email: str | None` además de `user_id`; `ClubMemberResponse` enriquecido con `user_email`; `ProfileResponse` enriquecido con `user_email`
+- **Backend `backend/app/routers/clubs.py`**: `add_member` busca usuario por email si no se proporciona `user_id`; mensajes de error localizados; `list_members` carga `user` via `joinedload` para devolver email; nuevo endpoint `GET /clubs/{id}/profiles` (solo TD)
+- **Backend `backend/app/routers/profiles.py`**: `_enrich_profile` incluye `user_email`
+- **Shared `shared/types/club.ts`**: `ClubMember` y `Profile` añaden `user_email: string | null`
+- **Shared `shared/api/clubs.ts`**: nueva función `addClubMemberByEmail(token, clubId, email)`; nueva función `getClubProfiles(token, clubId)`
+
+**TAREA 2 — Fix de mensajes para usuario sin club [B1]**
+- **`web/app/select-profile/page.tsx`**: texto cambiado a "Tu cuenta está activa. Si eres invitado a un club, tus perfiles aparecerán aquí."
+- **`web/app/page.tsx`**: alerta informativa actualizada — ya no asume que el DT existe
+
+**TAREA 3 — Mensaje informativo para DT en página de upload [C1]**
+- **`web/app/upload/page.tsx`**: si el perfil activo es `technical_director`, muestra Alert informativo en lugar del formulario de subida. Explica que debe cambiar al perfil de entrenador.
+
+**TAREA 4 — Enlace Playbook en navbar del HeadCoach [C5]**
+- **`web/components/layout/Navbar.tsx`**: enlace "Playbook" añadido junto a "Mi Equipo" para head_coach con team_id
+
+**TAREA 5 — Botón "Publicar al catálogo" en DrillCard [C2]**
+- **`web/app/drills/page.tsx`**: DrillCard muestra botón "Publicar al catálogo" si el usuario tiene club activo. Carga el catálogo en paralelo con los drills para detectar cuáles ya están publicados (`original_drill_id`). Si ya está publicado, muestra badge "En catálogo del club" en verde en lugar del botón.
+
+**TAREA 6 — Toast system global [C3]**
+- **`web/lib/toast.tsx`** (nuevo): `ToastProvider` + `useToast()` sin dependencias externas. Toasts de 4 segundos, icono verde/rojo, botón de cierre manual. Posición: bottom-right.
+- **`web/lib/providers.tsx`**: `ToastProvider` añadido al árbol de providers
+- Toasts de éxito añadidos en: crear temporada, cambiar estado de temporada, crear equipo, archivar equipo, archivar drill, publicar al catálogo, invitar entrenador, asignar perfil, retirar perfil
+
+**Navbar DT**: añadido enlace "Entrenadores" → `/clubs/${clubId}/members`
+
+**Nuevos endpoints de backend:**
+- `GET /clubs/{id}/profiles` — lista todos los perfiles activos del club (solo TD)
+- `POST /clubs/{id}/members` ahora acepta `{ email: string }` además de `{ user_id: int }`
+
+**Verificaciones finales:**
+- `python -m py_compile app/schemas/club.py app/routers/clubs.py app/routers/profiles.py` → ALL OK
+- `npm run lint` → ✔ No ESLint warnings or errors
+- `npx tsc --noEmit` → 0 errores
+- Smoke test: login ✅ · me ✅ · profiles ✅
+- `pytest tests/test_players_api.py` → 17 passed
+
+---
+
+### 2026-04-29 — Sesión 17 (Recorrido UX completo como Director Técnico)
+
+**Metodología**: lectura de todas las páginas del frontend web + análisis de flujos de usuario reales. No revisión de código sino de UX: flujos rotos, pasos que faltan, friction.
+
+**Páginas leídas**: register, login, select-profile, dashboard (page.tsx), seasons, teams, players, roster, drills, catalog, playbook, videos, matches/training (stubs), profile, not-found.
+
+**Hallazgos — BLOQUEANTES (flujos que no se pueden completar sin intervención técnica)**
+
+B1 — **No hay forma de crear un club desde la UI**
+- `POST /clubs` requiere `is_admin`. Un DT que se registra queda sin club.
+- El select-profile y el dashboard dicen "pide al director técnico que te invite" pero no contemplan el caso de que el propio usuario quiera ser DT y fundar el club.
+- Workaround actual: solo via API directa o admin. No es autónomo.
+- Fix propuesto (Fase F): nuevo endpoint `POST /clubs/self-provision` restringido a usuarios sin club existente, o un flujo de "solicitud de club" con aprobación admin.
+
+B2 — **No hay página de gestión de miembros del club**
+- La navbar del DT lista: Inicio / Equipos / Temporadas / Jugadores / Catálogo / Mi Biblioteca. Sin "Miembros".
+- La API ya existe: `GET /clubs/{id}/members`, `POST /clubs/{id}/members`, `POST /clubs/{id}/profiles`.
+- Sin esta página el DT no puede invitar a ningún entrenador. La plataforma es inutilizable en modo club real.
+- Fix: página `/clubs/[clubId]/members` con tabla de miembros y formulario de invitación (rápido de implementar — la API ya está).
+
+**Hallazgos — CONFUSO / FRICTION**
+
+C1 — **El DT no puede subir vídeos** — hardcoded `!isTD` en dashboard y Navbar. Sin explicación ni alternativa. Si la restricción es intencional (los vídeos pertenecen a equipos y el DT no tiene team_id), la UI debería explicarlo o permitir al DT ver los vídeos de todos sus equipos.
+
+C2 — **"Publicar al catálogo" no es descubrible** — desde `/drills` no hay botón de publicar. Solo desde el editor del drill. El catálogo tampoco tiene botón de publicar. Un usuario nuevo no descubre este flujo sin explorar el editor.
+
+C3 — **Sin toasts de éxito** — Al crear equipo/jugador/temporada/drill, la modal cierra y la entidad aparece. No hay confirmación visual. Un usuario lento puede dudar si tuvo éxito.
+
+C4 — **Registro sin nombre de usuario** — solo email + password. El dashboard usa `email.split("@")[0]` como saludo. Los jugadores tienen first_name/last_name, los usuarios no.
+
+C5 — **Sin enlace directo al Playbook en la navbar del coach** — La navbar del coach tiene: Inicio / Mi Equipo (roster) / Catálogo / Mi Biblioteca. Para llegar al playbook hay que ir a roster y de ahí navegar.
+
+C6 — **El mensaje de "sin perfil" en dashboard no ofrece el camino correcto para el caso DT** — El select-profile dice "Pide al director técnico que te invite". No hay camino para el DT que quiere crear su primer club.
+
+**Hallazgos — MEJORAS MENORES**
+
+M1 — Fechas de temporada sin validación cruzada (fecha fin puede ser antes de fecha inicio).
+M2 — Fotos de jugadores en lista son muy pequeñas (32px / `size="sm"`). Con foto recortada a 32px no se distingue la cara.
+M3 — Catálogo no enlaza al canvas del drill — solo muestra info, Copiar, Quitar. Sin enlace a detalle/editor.
+M4 — Páginas "Próximamente" (Partidos, Entrenamientos) sin CTA alternativo (ej: "Mientras tanto, sube un vídeo").
+M5 — Sin breadcrumbs — al estar en `/clubs/1/teams` no hay indicador del club activo más allá del título de la página.
+M6 — DrillCard no muestra cuántas variantes tiene el drill. El badge "variante" solo aparece en las variantes, no en el drill padre.
+
+**Quick wins implementables en próxima sesión (API ya existe)**
+- [ ] Página `/clubs/[clubId]/members` — lista miembros + invitar + asignar rol
+- [ ] Enlace "Playbook" en navbar del coach (1 línea)
+- [ ] Botón "Publicar al catálogo" en DrillCard o desde la página de detalle del drill
+- [ ] Toast system (instalar `sonner` o `react-hot-toast`) para feedback de éxito
+
+**Candidatos Fase F (requieren diseño o nuevo backend)**
+- Auto-provisioning de clubs (DT que crea su propio club sin intervención admin)
+- Invitación de miembros por email con link de aceptación
+- Vista del DT de todos los vídeos del club (por equipo)
+- Dashboard del DT con métricas: n.º jugadores, equipos activos, último partido
+- Notificación push cuando vídeo termina de procesar
+- Breadcrumbs / estructura de navegación con contexto de club activo
+
+---
+
 ### 2026-04-29 — Sesión 16 (Auditoría completa del frontend web)
 
 **Auditoría ejecutada** — análisis estático + revisión visual de todas las páginas:
