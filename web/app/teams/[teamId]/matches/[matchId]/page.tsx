@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { UserPlus, Trash2, Film, Play, CheckCircle, XCircle } from "lucide-react";
+import { UserPlus, Trash2, Film, Play, CheckCircle, XCircle, Upload } from "lucide-react";
 import Link from "next/link";
 import {
   getMatch,
@@ -512,11 +512,26 @@ export default function MatchDetailPage({
 
             {isCoachOrTD && (
               <div className="border rounded-lg p-4 space-y-3">
-                <p className="text-sm font-medium">Vincular vídeo</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">Vincular vídeo</p>
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1"
+                  >
+                    <Link
+                      href={`/upload?returnTo=/teams/${teamId}/matches/${matchId}&opponent=${encodeURIComponent(match.opponent_name)}`}
+                    >
+                      <Upload className="h-3 w-3" />
+                      Subir vídeo
+                    </Link>
+                  </Button>
+                </div>
                 {availableVideos.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    No hay vídeos disponibles. Sube un vídeo desde{" "}
-                    <Link href="/videos" className="underline hover:text-foreground">Mis vídeos</Link>.
+                    No hay vídeos procesados disponibles. Usa el botón{" "}
+                    <strong>Subir vídeo</strong> para subir uno nuevo.
                   </p>
                 ) : (
                   <div className="flex flex-wrap gap-2 items-end">

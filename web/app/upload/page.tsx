@@ -1,16 +1,17 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { PageShell } from "@/components/layout/PageShell";
 import { VideoUploader } from "@/components/video/VideoUploader";
 import { ProcessingStatus } from "@/components/video/ProcessingStatus";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Info } from "lucide-react";
+import { ArrowLeft, Info } from "lucide-react";
 import { getStoredToken, useAuth } from "@/lib/auth";
 import { useUploadJob } from "@/lib/uploadJob";
+import Link from "next/link";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -21,19 +22,22 @@ function formatBytes(bytes: number): string {
 
 export default function UploadPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { activeProfile } = useAuth();
   const { job, startUpload, cancel, clearJob } = useUploadJob();
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  // returnTo: URL to navigate after upload completes (e.g. match detail page)
+  const returnTo = searchParams.get("returnTo");
+  const opponent = searchParams.get("opponent");
+
   const isTD = activeProfile?.role === "technical_director";
 
   const handleFile = useCallback((f: File) => {
     setFile(f);
     setUploadError(null);
-    // Si el usuario aún no ha puesto título, sugerir el nombre del fichero
-    // (sin extensión) como placeholder editable.
     if (!title) {
       const stem = f.name.replace(/\.[^.]+$/, "");
       setTitle(stem);
@@ -62,6 +66,17 @@ export default function UploadPage() {
   const isDone = job?.stage === "done";
   const isError = job?.stage === "error";
   const canStartNew = !job || isDone || isError;
+
+  // Auto-redirect to returnTo when processing completes
+  useEffect(() => {
+    if (isDone && returnTo) {
+      // Validate returnTo is a relative path (prevent open redirect)
+      if (returnTo.startsWith("/")) {
+        clearJob();
+        router.push(returnTo);
+      }
+    }
+  }, [isDone, returnTo, clearJob, router]);
 
   if (isTD) {
     return (
@@ -95,19 +110,41 @@ export default function UploadPage() {
   return (
     <PageShell>
       <div className="max-w-xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">Subir vídeo</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Sube un partido de baloncesto y generaremos un clip por cada posesión.
-          </p>
+        <div className="flex items-start gap-3">
+          {returnTo && (
+            <Button asChild variant="ghost" size="icon" className="mt-0.5 shrink-0">
+              <Link href={returnTo} aria-label="Volver">
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
+            </Button>
+          )}
+          <div>
+            <h1 className="text-2xl font-bold">Subir vídeo</h1>
+            {!returnTo && (
+              <p className="text-muted-foreground text-sm mt-1">
+                Sube un partido de baloncesto y generaremos un clip por cada posesión.
+              </p>
+            )}
+          </div>
         </div>
+
+        {/* Context banner when coming from a match */}
+        {returnTo && (
+          <Alert className="border-blue-200 bg-blue-50 text-blue-900">
+            <Info className="h-4 w-4 shrink-0 text-blue-600" />
+            <AlertDescription>
+              {opponent
+                ? `Subiendo vídeo para el partido contra ${opponent}. Al completar, volverás automáticamente al partido.`
+                : "Al completar la subida volverás automáticamente a la página de origen."}
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Datos del trabajo</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Título del vídeo — obligatorio */}
             <div className="space-y-1.5">
               <label htmlFor="video-title" className="text-sm font-medium">
                 Título <span className="text-destructive">*</span>
@@ -185,7 +222,7 @@ export default function UploadPage() {
                   error_message: job.errorMessage,
                 }}
               />
-              {isDone && job.videoId && (
+              {isDone && job.videoId && !returnTo && (
                 <div className="flex gap-2 mt-4">
                   <Button
                     onClick={() => {
@@ -201,6 +238,11 @@ export default function UploadPage() {
                     Subir otro
                   </Button>
                 </div>
+              )}
+              {isDone && returnTo && (
+                <p className="text-sm text-muted-foreground mt-4 text-center">
+                  Redirigiendo al partido...
+                </p>
               )}
               {isError && (
                 <Button variant="outline" onClick={clearJob} className="w-full mt-4">

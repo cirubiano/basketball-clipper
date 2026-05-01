@@ -275,6 +275,29 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ## Historial de sesiones
 
+### 2026-05-01 — Sesión 30 (Upload desde la tab Vídeos del partido)
+
+**Objetivo**: añadir acceso directo al upload desde la tab Vídeos del detalle de partido, con redirección automática al completar.
+
+**Web — upload (`web/app/upload/page.tsx`):**
+- Lee `returnTo` y `opponent` de los parámetros de URL (`useSearchParams`)
+- Si hay `returnTo`: muestra botón ← (ArrowLeft) que vuelve a la URL de origen
+- Si hay `returnTo`: muestra banner azul con mensaje contextual (rival si está disponible)
+- `useEffect`: cuando `isDone && returnTo` → valida que empieza por `/` (prevención de open-redirect) → llama `clearJob()` y `router.push(returnTo)`
+- Si `isDone && returnTo`: muestra "Redirigiendo al partido..." en lugar de los botones "Ver clips generados" / "Subir otro"
+- TD sin equipo: sigue mostrando el banner de advertencia existente (sin cambios)
+
+**Web — detalle de partido (`web/app/teams/[teamId]/matches/[matchId]/page.tsx`):**
+- Añadido `Upload` a los imports de lucide-react
+- Sección "Vincular vídeo": cabecera convertida en fila `flex items-center justify-between`
+- Botón "Subir vídeo" (variant="outline", size="sm") con icono `Upload` enlaza a:
+  `/upload?returnTo=/teams/${teamId}/matches/${matchId}&opponent=${encodeURIComponent(match.opponent_name)}`
+- Estado vacío de `availableVideos`: mensaje actualizado para referenciar el botón "Subir vídeo"
+
+**Verificaciones**: ESLint 0 errores ✔, TSC 0 errores ✔
+
+---
+
 ### 2026-05-01 — Sesión 29 (Asistencia a entrenamientos — 3 estados + histórico)
 
 **Objetivo**: ampliar el modelo de asistencia de binario (presente/ausente) a tres estados: presente, con retraso, ausente (con motivo obligatorio).
