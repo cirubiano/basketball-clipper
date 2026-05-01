@@ -11,7 +11,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -85,12 +84,6 @@ export default function ProfilePage() {
             <div className="flex items-center justify-between py-2 border-b">
               <span className="text-sm text-muted-foreground">Correo electrónico</span>
               <span className="text-sm font-medium">{user?.email}</span>
-            </div>
-            <div className="flex items-center justify-between py-2 border-b">
-              <span className="text-sm text-muted-foreground">Tipo de cuenta</span>
-              <Badge variant={user?.is_admin ? "default" : "secondary"}>
-                {user?.is_admin ? "Administrador" : "Usuario"}
-              </Badge>
             </div>
             <div className="flex items-center justify-between py-2">
               <span className="text-sm text-muted-foreground">Miembro desde</span>

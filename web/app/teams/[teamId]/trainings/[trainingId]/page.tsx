@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, CheckCircle2, XCircle, ChevronUp, ChevronDown } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
+import { Plus, Trash2, CheckCircle2, XCircle, ChevronUp, ChevronDown, Save } from "lucide-react";
 import Link from "next/link";
 import {
   getTraining,
@@ -14,8 +14,16 @@ import {
   listRoster,
   listCatalog,
   createDrill,
+  getDrill,
 } from "@basketball-clipper/shared/api";
-import type { DrillType, TrainingDrill, TrainingDrillAdd } from "@basketball-clipper/shared/types";
+import type {
+  DrillType,
+  TrainingDrill,
+  TrainingDrillAdd,
+  CourtLayoutType,
+  SequenceNode,
+  SketchElement,
+} from "@basketball-clipper/shared/types";
 import { PageShell } from "@/components/layout/PageShell";
 import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import { useAuth } from "@/lib/auth";
@@ -51,6 +59,9 @@ import {
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { CourtBackground } from "@/components/drill-editor/CourtBackground";
+import { ElementRenderer } from "@/components/drill-editor/ElementRenderer";
+import { COURT_SIZE, toSvg } from "@/components/drill-editor/court-utils";
 
 type TabKey = "ejercicios" | "asistencia";
 type AddMode = "library" | "catalog" | "new";
@@ -87,6 +98,10 @@ export default function TrainingDetailPage({
   const [newDrillName, setNewDrillName] = useState("");
   const [newDrillType, setNewDrillType] = useState<DrillType>("drill");
 
+  // Local attendance state for batch save
+  const [localAttendance, setLocalAttendance] = useState<Map<number, boolean>>(new Map());
+  const [attendanceDirty, setAttendanceDirty] = useState(false);
+
   const { data: training, isLoading } = useQuery({
     queryKey: ["training", trainingId],
     queryFn: () => getTraining(token!, clubId!, teamId, trainingId),
@@ -111,6 +126,21 @@ export default function TrainingDetailPage({
     enabled: !!token && !!clubId,
   });
 
+  // Fetch drill details for thumbnails
+  const drillIds = training?.training_drills.map((td) => td.drill_id) ?? [];
+  const drillDetailQueries = useQueries({
+    queries: drillIds.map((id) => ({
+      queryKey: ["drill", id],
+      queryFn: () => getDrill(token!, id),
+      enabled: !!token && !!id,
+    })),
+  });
+  const drillDetailMap = new Map(
+    drillDetailQueries
+      .filter((q) => q.data)
+      .map((q) => [q.data!.id, q.data!]),
+  );
+
   // Drills already in training
   const drillIdsInTraining = new Set(
     training?.training_drills.map((td) => td.drill_id) ?? []
@@ -122,6 +152,40 @@ export default function TrainingDetailPage({
   const availableCatalogEntries = catalogEntries.filter(
     (e) => !e.archived_at && !drillIdsInTraining.has(e.drill.id)
   );
+
+  // Build attendance players (unregistered default to attended=true — TAREA 12)
+  const attendanceMap = new Map(
+    training?.training_attendances.map((ta) => [ta.player_id, ta]) ?? []
+  );
+
+  const allAttendancePlayers = training ? [
+    ...training.training_attendances,
+    ...roster
+      .filter((re) => !attendanceMap.has(re.player_id) && !re.archived_at)
+      .map((re) => ({
+        id: -1,
+        training_id: trainingId,
+        player_id: re.player_id,
+        attended: true, // default to present
+        player_first_name: re.player.first_name,
+        player_last_name: re.player.last_name,
+      })),
+  ] : [];
+
+  // Sync local attendance when training data loads
+  useEffect(() => {
+    if (allAttendancePlayers.length > 0 && !attendanceDirty) {
+      const map = new Map<number, boolean>();
+      for (const ta of allAttendancePlayers) {
+        map.set(ta.player_id, ta.attended);
+      }
+      setLocalAttendance(map);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [training]);
+
+  const presentCount = Array.from(localAttendance.values()).filter(Boolean).length;
+  const totalCount = allAttendancePlayers.length;
 
   const addDrillMut = useMutation({
     mutationFn: (data: TrainingDrillAdd) =>
@@ -138,7 +202,6 @@ export default function TrainingDetailPage({
     },
   });
 
-  // Create new drill then add it
   const createAndAddMut = useMutation({
     mutationFn: async () => {
       const drill = await createDrill(token!, {
@@ -185,17 +248,32 @@ export default function TrainingDetailPage({
     },
   });
 
-  const attendanceMut = useMutation({
-    mutationFn: ({ playerId, attended }: { playerId: number; attended: boolean }) =>
-      upsertAttendance(token!, clubId!, teamId, trainingId, {
-        player_id: playerId,
-        attended,
-      }),
+  const saveAttendanceMut = useMutation({
+    mutationFn: async () => {
+      const promises = Array.from(localAttendance.entries()).map(([playerId, attended]) =>
+        upsertAttendance(token!, clubId!, teamId, trainingId, {
+          player_id: playerId,
+          attended,
+        })
+      );
+      await Promise.all(promises);
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["training", trainingId] });
+      setAttendanceDirty(false);
+      toast("Asistencia guardada.");
     },
     onError: (e: Error) => toast(e.message, "error"),
   });
+
+  function toggleAttendance(playerId: number) {
+    setLocalAttendance((prev) => {
+      const next = new Map(prev);
+      next.set(playerId, !prev.get(playerId));
+      return next;
+    });
+    setAttendanceDirty(true);
+  }
 
   function openDialog() {
     setAddMode("library");
@@ -262,28 +340,6 @@ export default function TrainingDetailPage({
     hour: "2-digit", minute: "2-digit",
   });
 
-  // Attendance map
-  const attendanceMap = new Map(
-    training.training_attendances.map((ta) => [ta.player_id, ta])
-  );
-
-  const allAttendancePlayers = [
-    ...training.training_attendances,
-    ...roster
-      .filter((re) => !attendanceMap.has(re.player_id) && !re.archived_at)
-      .map((re) => ({
-        id: -1,
-        training_id: trainingId,
-        player_id: re.player_id,
-        attended: false,
-        player_first_name: re.player.first_name,
-        player_last_name: re.player.last_name,
-      })),
-  ];
-
-  const presentCount = training.training_attendances.filter((ta) => ta.attended).length;
-  const totalCount = allAttendancePlayers.length;
-
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-8 max-w-3xl">
@@ -336,87 +392,102 @@ export default function TrainingDetailPage({
               </div>
             ) : (
               <div className="border rounded-lg divide-y mb-4">
-                {training.training_drills.map((td, idx) => (
-                  <div key={td.id} className="flex items-center gap-3 px-4 py-3">
-                    <span className="text-xs text-muted-foreground font-mono w-5 shrink-0">
-                      {idx + 1}.
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium">
-                        {td.drill_title ?? `Ejercicio #${td.drill_id}`}
-                      </p>
-                      {td.drill_type && (
-                        <p className="text-xs text-muted-foreground">
-                          {td.drill_type === "play" ? "Jugada" : "Ejercicio"}
-                        </p>
+                {training.training_drills.map((td, idx) => {
+                  const drillDetail = drillDetailMap.get(td.drill_id);
+                  return (
+                    <div key={td.id} className="flex items-center gap-3 px-4 py-3">
+                      <span className="text-xs text-muted-foreground font-mono w-5 shrink-0">
+                        {idx + 1}.
+                      </span>
+
+                      {/* Mini canvas thumbnail */}
+                      {drillDetail ? (
+                        <Link href={`/drills/${td.drill_id}/edit`} className="shrink-0">
+                          <DrillThumbnail
+                            layout={drillDetail.court_layout}
+                            node={drillDetail.root_sequence}
+                          />
+                        </Link>
+                      ) : (
+                        <div className="w-20 h-[60px] rounded border border-muted bg-muted/30 shrink-0" />
                       )}
-                      {td.notes && (
-                        <p className="text-xs text-muted-foreground mt-0.5">{td.notes}</p>
-                      )}
-                    </div>
-                    {isCoachOrTD && (
-                      <div className="flex flex-col gap-0.5 shrink-0">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-5 w-6"
-                          disabled={idx === 0 || reorderMut.isPending}
-                          onClick={() => moveRow(training.training_drills, idx, -1)}
-                          aria-label="Subir ejercicio"
+
+                      <div className="flex-1 min-w-0">
+                        <Link
+                          href={`/drills/${td.drill_id}/edit`}
+                          className="block hover:underline"
                         >
-                          <ChevronUp className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-5 w-6"
-                          disabled={idx === training.training_drills.length - 1 || reorderMut.isPending}
-                          onClick={() => moveRow(training.training_drills, idx, 1)}
-                          aria-label="Bajar ejercicio"
-                        >
-                          <ChevronDown className="h-3 w-3" />
-                        </Button>
+                          <p className="text-sm font-medium">
+                            {td.drill_title ?? `Ejercicio #${td.drill_id}`}
+                          </p>
+                          {td.drill_type && (
+                            <p className="text-xs text-muted-foreground">
+                              {td.drill_type === "play" ? "Jugada" : "Ejercicio"}
+                            </p>
+                          )}
+                          {td.notes && (
+                            <p className="text-xs text-muted-foreground mt-0.5">{td.notes}</p>
+                          )}
+                        </Link>
                       </div>
-                    )}
-                    <Link
-                      href={`/drills/${td.drill_id}/edit`}
-                      className="text-xs text-muted-foreground hover:text-foreground underline shrink-0"
-                    >
-                      Ver
-                    </Link>
-                    {isCoachOrTD && (
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
+                      {isCoachOrTD && (
+                        <div className="flex flex-col gap-0.5 shrink-0">
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
-                            disabled={removeDrillMut.isPending}
+                            className="h-5 w-6"
+                            disabled={idx === 0 || reorderMut.isPending}
+                            onClick={() => moveRow(training.training_drills, idx, -1)}
+                            aria-label="Subir ejercicio"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <ChevronUp className="h-3 w-3" />
                           </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>¿Eliminar ejercicio?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Se eliminará <strong>{td.drill_title}</strong> del entrenamiento.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() => removeDrillMut.mutate(td.id)}
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-6"
+                            disabled={idx === training.training_drills.length - 1 || reorderMut.isPending}
+                            onClick={() => moveRow(training.training_drills, idx, 1)}
+                            aria-label="Bajar ejercicio"
+                          >
+                            <ChevronDown className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                      {isCoachOrTD && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+                              disabled={removeDrillMut.isPending}
                             >
-                              Eliminar
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    )}
-                  </div>
-                ))}
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>¿Eliminar ejercicio?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Se eliminará <strong>{td.drill_title}</strong> del entrenamiento.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => removeDrillMut.mutate(td.id)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Eliminar
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -437,45 +508,54 @@ export default function TrainingDetailPage({
                 No hay jugadores en la plantilla del equipo.
               </div>
             ) : (
-              <div className="border rounded-lg divide-y">
-                {allAttendancePlayers.map((ta) => (
-                  <div key={ta.player_id} className="flex items-center gap-3 px-4 py-3">
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">
-                        {ta.player_first_name} {ta.player_last_name}
-                      </p>
-                    </div>
-                    {isCoachOrTD ? (
-                      <button
-                        className={cn(
-                          "flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full transition-colors",
-                          ta.attended
-                            ? "bg-green-100 text-green-700 hover:bg-green-200"
-                            : "bg-muted text-muted-foreground hover:bg-muted/70",
-                        )}
-                        onClick={() =>
-                          attendanceMut.mutate({
-                            playerId: ta.player_id,
-                            attended: !ta.attended,
-                          })
-                        }
-                        disabled={attendanceMut.isPending}
-                      >
-                        {ta.attended ? (
-                          <CheckCircle2 className="h-3.5 w-3.5" />
+              <>
+                <div className="border rounded-lg divide-y mb-4">
+                  {allAttendancePlayers.map((ta) => {
+                    const localVal = localAttendance.get(ta.player_id) ?? ta.attended;
+                    return (
+                      <div key={ta.player_id} className="flex items-center gap-3 px-4 py-3">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">
+                            {ta.player_first_name} {ta.player_last_name}
+                          </p>
+                        </div>
+                        {isCoachOrTD ? (
+                          <button
+                            className={cn(
+                              "flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full transition-colors",
+                              localVal
+                                ? "bg-green-100 text-green-700 hover:bg-green-200"
+                                : "bg-muted text-muted-foreground hover:bg-muted/70",
+                            )}
+                            onClick={() => toggleAttendance(ta.player_id)}
+                          >
+                            {localVal ? (
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                            ) : (
+                              <XCircle className="h-3.5 w-3.5" />
+                            )}
+                            {localVal ? "Asistió" : "No asistió"}
+                          </button>
                         ) : (
-                          <XCircle className="h-3.5 w-3.5" />
+                          <Badge variant={localVal ? "default" : "secondary"}>
+                            {localVal ? "Asistió" : "No asistió"}
+                          </Badge>
                         )}
-                        {ta.attended ? "Asistió" : "No asistió"}
-                      </button>
-                    ) : (
-                      <Badge variant={ta.attended ? "default" : "secondary"}>
-                        {ta.attended ? "Asistió" : "No asistió"}
-                      </Badge>
-                    )}
-                  </div>
-                ))}
-              </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {isCoachOrTD && (
+                  <Button
+                    onClick={() => saveAttendanceMut.mutate()}
+                    disabled={saveAttendanceMut.isPending || !attendanceDirty}
+                    className="w-full sm:w-auto"
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    {saveAttendanceMut.isPending ? "Guardando..." : "Guardar asistencia"}
+                  </Button>
+                )}
+              </>
             )}
           </div>
         )}
@@ -615,5 +695,41 @@ export default function TrainingDetailPage({
         </DialogContent>
       </Dialog>
     </PageShell>
+  );
+}
+
+function DrillThumbnail({
+  layout,
+  node,
+}: {
+  layout: CourtLayoutType;
+  node: SequenceNode;
+}) {
+  const { w, h } = COURT_SIZE[layout];
+  return (
+    <div className="w-20 h-[60px] rounded border border-muted overflow-hidden bg-zinc-800 shrink-0">
+      <svg
+        viewBox={`0 0 ${w} ${h}`}
+        className="w-full h-full"
+        preserveAspectRatio="xMidYMid meet"
+      >
+        <CourtBackground layout={layout} />
+        {node.elements.map((el: SketchElement) => {
+          const { x: svgX, y: svgY } = toSvg(el.x, el.y, layout);
+          const svgPoints = el.points?.map((p) => ({ x: p.x * w, y: p.y * h }));
+          return (
+            <ElementRenderer
+              key={el.id}
+              element={el}
+              svgX={svgX}
+              svgY={svgY}
+              selected={false}
+              onPointerDown={() => {}}
+              svgPoints={svgPoints}
+            />
+          );
+        })}
+      </svg>
+    </div>
   );
 }

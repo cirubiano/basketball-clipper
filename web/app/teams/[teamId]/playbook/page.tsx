@@ -15,6 +15,17 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -22,17 +33,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Plus, Trash2, Lock, ExternalLink } from "lucide-react";
-import Link from "next/link";
+import { Plus, Trash2, Lock } from "lucide-react";
 import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import {
   listPlaybook,
   addToPlaybook,
   removeFromPlaybook,
   listDrills,
+  getDrill,
 } from "@basketball-clipper/shared/api";
-import type { PlaybookEntry } from "@basketball-clipper/shared/types";
+import type { PlaybookEntry, Drill, SequenceNode, CourtLayoutType, SketchElement } from "@basketball-clipper/shared/types";
 import { COURT_LAYOUT_LABELS } from "@basketball-clipper/shared/types";
+import { CourtBackground } from "@/components/drill-editor/CourtBackground";
+import { ElementRenderer } from "@/components/drill-editor/ElementRenderer";
+import { COURT_SIZE, toSvg } from "@/components/drill-editor/court-utils";
 
 export default function PlaybookPage({
   params,
@@ -50,6 +64,9 @@ export default function PlaybookPage({
   const [selectedDrillId, setSelectedDrillId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Read-only drill viewer
+  const [viewDrillId, setViewDrillId] = useState<number | null>(null);
+
   const { data: entries = [], isLoading } = useQuery({
     queryKey: ["playbook", clubId, teamId],
     queryFn: () => listPlaybook(token!, clubId!, teamId),
@@ -62,9 +79,19 @@ export default function PlaybookPage({
     enabled: !!token && addOpen,
   });
 
-  // Filter out drills already in the playbook
-  const playbookDrillIds = new Set(entries.map((e) => e.drill.id));
-  const availableDrills = myDrills.filter((d) => !playbookDrillIds.has(d.id));
+  const { data: viewDrill } = useQuery({
+    queryKey: ["drill", viewDrillId],
+    queryFn: () => getDrill(token!, viewDrillId!),
+    enabled: !!token && viewDrillId !== null,
+  });
+
+  // Filter: playbook only shows type=play
+  const playbookEntries = entries.filter((e) => e.drill.type === "play");
+  const playbookDrillIds = new Set(playbookEntries.map((e) => e.drill.id));
+  // Add dialog: only type=play not already in playbook
+  const availableDrills = myDrills.filter(
+    (d) => !playbookDrillIds.has(d.id) && d.type === "play",
+  );
 
   const addMut = useMutation({
     mutationFn: () =>
@@ -95,7 +122,7 @@ export default function PlaybookPage({
           <div>
             <h1 className="text-2xl font-bold">Playbook del equipo</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Jugadas y ejercicios asignados a este equipo
+              Jugadas asignadas a este equipo
             </p>
           </div>
           <Button onClick={() => setAddOpen(true)} className="gap-2" disabled={!clubId}>
@@ -114,21 +141,22 @@ export default function PlaybookPage({
 
         {isLoading ? (
           <p className="text-muted-foreground text-sm">Cargando playbook...</p>
-        ) : entries.length === 0 ? (
+        ) : playbookEntries.length === 0 ? (
           <div className="text-center py-16 text-muted-foreground">
-            <p className="mb-3">Este equipo no tiene jugadas ni ejercicios asignados.</p>
+            <p className="mb-3">Este equipo no tiene jugadas asignadas.</p>
             <Button variant="outline" onClick={() => setAddOpen(true)} disabled={!clubId}>
-              Añadir el primero
+              Añadir la primera
             </Button>
           </div>
         ) : (
           <div className="flex flex-col gap-2">
-            {entries.map((entry) => (
+            {playbookEntries.map((entry) => (
               <PlaybookEntryRow
                 key={entry.id}
                 entry={entry}
                 currentUserId={user?.id}
                 onEdit={() => router.push(`/drills/${entry.drill.id}/edit`)}
+                onView={() => setViewDrillId(entry.drill.id)}
                 onRemove={() => removeMut.mutate(entry.id)}
                 isRemoving={removeMut.isPending}
               />
@@ -141,7 +169,7 @@ export default function PlaybookPage({
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Añadir al playbook</DialogTitle>
+            <DialogTitle>Añadir jugada al playbook</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             {error && (
@@ -150,10 +178,10 @@ export default function PlaybookPage({
               </Alert>
             )}
             <div className="space-y-1.5">
-              <p className="text-sm font-medium">Ejercicio o jugada de mi biblioteca</p>
+              <p className="text-sm font-medium">Jugada de mi biblioteca</p>
               {availableDrills.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No tienes elementos en tu biblioteca disponibles para añadir.
+                  No tienes jugadas disponibles para añadir.
                 </p>
               ) : (
                 <Select
@@ -161,15 +189,12 @@ export default function PlaybookPage({
                   onValueChange={(v) => setSelectedDrillId(Number(v))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecciona un elemento..." />
+                    <SelectValue placeholder="Selecciona una jugada..." />
                   </SelectTrigger>
                   <SelectContent>
                     {availableDrills.map((d) => (
                       <SelectItem key={d.id} value={d.id.toString()}>
-                        {d.name}{" "}
-                        <span className="text-muted-foreground text-xs ml-1">
-                          ({d.type === "play" ? "Jugada" : "Ejercicio"})
-                        </span>
+                        {d.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -190,7 +215,56 @@ export default function PlaybookPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Read-only drill viewer dialog */}
+      <Dialog open={viewDrillId !== null} onOpenChange={(open) => { if (!open) setViewDrillId(null); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{viewDrill?.name ?? "Jugada"}</DialogTitle>
+          </DialogHeader>
+          {viewDrill ? (
+            <ReadOnlyCanvas
+              layout={viewDrill.court_layout}
+              node={viewDrill.root_sequence}
+            />
+          ) : (
+            <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
+              Cargando...
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </PageShell>
+  );
+}
+
+function ReadOnlyCanvas({ layout, node }: { layout: CourtLayoutType; node: SequenceNode }) {
+  const { w, h } = COURT_SIZE[layout];
+  return (
+    <div className="bg-zinc-800 rounded flex items-center justify-center p-3">
+      <svg
+        viewBox={`0 0 ${w} ${h}`}
+        className="max-w-full rounded"
+        style={{ maxHeight: "60vh", aspectRatio: `${w}/${h}` }}
+      >
+        <CourtBackground layout={layout} />
+        {node.elements.map((el: SketchElement) => {
+          const { x: svgX, y: svgY } = toSvg(el.x, el.y, layout);
+          const svgPoints = el.points?.map((p) => ({ x: p.x * w, y: p.y * h }));
+          return (
+            <ElementRenderer
+              key={el.id}
+              element={el}
+              svgX={svgX}
+              svgY={svgY}
+              selected={false}
+              onPointerDown={() => {}}
+              svgPoints={svgPoints}
+            />
+          );
+        })}
+      </svg>
+    </div>
   );
 }
 
@@ -198,12 +272,14 @@ function PlaybookEntryRow({
   entry,
   currentUserId,
   onEdit,
+  onView,
   onRemove,
   isRemoving,
 }: {
   entry: PlaybookEntry;
   currentUserId: number | undefined;
   onEdit: () => void;
+  onView: () => void;
   onRemove: () => void;
   isRemoving: boolean;
 }) {
@@ -211,18 +287,15 @@ function PlaybookEntryRow({
   const isAuthor = entry.added_by === currentUserId;
 
   return (
-    <div className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-accent/30 transition-colors group">
+    <div className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-accent/30 transition-colors">
       <div
         className={isAuthor && !entry.is_frozen ? "cursor-pointer flex-1 min-w-0" : "flex-1 min-w-0"}
         onClick={isAuthor && !entry.is_frozen ? onEdit : undefined}
         role={isAuthor && !entry.is_frozen ? "button" : undefined}
       >
         <div className="flex items-center gap-2 mb-0.5">
-          <Badge
-            variant={drill.type === "play" ? "default" : "secondary"}
-            className="text-xs"
-          >
-            {drill.type === "play" ? "Jugada" : "Ejercicio"}
+          <Badge variant="default" className="text-xs">
+            Jugada
           </Badge>
           <span className="text-sm font-medium truncate">{drill.name}</span>
           {entry.is_frozen && (
@@ -245,21 +318,45 @@ function PlaybookEntryRow({
       </div>
 
       <div className="flex gap-1">
-        <Link href={`/drills/${drill.id}/edit`}>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="Ver drill">
-            <ExternalLink className="h-4 w-4" />
-          </Button>
-        </Link>
         <Button
           variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-destructive hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={onRemove}
-          disabled={isRemoving}
-          title="Quitar del playbook"
+          size="sm"
+          className="text-xs text-muted-foreground"
+          onClick={onView}
+          title="Ver jugada"
         >
-          <Trash2 className="h-4 w-4" />
+          Ver
         </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+              disabled={isRemoving}
+              title="Quitar del playbook"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Quitar del playbook?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Se quitará <strong>{drill.name}</strong> del playbook del equipo.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={onRemove}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Quitar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

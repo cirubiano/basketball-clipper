@@ -29,8 +29,6 @@ export function ProfileSelector() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  if (profiles.length === 0) return null;
-
   async function handleSwitch(profileId: number) {
     if (profileId === activeProfile?.id) {
       setOpen(false);
@@ -95,6 +93,29 @@ export function ProfileSelector() {
             Tus perfiles
           </div>
           <ul className="max-h-72 overflow-y-auto pb-1">
+            {/* Espacio personal — siempre visible */}
+            <li>
+              <button
+                onClick={async () => {
+                  if (!activeProfile) { setOpen(false); return; }
+                  setSwitching(true);
+                  try { await clearActiveProfile(); } finally { setSwitching(false); setOpen(false); }
+                }}
+                className={`flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors ${
+                  !activeProfile ? "bg-blue-50" : ""
+                }`}
+              >
+                <span className="rounded px-1.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 shrink-0">
+                  Personal
+                </span>
+                <span className="text-sm font-medium text-gray-900">Espacio personal</span>
+                {!activeProfile && (
+                  <svg className="ml-auto h-4 w-4 shrink-0 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </button>
+            </li>
             {profiles.map((profile) => (
               <li key={profile.id}>
                 <button
@@ -139,20 +160,6 @@ export function ProfileSelector() {
               </li>
             ))}
           </ul>
-          {activeProfile && (
-            <>
-              <div className="border-t border-gray-100" />
-              <button
-                onClick={clearActiveProfile}
-                className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-gray-500 hover:bg-gray-50 transition-colors"
-              >
-                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-                </svg>
-                Cambiar de perfil o club
-              </button>
-            </>
-          )}
         </div>
       )}
     </div>

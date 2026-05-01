@@ -212,7 +212,7 @@ export default function MatchesPage({
           </div>
         ) : (
           <div className="border rounded-lg divide-y">
-            {matches.map((m) => (
+            {[...matches].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map((m) => (
               <MatchRow
                 key={m.id}
                 match={m}
