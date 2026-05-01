@@ -274,6 +274,40 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ## Historial de sesiones
 
+### 2026-05-01 — Sesión 24 (Auditoría completa: tests + cobertura)
+
+**Objetivo**: subir cobertura de tests del backend, verificar calidad de código, estabilizar frontend.
+
+**Tests escritos — 57 nuevos tests (114 → 171 total)**
+
+| Archivo | Tests | Routers cubiertos |
+|---|---|---|
+| `tests/test_matches_api.py` | 19 | `matches.py`: list, create, get, update, archive, convocatoria, stats (con RF-101 y C-2) |
+| `tests/test_trainings_api.py` | 19 | `trainings.py`: list, create, get, update, archive, drills CRUD, reordenar, asistencia |
+| `tests/test_seasons_teams_api.py` | 19 | `seasons.py`: list, create, update status (RF-101 → 409); `teams.py`: list, create, get, archive |
+
+**Cobertura antes → después**
+
+| Módulo | Antes | Después |
+|---|---|---|
+| `seasons.py` | 41% | **100%** |
+| `trainings.py` | 24% | **98%** |
+| `teams.py` | 40% | **96%** |
+| `matches.py` | 24% | **84%** |
+| **TOTAL** | 67% | **77%** |
+
+**Patrones técnicos confirmados**
+
+- `session.add = MagicMock(side_effect=lambda obj: setattr(obj, 'id', 1))` para endpoints que crean ORM objects y luego los serializan con `model_validate`
+- Para Season/Team (que tienen `server_default` en `created_at`): side_effect debe setear también `created_at`
+- `session.scalars = AsyncMock(return_value=mock_scalars_obj)` para routers que usan `await db.scalars(stmt).all()` (seasons, teams)
+- `session.execute = AsyncMock(return_value=mock_result)` para routers que usan `await db.execute(stmt)` (matches, trainings)
+- Admin siempre bypasea `_require_team_member`, `_require_technical_director`, `_require_club_access`
+
+**Verificaciones finales**: ESLint 0 errores ✔, TSC 0 errores ✔, 171 tests ✔
+
+---
+
 ### 2026-05-01 — Sesión 23 (3 mejoras UX: avatares, variantes, dashboard TD)
 
 **TAREA 1 — M2: Fotos de jugador más grandes**
