@@ -24,6 +24,7 @@ import type {
 } from "@basketball-clipper/shared/types";
 
 const TOKEN_KEY = "bc_token";
+const LAST_PROFILE_KEY = "last_profile_id";
 
 interface AuthState {
   user: User | null;
@@ -65,12 +66,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading: true,
   });
 
-  /** Carga user + perfiles dado un token válido. */
+  /** Carga user + perfiles dado un token válido. Si el token no lleva
+   *  profile_id, intenta restaurar el último perfil usado (localStorage). */
   const hydrateFromToken = useCallback(async (token: string) => {
     const [user, profiles] = await Promise.all([getMe(token), getMyProfiles(token)]);
     const profileId = getProfileIdFromToken(token);
-    const activeProfile = profiles.find((p) => p.id === profileId) ?? null;
-    setState({ user, token, activeProfile, profiles, isLoading: false });
+    let activeProfile = profiles.find((p) => p.id === profileId) ?? null;
+    let activeToken = token;
+
+    // Restaurar último perfil si el JWT no trae ninguno activo
+    if (!activeProfile && profiles.length > 0) {
+      const lastIdStr = localStorage.getItem(LAST_PROFILE_KEY);
+      if (lastIdStr) {
+        const lastId = parseInt(lastIdStr, 10);
+        const found = profiles.find((p) => p.id === lastId);
+        if (found) {
+          try {
+            const { access_token } = await apiSwitchProfile(token, lastId);
+            activeToken = access_token;
+            localStorage.setItem(TOKEN_KEY, access_token);
+            activeProfile = found;
+          } catch {
+            // Si falla el switch, quedarse en espacio personal y limpiar el hint
+            localStorage.removeItem(LAST_PROFILE_KEY);
+          }
+        }
+      }
+    }
+
+    setState({ user, token: activeToken, activeProfile, profiles, isLoading: false });
   }, []);
 
   useEffect(() => {
@@ -104,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(LAST_PROFILE_KEY);
     setState({ user: null, token: null, activeProfile: null, profiles: [], isLoading: false });
   }, []);
 
@@ -112,6 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!state.token) return;
       const { access_token } = await apiSwitchProfile(state.token, profileId);
       localStorage.setItem(TOKEN_KEY, access_token);
+      localStorage.setItem(LAST_PROFILE_KEY, String(profileId));
       // Actualiza el token y el perfil activo sin re-cargar todos los perfiles
       const activeProfile = state.profiles.find((p) => p.id === profileId) ?? null;
       setState((s) => ({ ...s, token: access_token, activeProfile }));
@@ -123,6 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!state.token) return;
     const { access_token } = await apiClearProfile(state.token);
     localStorage.setItem(TOKEN_KEY, access_token);
+    localStorage.removeItem(LAST_PROFILE_KEY);
     setState((s) => ({ ...s, token: access_token, activeProfile: null }));
   }, [state.token]);
 

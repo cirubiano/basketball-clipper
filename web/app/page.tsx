@@ -26,7 +26,7 @@ import {
   listTrainings,
 } from "@basketball-clipper/shared/api";
 import type { VideoListItem } from "@basketball-clipper/shared/types";
-import { MATCH_LOCATION_LABELS } from "@basketball-clipper/shared/types";
+import { MATCH_LOCATION_LABELS, profileLabel } from "@basketball-clipper/shared/types";
 import { PageShell } from "@/components/layout/PageShell";
 import { VideoCard } from "@/components/video/VideoCard";
 import { DeleteVideoDialog } from "@/components/video/DeleteVideoDialog";
@@ -145,7 +145,7 @@ function soloLinks(): QuickLink[] {
 }
 
 export default function DashboardPage() {
-  const { user, activeProfile, token } = useAuth();
+  const { user, activeProfile, profiles, token, switchProfile } = useAuth();
   const queryClient = useQueryClient();
   const [toDelete, setToDelete] = useState<VideoListItem | null>(null);
   const [retryError, setRetryError] = useState<string | null>(null);
@@ -308,15 +308,44 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {!activeProfile && (
+        {!activeProfile && profiles.length === 0 && (
           <Alert className="border-blue-200 bg-blue-50 text-blue-800">
             <Info className="h-4 w-4 shrink-0 text-blue-500" />
             <AlertDescription>
-              Tu cuenta está activa. Si eres invitado a un club, tus perfiles
-              aparecerán en el selector de perfil. Mientras tanto, puedes usar
-              tu biblioteca personal y subir vídeos.
+              Tu cuenta está activa. Cuando un club te invite, tus perfiles
+              aparecerán aquí. Mientras tanto, puedes usar tu biblioteca
+              personal.
             </AlertDescription>
           </Alert>
+        )}
+
+        {!activeProfile && profiles.length > 0 && (
+          <div>
+            <h2 className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wide">
+              Tus clubs
+            </h2>
+            <div className="space-y-2">
+              {profiles.map((profile) => (
+                <div
+                  key={profile.id}
+                  className="flex items-center justify-between rounded-lg border bg-card p-3"
+                >
+                  <div>
+                    <p className="text-sm font-medium">{profile.club_name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {profileLabel(profile)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => void switchProfile(profile.id)}
+                    className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent transition-colors shrink-0"
+                  >
+                    Cambiar a este perfil
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         <div>

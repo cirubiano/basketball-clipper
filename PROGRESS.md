@@ -274,6 +274,43 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ## Historial de sesiones
 
+### 2026-05-01 — Sesión 25 (Auth UX: espacio personal como estado por defecto)
+
+**Objetivo**: eliminar la redirección forzada a /select-profile y hacer que el espacio personal sea el estado natural de un usuario sin perfil de club activo.
+
+**TAREA 1 — `web/lib/auth.tsx`: Restaurar último perfil al hacer login**
+- Nueva constante `LAST_PROFILE_KEY = "last_profile_id"`
+- `hydrateFromToken`: si el JWT no lleva `profile_id`, intenta `localStorage.getItem("last_profile_id")` → si el id existe en la lista de perfiles activos → POST `/auth/switch-profile` → nuevo token guardado automáticamente
+- `switchProfile`: ahora también hace `localStorage.setItem(LAST_PROFILE_KEY, id)` al cambiar de perfil
+- `clearActiveProfile`: hace `localStorage.removeItem(LAST_PROFILE_KEY)` al volver al espacio personal
+- `logout`: hace `localStorage.removeItem(LAST_PROFILE_KEY)` al salir
+
+**TAREA 2 — `web/components/layout/PageShell.tsx`: Banner en lugar de redirección**
+- Eliminado el `router.replace("/select-profile")` del `useEffect`
+- Eliminado el `return null` que bloqueaba el render cuando `profiles.length > 0 && !activeProfile`
+- Si `requireProfile=true` y no hay `activeProfile`: se muestra un banner ámbar (`border-amber-200 bg-amber-50`) con mensaje "Esta sección requiere un perfil de club. Selecciona uno desde el selector de perfil."
+- En lugar de bloquear el render con `null`, se muestra solo el banner (no los hijos) para evitar crashes en páginas que asumen que hay un perfil activo
+
+**TAREA 3 — `web/app/page.tsx`: Dashboard en espacio personal**
+- Añadido import `profileLabel` desde `@basketball-clipper/shared/types`
+- Añadido `profiles, switchProfile` al destructuring de `useAuth()`
+- Sección "Tus clubs": si `!activeProfile && profiles.length > 0`, muestra lista de perfiles disponibles con botón "Cambiar a este perfil" por cada uno
+- Sección cuando `!activeProfile && profiles.length === 0`: mensaje actualizado a "Cuando un club te invite, tus perfiles aparecerán aquí."
+
+**TAREA 4 (TAREA 5 original) — Verificar redirects automáticos**
+- `grep "select-profile" web/**/*.tsx` → solo queda la página `/select-profile/page.tsx` (accesible voluntariamente desde navbar pero no destino de ningún redirect automático)
+
+**Flujo resultante**:
+1. Login → `hydrateFromToken` → si hay `last_profile_id` en localStorage y perfil existe → switch automático → dashboard con perfil activo
+2. Login sin historial → dashboard en espacio personal (sin redirección a /select-profile)
+3. Cambiar perfil desde ProfileSelector → guarda `last_profile_id`; próximo login restaura ese perfil
+4. "Cambiar de perfil o club" → elimina `last_profile_id`; próximo login queda en espacio personal
+5. Acceder a /players sin perfil → banner ámbar en lugar de redirect
+
+**Verificaciones**: ESLint 0 errores ✔, TSC 0 errores ✔
+
+---
+
 ### 2026-05-01 — Sesión 24 (Auditoría completa: tests + cobertura)
 
 **Objetivo**: subir cobertura de tests del backend, verificar calidad de código, estabilizar frontend.

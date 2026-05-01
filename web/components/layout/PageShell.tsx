@@ -2,8 +2,10 @@
 
 import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { Info } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { Navbar } from "./Navbar";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface PageShellProps {
@@ -19,22 +21,15 @@ export function PageShell({
   requireProfile = true,
   hideNav = false,
 }: PageShellProps) {
-  const { user, activeProfile, profiles, isLoading } = useAuth();
+  const { user, activeProfile, isLoading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (isLoading) return;
     if (requireAuth && !user) {
       router.replace("/login");
-      return;
     }
-    // Redirigir a /select-profile SOLO cuando el usuario tiene perfiles pero
-    // ninguno activo (ej. después de "Cambiar de perfil").
-    // Si no tiene perfiles todavía, se le permite el acceso en modo personal.
-    if (requireAuth && requireProfile && user && !activeProfile && profiles.length > 0) {
-      router.replace("/select-profile");
-    }
-  }, [isLoading, requireAuth, requireProfile, user, activeProfile, profiles, router]);
+  }, [isLoading, requireAuth, user, router]);
 
   if (isLoading) {
     return (
@@ -54,12 +49,27 @@ export function PageShell({
   }
 
   if (requireAuth && !user) return null;
-  if (requireAuth && requireProfile && !activeProfile && profiles.length > 0) return null;
+
+  // Si la página requiere perfil de club pero no hay ninguno activo,
+  // mostrar un banner informativo en lugar de redirigir.
+  const showProfileBanner = requireProfile && user && !activeProfile;
 
   return (
     <div className="min-h-screen flex flex-col">
       {!hideNav && <Navbar />}
-      <main className="flex-1 container mx-auto px-4 py-8">{children}</main>
+      <main className="flex-1 container mx-auto px-4 py-8">
+        {showProfileBanner ? (
+          <Alert className="border-amber-200 bg-amber-50">
+            <Info className="h-4 w-4 shrink-0 text-amber-600" />
+            <AlertDescription className="text-amber-800">
+              Esta sección requiere un perfil de club. Selecciona uno desde el
+              selector de perfil en la barra de navegación.
+            </AlertDescription>
+          </Alert>
+        ) : (
+          children
+        )}
+      </main>
     </div>
   );
 }
