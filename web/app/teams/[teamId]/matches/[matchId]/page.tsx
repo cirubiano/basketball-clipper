@@ -257,6 +257,9 @@ export default function MatchDetailPage({
   const convocadoIds = new Set(match.match_players.map((mp) => mp.player_id));
   const notConvocado = roster.filter((re) => !convocadoIds.has(re.player_id) && !re.archived_at);
 
+  // Photo lookup from roster data (MatchPlayer doesn't carry photo_url)
+  const rosterPhotoMap = new Map(roster.map((re) => [re.player_id, re.player.photo_url]));
+
   const dateStr = new Date(match.date).toLocaleDateString("es-ES", {
     weekday: "long", day: "2-digit", month: "long", year: "numeric",
   });
@@ -264,7 +267,6 @@ export default function MatchDetailPage({
     hour: "2-digit", minute: "2-digit",
   });
 
-  const matchDatePassed = new Date(match.date) <= new Date();
   const isTransitioning = startMut.isPending || finishMut.isPending || cancelMut.isPending;
 
   const showScore = match.status === "in_progress" || match.status === "finished";
@@ -302,8 +304,7 @@ export default function MatchDetailPage({
                   <Button
                     size="sm"
                     className="h-7 text-xs gap-1"
-                    disabled={!matchDatePassed || isTransitioning}
-                    title={!matchDatePassed ? "El partido aún no ha comenzado" : undefined}
+                    disabled={isTransitioning}
                     onClick={() => startMut.mutate()}
                   >
                     <Play className="h-3 w-3" />
@@ -384,93 +385,130 @@ export default function MatchDetailPage({
 
         {/* Tab: Convocatoria */}
         {tab === "convocatoria" && (
-          <div>
-            {match.match_players.length === 0 ? (
-              <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
-                No hay jugadores convocados.
-              </div>
-            ) : (
-              <div className="border rounded-lg divide-y mb-4">
-                {match.match_players.map((mp) => (
-                  <div key={mp.id} className="flex items-center gap-3 px-4 py-3">
-                    <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center text-sm font-semibold text-muted-foreground shrink-0">
-                      {(mp.player_first_name?.[0] ?? "").toUpperCase()}{(mp.player_last_name?.[0] ?? "").toUpperCase()}
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">
-                        {mp.player_first_name} {mp.player_last_name}
-                      </p>
-                    </div>
-                    {isCoachOrTD && (
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                            disabled={removePlayerMut.isPending}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>¿Retirar jugador?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Se retirará a <strong>{mp.player_first_name} {mp.player_last_name}</strong> de la convocatoria.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() => removePlayerMut.mutate(mp.player_id)}
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            >
-                              Retirar
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+          <div className="space-y-6">
+            {/* Convocados */}
+            <div>
+              <p className="text-sm font-semibold mb-2">
+                Convocados ({match.match_players.length})
+              </p>
+              {match.match_players.length === 0 ? (
+                <div className="border rounded-lg p-6 text-center text-muted-foreground text-sm">
+                  No hay jugadores convocados aún.
+                </div>
+              ) : (
+                <div className="border rounded-lg divide-y">
+                  {match.match_players.map((mp) => {
+                    const photoUrl = rosterPhotoMap.get(mp.player_id);
+                    return (
+                      <div key={mp.id} className="flex items-center gap-3 px-4 py-3">
+                        {photoUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={photoUrl}
+                            alt={`${mp.player_first_name} ${mp.player_last_name}`}
+                            className="h-10 w-10 rounded-full object-cover shrink-0"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center text-sm font-semibold text-muted-foreground shrink-0">
+                            {(mp.player_first_name?.[0] ?? "").toUpperCase()}{(mp.player_last_name?.[0] ?? "").toUpperCase()}
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">
+                            {mp.player_first_name} {mp.player_last_name}
+                          </p>
+                        </div>
+                        {isCoachOrTD && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                disabled={removePlayerMut.isPending}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>¿Retirar jugador?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Se retirará a <strong>{mp.player_first_name} {mp.player_last_name}</strong> de la convocatoria.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => removePlayerMut.mutate(mp.player_id)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Retirar
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
-            {isCoachOrTD && notConvocado.length > 0 && (
+            {/* No convocados — visible to all, actions only for coaches */}
+            {notConvocado.length > 0 && (
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-medium text-muted-foreground">Añadir a la convocatoria</p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs gap-1"
-                    disabled={addPlayerMut.isPending}
-                    onClick={() => notConvocado.forEach((re) => addPlayerMut.mutate(re.player_id))}
-                  >
-                    <UserPlus className="h-3 w-3" />
-                    Convocar a todos
-                  </Button>
+                  <p className="text-sm font-semibold text-muted-foreground">
+                    No convocados ({notConvocado.length})
+                  </p>
+                  {isCoachOrTD && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs gap-1"
+                      disabled={addPlayerMut.isPending}
+                      onClick={() => notConvocado.forEach((re) => addPlayerMut.mutate(re.player_id))}
+                    >
+                      <UserPlus className="h-3 w-3" />
+                      Convocar a todos
+                    </Button>
+                  )}
                 </div>
                 <div className="border rounded-lg divide-y">
-                  {notConvocado.map((re) => (
-                    <div key={re.id} className="flex items-center gap-3 px-4 py-2.5">
-                      <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center text-sm font-semibold text-muted-foreground shrink-0">
-                        {(re.player.first_name?.[0] ?? "").toUpperCase()}{(re.player.last_name?.[0] ?? "").toUpperCase()}
+                  {notConvocado.map((re) => {
+                    const photoUrl = re.player.photo_url;
+                    return (
+                      <div key={re.id} className="flex items-center gap-3 px-4 py-2.5">
+                        {photoUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={photoUrl}
+                            alt={`${re.player.first_name} ${re.player.last_name}`}
+                            className="h-10 w-10 rounded-full object-cover shrink-0 opacity-60"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center text-sm font-semibold text-muted-foreground shrink-0 opacity-60">
+                            {(re.player.first_name?.[0] ?? "").toUpperCase()}{(re.player.last_name?.[0] ?? "").toUpperCase()}
+                          </div>
+                        )}
+                        <p className="text-sm flex-1 text-muted-foreground">{re.player.first_name} {re.player.last_name}</p>
+                        {isCoachOrTD && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1"
+                            disabled={addPlayerMut.isPending}
+                            onClick={() => addPlayerMut.mutate(re.player_id)}
+                          >
+                            <UserPlus className="h-3 w-3" />
+                            Convocar
+                          </Button>
+                        )}
                       </div>
-                      <p className="text-sm flex-1">{re.player.first_name} {re.player.last_name}</p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs gap-1"
-                        disabled={addPlayerMut.isPending}
-                        onClick={() => addPlayerMut.mutate(re.player_id)}
-                      >
-                        <UserPlus className="h-3 w-3" />
-                        Añadir
-                      </Button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

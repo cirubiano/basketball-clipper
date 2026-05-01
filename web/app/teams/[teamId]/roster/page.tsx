@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { UserPlus, Trash2, Pencil, ArrowUpDown } from "lucide-react";
+import { UserPlus, Trash2, Pencil, ChevronUp, ChevronDown, ArrowUpDown } from "lucide-react";
 import {
   listPlayers,
   listRoster,
@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Breadcrumb } from "@/components/layout/Breadcrumb";
+import { cn } from "@/lib/utils";
 
 const POSITIONS: RosterPosition[] = [
   "point_guard",
@@ -54,9 +55,12 @@ const POSITIONS: RosterPosition[] = [
   "center",
 ];
 
-type SortBy = "jersey" | "position";
+type StatKey = keyof Pick<MatchStat, "points" | "minutes" | "assists" | "defensive_rebounds" | "offensive_rebounds" | "steals" | "turnovers" | "fouls">;
+type SortColumn = "jersey" | "name" | "position" | StatKey;
+type SortDir = "asc" | "desc";
+interface SortConfig { column: SortColumn; dir: SortDir; }
 
-const STAT_COLS: { key: keyof MatchStat; label: string }[] = [
+const STAT_COLS: { key: StatKey; label: string }[] = [
   { key: "points", label: "PTS" },
   { key: "minutes", label: "MIN" },
   { key: "assists", label: "AST" },
@@ -66,6 +70,17 @@ const STAT_COLS: { key: keyof MatchStat; label: string }[] = [
   { key: "turnovers", label: "PÉR" },
   { key: "fouls", label: "FAL" },
 ];
+
+const POS_ORDER: Record<string, number> = {
+  point_guard: 1, shooting_guard: 2, small_forward: 3, power_forward: 4, center: 5,
+};
+
+function SortIndicator({ column, sort }: { column: SortColumn; sort: SortConfig }) {
+  if (sort.column !== column) return <ArrowUpDown className="h-3 w-3 opacity-25 ml-1 inline" />;
+  return sort.dir === "asc"
+    ? <ChevronUp className="h-3 w-3 ml-1 inline" />
+    : <ChevronDown className="h-3 w-3 ml-1 inline" />;
+}
 
 export default function RosterPage({
   params,
@@ -83,7 +98,7 @@ export default function RosterPage({
   const [addForm, setAddForm] = useState({ playerId: "", jersey: "", position: "none" });
   const [editForm, setEditForm] = useState<RosterEntryUpdate>({});
   const [formError, setFormError] = useState<string | null>(null);
-  const [sortBy, setSortBy] = useState<SortBy>("jersey");
+  const [sort, setSort] = useState<SortConfig>({ column: "jersey", dir: "asc" });
 
   const { data: roster = [], isLoading: rosterLoading } = useQuery({
     queryKey: ["roster", clubId, teamId],
@@ -104,17 +119,15 @@ export default function RosterPage({
   });
 
   // Aggregate match stats per player
-  const statsMap = new Map<number, Record<keyof MatchStat, number>>();
+  const statsMap = new Map<number, Record<StatKey, number>>();
   for (const match of matches) {
     for (const stat of match.match_stats) {
       const existing = statsMap.get(stat.player_id) ?? {
-        id: 0, match_id: 0, player_id: stat.player_id,
         points: 0, minutes: 0, assists: 0,
         defensive_rebounds: 0, offensive_rebounds: 0,
         steals: 0, turnovers: 0, fouls: 0,
       };
       statsMap.set(stat.player_id, {
-        ...existing,
         points: existing.points + (stat.points ?? 0),
         minutes: existing.minutes + (stat.minutes ?? 0),
         assists: existing.assists + (stat.assists ?? 0),
@@ -130,20 +143,36 @@ export default function RosterPage({
   const rosterPlayerIds = new Set(roster.map((e) => e.player_id));
   const availablePlayers = allPlayers.filter((p) => !rosterPlayerIds.has(p.id) && !p.archived_at);
 
-  // Sort roster
+  // Sort roster by selected column
+  function handleSort(col: SortColumn) {
+    setSort((prev) => {
+      if (prev.column === col) return { column: col, dir: prev.dir === "asc" ? "desc" : "asc" };
+      const defaultDir: SortDir = (col === "jersey" || col === "name" || col === "position") ? "asc" : "desc";
+      return { column: col, dir: defaultDir };
+    });
+  }
+
   const sortedRoster = [...roster].sort((a, b) => {
-    if (sortBy === "jersey") {
-      const ja = a.jersey_number ?? 999;
-      const jb = b.jersey_number ?? 999;
-      return ja - jb;
+    let cmp = 0;
+    const { column, dir } = sort;
+    if (column === "jersey") {
+      cmp = (a.jersey_number ?? 999) - (b.jersey_number ?? 999);
+    } else if (column === "name") {
+      cmp = `${a.player.first_name} ${a.player.last_name}`.localeCompare(
+        `${b.player.first_name} ${b.player.last_name}`,
+      );
+    } else if (column === "position") {
+      const pa = a.position ? (POS_ORDER[a.position] ?? 9) : 9;
+      const pb = b.position ? (POS_ORDER[b.position] ?? 9) : 9;
+      cmp = pa - pb;
+    } else {
+      const sa = statsMap.get(a.player_id);
+      const sb = statsMap.get(b.player_id);
+      const va = sa ? (sa[column as StatKey] as number) : 0;
+      const vb = sb ? (sb[column as StatKey] as number) : 0;
+      cmp = va - vb;
     }
-    // by position (canonical order)
-    const posOrder: Record<string, number> = {
-      point_guard: 1, shooting_guard: 2, small_forward: 3, power_forward: 4, center: 5,
-    };
-    const pa = a.position ? (posOrder[a.position] ?? 9) : 9;
-    const pb = b.position ? (posOrder[b.position] ?? 9) : 9;
-    return pa - pb;
+    return dir === "asc" ? cmp : -cmp;
   });
 
   const addMutation = useMutation({
@@ -186,6 +215,14 @@ export default function RosterPage({
 
   const hasStats = matches.length > 0;
 
+  function thClass(col: SortColumn, align?: string) {
+    return cn(
+      "px-2 py-2 font-medium text-muted-foreground text-xs cursor-pointer select-none hover:text-foreground transition-colors whitespace-nowrap",
+      align === "left" ? "text-left" : "text-right",
+      sort.column === col && "text-foreground",
+    );
+  }
+
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-8 max-w-5xl">
@@ -207,28 +244,6 @@ export default function RosterPage({
           </Button>
         </div>
 
-        {/* Sort controls */}
-        {roster.length > 0 && (
-          <div className="flex items-center gap-2 mb-4">
-            <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Ordenar por:</span>
-            <Button
-              variant={sortBy === "jersey" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setSortBy("jersey")}
-            >
-              Dorsal
-            </Button>
-            <Button
-              variant={sortBy === "position" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setSortBy("position")}
-            >
-              Posición
-            </Button>
-          </div>
-        )}
-
         {rosterLoading ? (
           <div className="text-muted-foreground text-sm">Cargando...</div>
         ) : roster.length === 0 ? (
@@ -244,12 +259,32 @@ export default function RosterPage({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/30">
-                  <th className="text-left px-4 py-2 font-medium text-muted-foreground w-10">#</th>
-                  <th className="text-left px-4 py-2 font-medium text-muted-foreground">Jugador</th>
-                  <th className="text-left px-4 py-2 font-medium text-muted-foreground">Posición</th>
-                  {hasStats && STAT_COLS.map(({ label }) => (
-                    <th key={label} className="text-right px-2 py-2 font-medium text-muted-foreground text-xs">
-                      {label}
+                  <th
+                    className={thClass("jersey", "left")}
+                    style={{ paddingLeft: "1rem" }}
+                    onClick={() => handleSort("jersey")}
+                  >
+                    #<SortIndicator column="jersey" sort={sort} />
+                  </th>
+                  <th
+                    className={thClass("name", "left")}
+                    onClick={() => handleSort("name")}
+                  >
+                    Jugador<SortIndicator column="name" sort={sort} />
+                  </th>
+                  <th
+                    className={thClass("position", "left")}
+                    onClick={() => handleSort("position")}
+                  >
+                    Posición<SortIndicator column="position" sort={sort} />
+                  </th>
+                  {hasStats && STAT_COLS.map(({ key, label }) => (
+                    <th
+                      key={key}
+                      className={thClass(key)}
+                      onClick={() => handleSort(key)}
+                    >
+                      {label}<SortIndicator column={key} sort={sort} />
                     </th>
                   ))}
                   <th className="w-20" />
@@ -258,16 +293,26 @@ export default function RosterPage({
               <tbody>
                 {sortedRoster.map((entry) => {
                   const pStats = statsMap.get(entry.player_id);
+                  const photoUrl = entry.player.photo_url;
                   return (
                     <tr key={entry.id} className="border-b last:border-b-0 hover:bg-muted/20">
                       <td className="px-4 py-3 font-mono font-semibold text-muted-foreground">
                         {entry.jersey_number != null ? String(entry.jersey_number).padStart(2, "0") : "--"}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-3">
                         <div className="flex items-center gap-2">
-                          <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center text-xs font-semibold text-muted-foreground shrink-0">
-                            {entry.player.first_name[0]}{entry.player.last_name[0]}
-                          </div>
+                          {photoUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={photoUrl}
+                              alt={`${entry.player.first_name} ${entry.player.last_name}`}
+                              className="h-8 w-8 rounded-full object-cover shrink-0"
+                            />
+                          ) : (
+                            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center text-xs font-semibold text-muted-foreground shrink-0">
+                              {entry.player.first_name[0]}{entry.player.last_name[0]}
+                            </div>
+                          )}
                           <div>
                             <span className="font-medium">
                               {entry.player.first_name} {entry.player.last_name}
@@ -288,12 +333,12 @@ export default function RosterPage({
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground">
+                      <td className="px-2 py-3 text-muted-foreground">
                         {entry.position ? ROSTER_POSITION_LABELS[entry.position] : "—"}
                       </td>
                       {hasStats && STAT_COLS.map(({ key }) => (
                         <td key={key} className="px-2 py-3 text-right tabular-nums text-muted-foreground text-xs">
-                          {pStats ? (pStats[key as keyof typeof pStats] as number) : 0}
+                          {pStats ? (pStats[key] as number) : 0}
                         </td>
                       ))}
                       <td className="px-2 py-3">

@@ -219,6 +219,11 @@ export default function TrainingDetailPage({
         });
       }
       setLocalAttendance(map);
+      // If any player has no recorded attendance yet (defaulted from roster),
+      // mark dirty so the coach can confirm/save without having to change something first.
+      if (allAttendancePlayers.some((ta) => ta.id === -1)) {
+        setAttendanceDirty(true);
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [training]);

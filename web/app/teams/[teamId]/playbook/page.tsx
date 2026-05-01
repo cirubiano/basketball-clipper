@@ -1,12 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { PageShell } from "@/components/layout/PageShell";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -33,7 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Plus, Trash2, Lock } from "lucide-react";
+import { Plus, Trash2, Lock, Pencil, ChevronLeft, ChevronRight, GitBranch } from "lucide-react";
 import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import {
   listPlaybook,
@@ -64,8 +63,9 @@ export default function PlaybookPage({
   const [selectedDrillId, setSelectedDrillId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Read-only drill viewer
+  // Node viewer state
   const [viewDrillId, setViewDrillId] = useState<number | null>(null);
+  const [nodeStack, setNodeStack] = useState<SequenceNode[]>([]);
 
   const { data: entries = [], isLoading } = useQuery({
     queryKey: ["playbook", clubId, teamId],
@@ -79,14 +79,23 @@ export default function PlaybookPage({
     enabled: !!token && addOpen,
   });
 
-  const { data: viewDrill } = useQuery({
-    queryKey: ["drill", viewDrillId],
-    queryFn: () => getDrill(token!, viewDrillId!),
-    enabled: !!token && viewDrillId !== null,
+  // Fetch full drill details for thumbnails and viewer
+  const playbookEntries = entries.filter((e) => e.drill.type === "play");
+  const drillIds = playbookEntries.map((e) => e.drill.id);
+
+  const drillDetailQueries = useQueries({
+    queries: drillIds.map((id) => ({
+      queryKey: ["drill", id],
+      queryFn: () => getDrill(token!, id),
+      enabled: !!token,
+    })),
   });
 
+  const drillDetailMap = new Map<number, Drill>(
+    drillDetailQueries.filter((q) => q.data).map((q) => [q.data!.id, q.data!])
+  );
+
   // Filter: playbook only shows type=play
-  const playbookEntries = entries.filter((e) => e.drill.type === "play");
   const playbookDrillIds = new Set(playbookEntries.map((e) => e.drill.id));
   // Add dialog: only type=play not already in playbook
   const availableDrills = myDrills.filter(
@@ -109,6 +118,34 @@ export default function PlaybookPage({
     mutationFn: (entryId: number) => removeFromPlaybook(token!, clubId!, teamId, entryId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["playbook", clubId, teamId] }),
   });
+
+  // Node viewer helpers
+  const viewDrill = viewDrillId ? drillDetailMap.get(viewDrillId) : null;
+  const currentNode: SequenceNode | null =
+    nodeStack.length > 0
+      ? nodeStack[nodeStack.length - 1]
+      : viewDrill?.root_sequence ?? null;
+
+  function openViewer(drillId: number) {
+    setViewDrillId(drillId);
+    setNodeStack([]);
+  }
+
+  function closeViewer() {
+    setViewDrillId(null);
+    setNodeStack([]);
+  }
+
+  function goToNode(node: SequenceNode) {
+    setNodeStack((prev) => [...prev, node]);
+  }
+
+  function goBack() {
+    setNodeStack((prev) => prev.slice(0, -1));
+  }
+
+  const canGoBack = nodeStack.length > 0;
+  const branches = currentNode?.branches ?? [];
 
   return (
     <PageShell>
@@ -155,8 +192,9 @@ export default function PlaybookPage({
                 key={entry.id}
                 entry={entry}
                 currentUserId={user?.id}
+                drillDetail={drillDetailMap.get(entry.drill.id)}
                 onEdit={() => router.push(`/drills/${entry.drill.id}/edit`)}
-                onView={() => setViewDrillId(entry.drill.id)}
+                onView={() => openViewer(entry.drill.id)}
                 onRemove={() => removeMut.mutate(entry.id)}
                 isRemoving={removeMut.isPending}
               />
@@ -216,20 +254,88 @@ export default function PlaybookPage({
         </DialogContent>
       </Dialog>
 
-      {/* Read-only drill viewer dialog */}
-      <Dialog open={viewDrillId !== null} onOpenChange={(open) => { if (!open) setViewDrillId(null); }}>
+      {/* Node viewer dialog */}
+      <Dialog open={viewDrillId !== null} onOpenChange={(open) => { if (!open) closeViewer(); }}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{viewDrill?.name ?? "Jugada"}</DialogTitle>
+            <DialogTitle>{viewDrill?.name ?? "Cargando..."}</DialogTitle>
           </DialogHeader>
-          {viewDrill ? (
-            <ReadOnlyCanvas
-              layout={viewDrill.court_layout}
-              node={viewDrill.root_sequence}
-            />
+
+          {currentNode ? (
+            <div className="space-y-3">
+              {/* Node label */}
+              {(currentNode.label || nodeStack.length > 0) && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  {nodeStack.length === 0 ? (
+                    <span className="font-medium text-foreground">Posición inicial</span>
+                  ) : (
+                    <>
+                      <span>Posición inicial</span>
+                      {nodeStack.map((n, i) => (
+                        <span key={n.id} className="flex items-center gap-2">
+                          <ChevronRight className="h-3 w-3" />
+                          <span className={i === nodeStack.length - 1 ? "font-medium text-foreground" : ""}>
+                            {n.label ?? `Nodo ${i + 1}`}
+                          </span>
+                        </span>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Canvas */}
+              <FullCanvas layout={viewDrill!.court_layout} node={currentNode} />
+
+              {/* Navigation */}
+              <div className="flex items-center justify-between gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!canGoBack}
+                  onClick={goBack}
+                  className="gap-1"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Anterior
+                </Button>
+
+                <div className="flex gap-2">
+                  {branches.length === 0 && nodeStack.length > 0 && (
+                    <span className="text-xs text-muted-foreground self-center">Fin de la jugada</span>
+                  )}
+                  {branches.length === 1 && (
+                    <Button
+                      size="sm"
+                      onClick={() => goToNode(branches[0])}
+                      className="gap-1"
+                    >
+                      Siguiente
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {branches.length > 1 && (
+                    <div className="flex gap-1 items-center">
+                      <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                      {branches.map((branch, i) => (
+                        <Button
+                          key={branch.id}
+                          size="sm"
+                          variant="outline"
+                          onClick={() => goToNode(branch)}
+                          className="text-xs"
+                        >
+                          {branch.label ?? `Opción ${i + 1}`}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
-              Cargando...
+              Cargando jugada...
             </div>
           )}
         </DialogContent>
@@ -238,14 +344,16 @@ export default function PlaybookPage({
   );
 }
 
-function ReadOnlyCanvas({ layout, node }: { layout: CourtLayoutType; node: SequenceNode }) {
+// ── FullCanvas — large read-only canvas for the viewer ────────────────────────
+
+function FullCanvas({ layout, node }: { layout: CourtLayoutType; node: SequenceNode }) {
   const { w, h } = COURT_SIZE[layout];
   return (
     <div className="bg-zinc-800 rounded flex items-center justify-center p-3">
       <svg
         viewBox={`0 0 ${w} ${h}`}
         className="max-w-full rounded"
-        style={{ maxHeight: "60vh", aspectRatio: `${w}/${h}` }}
+        style={{ maxHeight: "55vh", aspectRatio: `${w}/${h}` }}
       >
         <CourtBackground layout={layout} />
         {node.elements.map((el: SketchElement) => {
@@ -268,9 +376,44 @@ function ReadOnlyCanvas({ layout, node }: { layout: CourtLayoutType; node: Seque
   );
 }
 
+// ── DrillThumbnail — small preview for list cards ─────────────────────────────
+
+function DrillThumbnail({ layout, node }: { layout: CourtLayoutType; node: SequenceNode }) {
+  const { w, h } = COURT_SIZE[layout];
+  return (
+    <div className="w-24 h-[68px] rounded border border-muted overflow-hidden bg-zinc-800 shrink-0">
+      <svg
+        viewBox={`0 0 ${w} ${h}`}
+        className="w-full h-full"
+        preserveAspectRatio="xMidYMid meet"
+      >
+        <CourtBackground layout={layout} />
+        {node.elements.map((el: SketchElement) => {
+          const { x: svgX, y: svgY } = toSvg(el.x, el.y, layout);
+          const svgPoints = el.points?.map((p) => ({ x: p.x * w, y: p.y * h }));
+          return (
+            <ElementRenderer
+              key={el.id}
+              element={el}
+              svgX={svgX}
+              svgY={svgY}
+              selected={false}
+              onPointerDown={() => {}}
+              svgPoints={svgPoints}
+            />
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+// ── PlaybookEntryRow ──────────────────────────────────────────────────────────
+
 function PlaybookEntryRow({
   entry,
   currentUserId,
+  drillDetail,
   onEdit,
   onView,
   onRemove,
@@ -278,6 +421,7 @@ function PlaybookEntryRow({
 }: {
   entry: PlaybookEntry;
   currentUserId: number | undefined;
+  drillDetail: Drill | undefined;
   onEdit: () => void;
   onView: () => void;
   onRemove: () => void;
@@ -287,20 +431,21 @@ function PlaybookEntryRow({
   const isAuthor = entry.added_by === currentUserId;
 
   return (
-    <div className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-accent/30 transition-colors">
-      <div
-        className={isAuthor && !entry.is_frozen ? "cursor-pointer flex-1 min-w-0" : "flex-1 min-w-0"}
-        onClick={isAuthor && !entry.is_frozen ? onEdit : undefined}
-        role={isAuthor && !entry.is_frozen ? "button" : undefined}
-      >
+    <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card">
+      {/* Thumbnail */}
+      {drillDetail ? (
+        <DrillThumbnail layout={drillDetail.court_layout} node={drillDetail.root_sequence} />
+      ) : (
+        <div className="w-24 h-[68px] rounded border border-muted bg-muted/30 shrink-0 animate-pulse" />
+      )}
+
+      {/* Info */}
+      <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-0.5">
-          <Badge variant="default" className="text-xs">
-            Jugada
-          </Badge>
           <span className="text-sm font-medium truncate">{drill.name}</span>
           {entry.is_frozen && (
             <span
-              className="flex items-center gap-0.5 text-xs text-muted-foreground"
+              className="flex items-center gap-0.5 text-xs text-muted-foreground shrink-0"
               title="Copia congelada — el autor ya no pertenece al equipo"
             >
               <Lock className="h-3 w-3" />
@@ -317,16 +462,28 @@ function PlaybookEntryRow({
         </p>
       </div>
 
-      <div className="flex gap-1">
+      {/* Actions */}
+      <div className="flex gap-1 shrink-0">
         <Button
-          variant="ghost"
+          variant="outline"
           size="sm"
-          className="text-xs text-muted-foreground"
+          className="text-xs gap-1"
           onClick={onView}
-          title="Ver jugada"
+          title="Ver jugada nodo a nodo"
         >
           Ver
         </Button>
+        {isAuthor && !entry.is_frozen && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={onEdit}
+            title="Editar jugada"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+        )}
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button
