@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
-import { Plus, Trash2, CheckCircle2, XCircle, ChevronUp, ChevronDown, Save } from "lucide-react";
+import { Plus, Trash2, ChevronUp, ChevronDown, Save } from "lucide-react";
 import Link from "next/link";
 import {
   getTraining,
@@ -17,13 +17,16 @@ import {
   getDrill,
 } from "@basketball-clipper/shared/api";
 import type {
+  AbsenceReason,
   DrillType,
+  TrainingAttendance,
   TrainingDrill,
   TrainingDrillAdd,
   CourtLayoutType,
   SequenceNode,
   SketchElement,
 } from "@basketball-clipper/shared/types";
+import { ABSENCE_REASON_LABELS } from "@basketball-clipper/shared/types";
 import { PageShell } from "@/components/layout/PageShell";
 import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import { useAuth } from "@/lib/auth";
@@ -65,11 +68,39 @@ import { COURT_SIZE, toSvg } from "@/components/drill-editor/court-utils";
 
 type TabKey = "ejercicios" | "asistencia";
 type AddMode = "library" | "catalog" | "new";
+type AttendanceState = "present" | "late" | "absent";
+
+interface LocalAttendanceRecord {
+  state: AttendanceState;
+  absence_reason: AbsenceReason | null;
+  notes: string;
+}
 
 const DRILL_TYPES: { value: DrillType; label: string }[] = [
   { value: "drill", label: "Ejercicio" },
   { value: "play", label: "Jugada" },
 ];
+
+function taToState(ta: TrainingAttendance): AttendanceState {
+  if (!ta.attended) return "absent";
+  if (ta.is_late) return "late";
+  return "present";
+}
+
+function attendanceBadge(state: AttendanceState, absenceReason: AbsenceReason | null) {
+  switch (state) {
+    case "present":
+      return <Badge className="bg-green-600 text-white">Asistió</Badge>;
+    case "late":
+      return <Badge className="bg-amber-500 text-white">Con retraso</Badge>;
+    case "absent":
+      return (
+        <Badge className="bg-destructive text-destructive-foreground">
+          Ausente{absenceReason ? ` · ${ABSENCE_REASON_LABELS[absenceReason]}` : ""}
+        </Badge>
+      );
+  }
+}
 
 export default function TrainingDetailPage({
   params,
@@ -98,8 +129,10 @@ export default function TrainingDetailPage({
   const [newDrillName, setNewDrillName] = useState("");
   const [newDrillType, setNewDrillType] = useState<DrillType>("drill");
 
-  // Local attendance state for batch save
-  const [localAttendance, setLocalAttendance] = useState<Map<number, boolean>>(new Map());
+  // Local attendance state — richer than boolean
+  const [localAttendance, setLocalAttendance] = useState<Map<number, LocalAttendanceRecord>>(
+    new Map()
+  );
   const [attendanceDirty, setAttendanceDirty] = useState(false);
 
   const { data: training, isLoading } = useQuery({
@@ -141,7 +174,6 @@ export default function TrainingDetailPage({
       .map((q) => [q.data!.id, q.data!]),
   );
 
-  // Drills already in training
   const drillIdsInTraining = new Set(
     training?.training_drills.map((td) => td.drill_id) ?? []
   );
@@ -153,12 +185,12 @@ export default function TrainingDetailPage({
     (e) => !e.archived_at && !drillIdsInTraining.has(e.drill.id)
   );
 
-  // Build attendance players (unregistered default to attended=true — TAREA 12)
+  // Build attendance player list: recorded first, then roster defaults (present)
   const attendanceMap = new Map(
     training?.training_attendances.map((ta) => [ta.player_id, ta]) ?? []
   );
 
-  const allAttendancePlayers = training ? [
+  const allAttendancePlayers: TrainingAttendance[] = training ? [
     ...training.training_attendances,
     ...roster
       .filter((re) => !attendanceMap.has(re.player_id) && !re.archived_at)
@@ -166,26 +198,47 @@ export default function TrainingDetailPage({
         id: -1,
         training_id: trainingId,
         player_id: re.player_id,
-        attended: true, // default to present
+        attended: true,
+        is_late: false,
+        absence_reason: null,
+        notes: null,
         player_first_name: re.player.first_name,
         player_last_name: re.player.last_name,
       })),
   ] : [];
 
-  // Sync local attendance when training data loads
+  // Sync local state when training loads (only if not dirty)
   useEffect(() => {
     if (allAttendancePlayers.length > 0 && !attendanceDirty) {
-      const map = new Map<number, boolean>();
+      const map = new Map<number, LocalAttendanceRecord>();
       for (const ta of allAttendancePlayers) {
-        map.set(ta.player_id, ta.attended);
+        map.set(ta.player_id, {
+          state: taToState(ta),
+          absence_reason: ta.absence_reason,
+          notes: ta.notes ?? "",
+        });
       }
       setLocalAttendance(map);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [training]);
 
-  const presentCount = Array.from(localAttendance.values()).filter(Boolean).length;
+  function updateAttendance(playerId: number, updates: Partial<LocalAttendanceRecord>) {
+    setLocalAttendance((prev) => {
+      const next = new Map(prev);
+      const current = next.get(playerId) ?? { state: "present" as AttendanceState, absence_reason: null, notes: "" };
+      next.set(playerId, { ...current, ...updates });
+      return next;
+    });
+    setAttendanceDirty(true);
+  }
+
+  const presentCount = Array.from(localAttendance.values()).filter((r) => r.state === "present").length;
+  const lateCount = Array.from(localAttendance.values()).filter((r) => r.state === "late").length;
+  const absentCount = Array.from(localAttendance.values()).filter((r) => r.state === "absent").length;
   const totalCount = allAttendancePlayers.length;
+
+  // ── Drill mutations ───────────────────────────────────────────────────────────
 
   const addDrillMut = useMutation({
     mutationFn: (data: TrainingDrillAdd) =>
@@ -209,9 +262,7 @@ export default function TrainingDetailPage({
         type: newDrillType,
         court_layout: "half_fiba",
       });
-      return addTrainingDrill(token!, clubId!, teamId, trainingId, {
-        drill_id: drill.id,
-      });
+      return addTrainingDrill(token!, clubId!, teamId, trainingId, { drill_id: drill.id });
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["training", trainingId] });
@@ -248,14 +299,27 @@ export default function TrainingDetailPage({
     },
   });
 
+  // ── Attendance mutation ───────────────────────────────────────────────────────
+
   const saveAttendanceMut = useMutation({
     mutationFn: async () => {
-      const promises = Array.from(localAttendance.entries()).map(([playerId, attended]) =>
-        upsertAttendance(token!, clubId!, teamId, trainingId, {
+      // Validate: absent players need absence_reason
+      for (const [, record] of Array.from(localAttendance.entries())) {
+        if (record.state === "absent" && !record.absence_reason) {
+          throw new Error("Selecciona el motivo de ausencia para todos los jugadores ausentes.");
+        }
+      }
+      const promises = Array.from(localAttendance.entries()).map(([playerId, record]) => {
+        const attended = record.state !== "absent";
+        const is_late = record.state === "late";
+        return upsertAttendance(token!, clubId!, teamId, trainingId, {
           player_id: playerId,
           attended,
-        })
-      );
+          is_late,
+          absence_reason: record.state === "absent" ? record.absence_reason : null,
+          notes: record.notes || null,
+        });
+      });
       await Promise.all(promises);
     },
     onSuccess: () => {
@@ -266,14 +330,7 @@ export default function TrainingDetailPage({
     onError: (e: Error) => toast(e.message, "error"),
   });
 
-  function toggleAttendance(playerId: number) {
-    setLocalAttendance((prev) => {
-      const next = new Map(prev);
-      next.set(playerId, !prev.get(playerId));
-      return next;
-    });
-    setAttendanceDirty(true);
-  }
+  // ── Dialog helpers ────────────────────────────────────────────────────────────
 
   function openDialog() {
     setAddMode("library");
@@ -284,29 +341,26 @@ export default function TrainingDetailPage({
     setAddDrillOpen(true);
   }
 
-  function closeDialog() {
-    setAddDrillOpen(false);
-  }
+  function closeDialog() { setAddDrillOpen(false); }
 
   function handleAdd() {
     if (addMode === "library" && selectedDrillId) {
       addDrillMut.mutate({ drill_id: Number(selectedDrillId) });
     } else if (addMode === "catalog" && selectedCatalogEntryId) {
       const entry = catalogEntries.find((e) => e.id === Number(selectedCatalogEntryId));
-      if (entry) {
-        addDrillMut.mutate({ drill_id: entry.drill.id });
-      }
+      if (entry) addDrillMut.mutate({ drill_id: entry.drill.id });
     } else if (addMode === "new" && newDrillName.trim()) {
       createAndAddMut.mutate();
     }
   }
 
   const isMutating = addDrillMut.isPending || createAndAddMut.isPending;
-
   const canSubmit =
     (addMode === "library" && !!selectedDrillId) ||
     (addMode === "catalog" && !!selectedCatalogEntryId) ||
     (addMode === "new" && !!newDrillName.trim());
+
+  // ── Render ────────────────────────────────────────────────────────────────────
 
   if (isLoading) {
     return (
@@ -378,7 +432,7 @@ export default function TrainingDetailPage({
             >
               {t === "ejercicios"
                 ? `Ejercicios (${training.training_drills.length})`
-                : `Asistencia (${presentCount}/${totalCount})`}
+                : `Asistencia (${totalCount})`}
             </button>
           ))}
         </div>
@@ -400,7 +454,6 @@ export default function TrainingDetailPage({
                         {idx + 1}.
                       </span>
 
-                      {/* Mini canvas thumbnail */}
                       {drillDetail ? (
                         <Link href={`/drills/${td.drill_id}/edit`} className="shrink-0">
                           <DrillThumbnail
@@ -413,10 +466,7 @@ export default function TrainingDetailPage({
                       )}
 
                       <div className="flex-1 min-w-0">
-                        <Link
-                          href={`/drills/${td.drill_id}/edit`}
-                          className="block hover:underline"
-                        >
+                        <Link href={`/drills/${td.drill_id}/edit`} className="block hover:underline">
                           <p className="text-sm font-medium">
                             {td.drill_title ?? `Ejercicio #${td.drill_id}`}
                           </p>
@@ -430,12 +480,11 @@ export default function TrainingDetailPage({
                           )}
                         </Link>
                       </div>
+
                       {isCoachOrTD && (
                         <div className="flex flex-col gap-0.5 shrink-0">
                           <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-6"
+                            variant="ghost" size="icon" className="h-5 w-6"
                             disabled={idx === 0 || reorderMut.isPending}
                             onClick={() => moveRow(training.training_drills, idx, -1)}
                             aria-label="Subir ejercicio"
@@ -443,9 +492,7 @@ export default function TrainingDetailPage({
                             <ChevronUp className="h-3 w-3" />
                           </Button>
                           <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-6"
+                            variant="ghost" size="icon" className="h-5 w-6"
                             disabled={idx === training.training_drills.length - 1 || reorderMut.isPending}
                             onClick={() => moveRow(training.training_drills, idx, 1)}
                             aria-label="Bajar ejercicio"
@@ -454,12 +501,12 @@ export default function TrainingDetailPage({
                           </Button>
                         </div>
                       )}
+
                       {isCoachOrTD && (
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button
-                              variant="ghost"
-                              size="icon"
+                              variant="ghost" size="icon"
                               className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
                               disabled={removeDrillMut.isPending}
                             >
@@ -509,42 +556,154 @@ export default function TrainingDetailPage({
               </div>
             ) : (
               <>
+                {/* Summary bar */}
+                <div className="flex gap-3 text-xs text-muted-foreground mb-3">
+                  <span className="text-green-700 font-medium">{presentCount} presentes</span>
+                  <span>·</span>
+                  <span className="text-amber-600 font-medium">{lateCount} con retraso</span>
+                  <span>·</span>
+                  <span className="text-destructive font-medium">{absentCount} ausentes</span>
+                </div>
+
                 <div className="border rounded-lg divide-y mb-4">
                   {allAttendancePlayers.map((ta) => {
-                    const localVal = localAttendance.get(ta.player_id) ?? ta.attended;
+                    const record = localAttendance.get(ta.player_id) ?? {
+                      state: "present" as AttendanceState,
+                      absence_reason: null,
+                      notes: "",
+                    };
                     return (
-                      <div key={ta.player_id} className="flex items-center gap-3 px-4 py-3">
-                        <div className="flex-1">
-                          <p className="text-sm font-medium">
+                      <div key={ta.player_id} className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          {/* Avatar */}
+                          <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center text-xs font-semibold text-muted-foreground shrink-0">
+                            {(ta.player_first_name?.[0] ?? "").toUpperCase()}
+                            {(ta.player_last_name?.[0] ?? "").toUpperCase()}
+                          </div>
+                          {/* Name */}
+                          <p className="text-sm font-medium flex-1">
                             {ta.player_first_name} {ta.player_last_name}
                           </p>
+                          {/* 3-state control or badge */}
+                          {isCoachOrTD ? (
+                            <div className="inline-flex rounded-md border overflow-hidden text-xs shrink-0">
+                              <button
+                                className={cn(
+                                  "px-3 py-1.5 transition-colors",
+                                  record.state === "present"
+                                    ? "bg-green-600 text-white"
+                                    : "hover:bg-muted/50 text-muted-foreground",
+                                )}
+                                onClick={() =>
+                                  updateAttendance(ta.player_id, {
+                                    state: "present",
+                                    absence_reason: null,
+                                    notes: "",
+                                  })
+                                }
+                              >
+                                Presente
+                              </button>
+                              <button
+                                className={cn(
+                                  "px-3 py-1.5 border-l transition-colors",
+                                  record.state === "late"
+                                    ? "bg-amber-500 text-white"
+                                    : "hover:bg-muted/50 text-muted-foreground",
+                                )}
+                                onClick={() =>
+                                  updateAttendance(ta.player_id, {
+                                    state: "late",
+                                    absence_reason: null,
+                                  })
+                                }
+                              >
+                                Retraso
+                              </button>
+                              <button
+                                className={cn(
+                                  "px-3 py-1.5 border-l transition-colors",
+                                  record.state === "absent"
+                                    ? "bg-destructive text-destructive-foreground"
+                                    : "hover:bg-muted/50 text-muted-foreground",
+                                )}
+                                onClick={() =>
+                                  updateAttendance(ta.player_id, {
+                                    state: "absent",
+                                    notes: "",
+                                  })
+                                }
+                              >
+                                Ausente
+                              </button>
+                            </div>
+                          ) : (
+                            attendanceBadge(record.state, record.absence_reason)
+                          )}
                         </div>
-                        {isCoachOrTD ? (
-                          <button
-                            className={cn(
-                              "flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full transition-colors",
-                              localVal
-                                ? "bg-green-100 text-green-700 hover:bg-green-200"
-                                : "bg-muted text-muted-foreground hover:bg-muted/70",
+
+                        {/* Conditional fields (coach only) */}
+                        {isCoachOrTD && record.state === "late" && (
+                          <div className="mt-2 ml-12">
+                            <Input
+                              className="h-7 text-xs max-w-sm"
+                              placeholder="Motivo del retraso (opcional)"
+                              value={record.notes}
+                              onChange={(e) =>
+                                updateAttendance(ta.player_id, { notes: e.target.value })
+                              }
+                            />
+                          </div>
+                        )}
+                        {isCoachOrTD && record.state === "absent" && (
+                          <div className="mt-2 ml-12 flex flex-wrap gap-2">
+                            <div className="flex-1 min-w-32">
+                              <Label className="text-xs text-muted-foreground mb-1 block">
+                                Motivo *
+                              </Label>
+                              <Select
+                                value={record.absence_reason ?? "none"}
+                                onValueChange={(v) =>
+                                  updateAttendance(ta.player_id, {
+                                    absence_reason:
+                                      v === "none" ? null : (v as AbsenceReason),
+                                    notes: v !== "other" ? "" : record.notes,
+                                  })
+                                }
+                              >
+                                <SelectTrigger className="h-7 text-xs">
+                                  <SelectValue placeholder="Selecciona..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="injury">Lesión</SelectItem>
+                                  <SelectItem value="personal">Personal</SelectItem>
+                                  <SelectItem value="sanction">Sanción</SelectItem>
+                                  <SelectItem value="other">Otro</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            {record.absence_reason === "other" && (
+                              <div className="flex-1 min-w-40">
+                                <Label className="text-xs text-muted-foreground mb-1 block">
+                                  Notas (opcional)
+                                </Label>
+                                <Input
+                                  className="h-7 text-xs"
+                                  placeholder="Descripción..."
+                                  value={record.notes}
+                                  onChange={(e) =>
+                                    updateAttendance(ta.player_id, { notes: e.target.value })
+                                  }
+                                />
+                              </div>
                             )}
-                            onClick={() => toggleAttendance(ta.player_id)}
-                          >
-                            {localVal ? (
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                            ) : (
-                              <XCircle className="h-3.5 w-3.5" />
-                            )}
-                            {localVal ? "Asistió" : "No asistió"}
-                          </button>
-                        ) : (
-                          <Badge variant={localVal ? "default" : "secondary"}>
-                            {localVal ? "Asistió" : "No asistió"}
-                          </Badge>
+                          </div>
                         )}
                       </div>
                     );
                   })}
                 </div>
+
                 {isCoachOrTD && (
                   <Button
                     onClick={() => saveAttendanceMut.mutate()}
@@ -568,7 +727,6 @@ export default function TrainingDetailPage({
             <DialogTitle>Añadir ejercicio al entrenamiento</DialogTitle>
           </DialogHeader>
 
-          {/* Mode selector */}
           <div className="flex gap-1 border-b -mx-6 px-6 pb-0">
             {(["library", "catalog", "new"] as AddMode[]).map((m) => (
               <button
@@ -589,14 +747,11 @@ export default function TrainingDetailPage({
           </div>
 
           <div className="space-y-4 py-2">
-            {/* Library */}
             {addMode === "library" && (
               <div className="space-y-1.5">
                 <Label>Ejercicio de mi biblioteca</Label>
                 <Select value={selectedDrillId} onValueChange={setSelectedDrillId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecciona un ejercicio" />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Selecciona un ejercicio" /></SelectTrigger>
                   <SelectContent>
                     {availableLibraryDrills.map((d) => (
                       <SelectItem key={d.id} value={String(d.id)}>
@@ -609,24 +764,16 @@ export default function TrainingDetailPage({
                   </SelectContent>
                 </Select>
                 {availableLibraryDrills.length === 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    No hay ejercicios disponibles en tu biblioteca.
-                  </p>
+                  <p className="text-xs text-muted-foreground">No hay ejercicios disponibles en tu biblioteca.</p>
                 )}
               </div>
             )}
 
-            {/* Catalog */}
             {addMode === "catalog" && (
               <div className="space-y-1.5">
                 <Label>Ejercicio del catálogo del club</Label>
-                <Select
-                  value={selectedCatalogEntryId}
-                  onValueChange={setSelectedCatalogEntryId}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecciona del catálogo" />
-                  </SelectTrigger>
+                <Select value={selectedCatalogEntryId} onValueChange={setSelectedCatalogEntryId}>
+                  <SelectTrigger><SelectValue placeholder="Selecciona del catálogo" /></SelectTrigger>
                   <SelectContent>
                     {availableCatalogEntries.map((e) => (
                       <SelectItem key={e.id} value={String(e.id)}>
@@ -639,14 +786,11 @@ export default function TrainingDetailPage({
                   </SelectContent>
                 </Select>
                 {availableCatalogEntries.length === 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    No hay entradas disponibles en el catálogo del club.
-                  </p>
+                  <p className="text-xs text-muted-foreground">No hay entradas disponibles en el catálogo del club.</p>
                 )}
               </div>
             )}
 
-            {/* New */}
             {addMode === "new" && (
               <div className="space-y-3">
                 <div className="space-y-1.5">
@@ -660,18 +804,11 @@ export default function TrainingDetailPage({
                 </div>
                 <div className="space-y-1.5">
                   <Label>Tipo *</Label>
-                  <Select
-                    value={newDrillType}
-                    onValueChange={(v) => setNewDrillType(v as DrillType)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
+                  <Select value={newDrillType} onValueChange={(v) => setNewDrillType(v as DrillType)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {DRILL_TYPES.map((t) => (
-                        <SelectItem key={t.value} value={t.value}>
-                          {t.label}
-                        </SelectItem>
+                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -685,10 +822,7 @@ export default function TrainingDetailPage({
 
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>Cancelar</Button>
-            <Button
-              onClick={handleAdd}
-              disabled={!canSubmit || isMutating}
-            >
+            <Button onClick={handleAdd} disabled={!canSubmit || isMutating}>
               {isMutating ? "Añadiendo..." : "Añadir"}
             </Button>
           </DialogFooter>
@@ -697,6 +831,8 @@ export default function TrainingDetailPage({
     </PageShell>
   );
 }
+
+// ── DrillThumbnail ────────────────────────────────────────────────────────────
 
 function DrillThumbnail({
   layout,

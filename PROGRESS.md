@@ -275,6 +275,40 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ## Historial de sesiones
 
+### 2026-05-01 — Sesión 29 (Asistencia a entrenamientos — 3 estados + histórico)
+
+**Objetivo**: ampliar el modelo de asistencia de binario (presente/ausente) a tres estados: presente, con retraso, ausente (con motivo obligatorio).
+
+**Backend:**
+- Nueva migración `0012_training_attendance_states.py`: crea enum `absencereason` (injury/personal/sanction/other); añade `is_late` (bool, server_default=false), `absence_reason` (enum nullable), `notes` (text nullable) a `training_attendances`
+- `app/models/training.py`: nuevo `AbsenceReason` enum; `TrainingAttendance` con los 3 campos nuevos
+- `app/schemas/training.py`: `AttendanceUpdate` con `is_late`, `absence_reason`, `notes` + `model_validator` de consistencia (absent → absence_reason obligatorio; attended=True → absence_reason null; absent → is_late=false); `TrainingAttendanceResponse` con nuevos campos
+- `app/routers/trainings.py`: `_serialize_training` y `upsert_attendance` actualizados con los campos nuevos
+- **171 tests pasados ✅**
+
+**Shared:**
+- `shared/types/training.ts`: `AbsenceReason` tipo + `ABSENCE_REASON_LABELS`; `TrainingAttendance` con `is_late`, `absence_reason`, `notes`; `AttendanceUpdate` con campos nuevos
+
+**Web — detalle de entrenamiento (`/trainings/[trainingId]/page.tsx`):**
+- `localAttendance` cambia de `Map<number, boolean>` a `Map<number, LocalAttendanceRecord>` con `{ state, absence_reason, notes }`
+- Tab Asistencia: control segmentado 3 botones [Presente | Retraso | Ausente] por jugador
+  - "Retraso" → Input opcional "Motivo del retraso" (→ notes)
+  - "Ausente" → Select obligatorio Lesión/Personal/Sanción/Otro; si Otro → Input notas
+- Summary bar: "X presentes · Y con retraso · Z ausentes"
+- Validación antes de guardar: jugadores ausentes sin motivo bloquean el save
+
+**Web — lista de entrenamientos (`/trainings/page.tsx`):**
+- Dos tabs: "Entrenamientos" (lista existente) y "Historial de asistencia"
+- Tab Historial: tabla por jugador con Presencias / Retrasos / Ausencias / % Asistencia
+  - % = (presencias + retrasos) / total · colorido (verde ≥80%, ámbar ≥60%, rojo <60%)
+  - Ordenado por % descendente
+  - Calculado client-side desde los datos ya cargados (sin query extra)
+- Fila de lista: muestra "{N}/{M} asistentes" si hay datos
+
+**Verificaciones**: ESLint 0 errores ✔, TSC 0 errores ✔, 171 tests ✔, smoke test login ✔
+
+---
+
 ### 2026-05-01 — Sesión 28 (Transiciones de estado de partido — state machine)
 
 **Objetivo**: reemplazar el campo `status` editable libremente en PATCH por un estado máquina controlado con endpoints dedicados.

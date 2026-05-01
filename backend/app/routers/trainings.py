@@ -27,7 +27,7 @@ from app.models.drill import Drill
 from app.models.player import Player
 from app.models.profile import Profile, UserRole
 from app.models.team import Team
-from app.models.training import Training, TrainingAttendance, TrainingDrill
+from app.models.training import AbsenceReason, Training, TrainingAttendance, TrainingDrill
 from app.models.user import User
 from app.routers.clubs import _get_club_or_404
 from app.schemas.training import (
@@ -118,6 +118,9 @@ def _serialize_training(training: Training) -> TrainingResponse:
             training_id=ta.training_id,
             player_id=ta.player_id,
             attended=ta.attended,
+            is_late=ta.is_late,
+            absence_reason=ta.absence_reason,
+            notes=ta.notes,
             player_first_name=ta.player.first_name if ta.player else None,
             player_last_name=ta.player.last_name if ta.player else None,
         )
@@ -426,10 +429,16 @@ async def upsert_attendance(
             training_id=training_id,
             player_id=body.player_id,
             attended=body.attended,
+            is_late=body.is_late,
+            absence_reason=body.absence_reason,
+            notes=body.notes,
         )
         db.add(ta)
     else:
         ta.attended = body.attended
+        ta.is_late = body.is_late
+        ta.absence_reason = body.absence_reason
+        ta.notes = body.notes
 
     await db.flush()
     await db.commit()
@@ -440,6 +449,9 @@ async def upsert_attendance(
         training_id=ta.training_id,
         player_id=ta.player_id,
         attended=ta.attended,
+        is_late=ta.is_late,
+        absence_reason=ta.absence_reason,
+        notes=ta.notes,
         player_first_name=player.first_name,
         player_last_name=player.last_name,
     )

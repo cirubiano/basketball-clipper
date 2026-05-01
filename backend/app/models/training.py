@@ -1,9 +1,17 @@
+import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+
+
+class AbsenceReason(str, enum.Enum):
+    injury = "injury"
+    personal = "personal"
+    sanction = "sanction"
+    other = "other"
 
 
 class Training(Base):
@@ -73,6 +81,11 @@ class TrainingAttendance(Base):
         ForeignKey("players.id", ondelete="CASCADE"), nullable=False
     )
     attended: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_late: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    absence_reason: Mapped[AbsenceReason | None] = mapped_column(
+        Enum(AbsenceReason, name="absencereason"), nullable=True
+    )
+    notes: Mapped[str | None] = mapped_column(Text)
 
     training: Mapped["Training"] = relationship(
         "Training", back_populates="training_attendances"

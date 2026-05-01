@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
+
+from app.models.training import AbsenceReason
 
 
 class TrainingDrillResponse(BaseModel):
@@ -20,6 +22,9 @@ class TrainingAttendanceResponse(BaseModel):
     training_id: int
     player_id: int
     attended: bool
+    is_late: bool = False
+    absence_reason: AbsenceReason | None = None
+    notes: str | None = None
     player_first_name: str | None = None
     player_last_name: str | None = None
 
@@ -65,3 +70,18 @@ class TrainingDrillReorderItem(BaseModel):
 class AttendanceUpdate(BaseModel):
     player_id: int
     attended: bool
+    is_late: bool = False
+    absence_reason: AbsenceReason | None = None
+    notes: str | None = None
+
+    @model_validator(mode="after")
+    def check_consistency(self) -> "AttendanceUpdate":
+        if self.attended:
+            if self.absence_reason is not None:
+                raise ValueError("absence_reason debe ser null si attended=True")
+        else:
+            if self.absence_reason is None:
+                raise ValueError("absence_reason es obligatorio si attended=False")
+            if self.is_late:
+                raise ValueError("is_late debe ser false si attended=False")
+        return self

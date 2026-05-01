@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dumbbell, Plus, Archive, ChevronRight } from "lucide-react";
 import Link from "next/link";
@@ -10,7 +10,7 @@ import {
   archiveTraining,
   getSeasons,
 } from "@basketball-clipper/shared/api";
-import type { Training, TrainingCreate, Season } from "@basketball-clipper/shared/types";
+import type { Training, TrainingCreate } from "@basketball-clipper/shared/types";
 import { PageShell } from "@/components/layout/PageShell";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/lib/toast";
@@ -45,6 +45,18 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Breadcrumb } from "@/components/layout/Breadcrumb";
+import { cn } from "@/lib/utils";
+
+type PageTab = "entrenamientos" | "historial";
+
+interface PlayerAttendanceStat {
+  player_id: number;
+  player_name: string;
+  present: number;
+  late: number;
+  absent: number;
+  total: number;
+}
 
 export default function TrainingsPage({
   params,
@@ -60,13 +72,10 @@ export default function TrainingsPage({
     activeProfile?.role === "head_coach" ||
     activeProfile?.role === "technical_director";
 
+  const [pageTab, setPageTab] = useState<PageTab>("entrenamientos");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [filterSeasonId, setFilterSeasonId] = useState<string>("all");
-  const [form, setForm] = useState<TrainingCreate>({
-    title: "",
-    date: "",
-    season_id: 0,
-  });
+  const [form, setForm] = useState<TrainingCreate>({ title: "", date: "", season_id: 0 });
   const [formError, setFormError] = useState<string | null>(null);
 
   const { data: seasons = [], isLoading: seasonsLoading } = useQuery({
@@ -88,6 +97,41 @@ export default function TrainingsPage({
   });
 
   const isLoading = seasonsLoading || trainingsLoading;
+
+  // ── Aggregated attendance stats (for Historial tab) ──────────────────────────
+  const attendanceStats: PlayerAttendanceStat[] = useMemo(() => {
+    const statsMap = new Map<number, PlayerAttendanceStat>();
+    for (const t of trainings) {
+      for (const ta of t.training_attendances) {
+        if (!statsMap.has(ta.player_id)) {
+          statsMap.set(ta.player_id, {
+            player_id: ta.player_id,
+            player_name: `${ta.player_first_name ?? ""} ${ta.player_last_name ?? ""}`.trim(),
+            present: 0,
+            late: 0,
+            absent: 0,
+            total: 0,
+          });
+        }
+        const s = statsMap.get(ta.player_id)!;
+        s.total++;
+        if (!ta.attended) {
+          s.absent++;
+        } else if (ta.is_late) {
+          s.late++;
+        } else {
+          s.present++;
+        }
+      }
+    }
+    return Array.from(statsMap.values()).sort((a, b) => {
+      const pctA = a.total > 0 ? (a.present + a.late) / a.total : 0;
+      const pctB = b.total > 0 ? (b.present + b.late) / b.total : 0;
+      return pctB - pctA;
+    });
+  }, [trainings]);
+
+  // ── Mutations ─────────────────────────────────────────────────────────────────
 
   const createMut = useMutation({
     mutationFn: (data: TrainingCreate) => createTraining(token!, clubId!, teamId, data),
@@ -135,6 +179,7 @@ export default function TrainingsPage({
           { label: activeProfile?.team_name ?? "Equipo" },
           { label: "Entrenamientos" },
         ]} />
+
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold">Entrenamientos</h1>
@@ -151,60 +196,135 @@ export default function TrainingsPage({
           )}
         </div>
 
+        {/* Season filter */}
         {seasons.length > 1 && (
           <div className="mb-4 flex items-center gap-2">
             <Label className="text-sm shrink-0">Temporada</Label>
             <Select value={filterSeasonId} onValueChange={setFilterSeasonId}>
-              <SelectTrigger className="w-48">
-                <SelectValue />
-              </SelectTrigger>
+              <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todas</SelectItem>
                 {seasons.map((s) => (
-                  <SelectItem key={s.id} value={String(s.id)}>
-                    {s.name}
-                  </SelectItem>
+                  <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
         )}
 
-        {isLoading ? (
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}
-          </div>
-        ) : trainings.length === 0 ? (
-          <div className="border rounded-lg p-12 text-center text-muted-foreground">
-            <Dumbbell className="h-8 w-8 mx-auto mb-3 opacity-40" />
-            <p>No hay entrenamientos todavía.</p>
-            {isCoachOrTD && seasons.length > 0 && (
-              <Button variant="link" onClick={openCreate}>Crea el primero</Button>
-            )}
-          </div>
-        ) : (
-          <div className="border rounded-lg divide-y">
-            {trainings.map((t) => (
-              <TrainingRow
-                key={t.id}
-                training={t}
-                seasonName={seasonName(t.season_id)}
-                isCoachOrTD={isCoachOrTD}
-                isArchiving={archiveMut.isPending && archiveMut.variables === t.id}
-                onArchive={() => archiveMut.mutate(t.id)}
-                teamId={teamId}
-              />
-            ))}
-          </div>
+        {/* Page tabs */}
+        <div className="flex gap-1 border-b mb-6">
+          {(["entrenamientos", "historial"] as PageTab[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => setPageTab(t)}
+              className={cn(
+                "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+                pageTab === t
+                  ? "border-foreground text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {t === "entrenamientos" ? "Entrenamientos" : "Historial de asistencia"}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab: Entrenamientos */}
+        {pageTab === "entrenamientos" && (
+          isLoading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}
+            </div>
+          ) : trainings.length === 0 ? (
+            <div className="border rounded-lg p-12 text-center text-muted-foreground">
+              <Dumbbell className="h-8 w-8 mx-auto mb-3 opacity-40" />
+              <p>No hay entrenamientos todavía.</p>
+              {isCoachOrTD && seasons.length > 0 && (
+                <Button variant="link" onClick={openCreate}>Crea el primero</Button>
+              )}
+            </div>
+          ) : (
+            <div className="border rounded-lg divide-y">
+              {trainings.map((t) => (
+                <TrainingRow
+                  key={t.id}
+                  training={t}
+                  seasonName={seasonName(t.season_id)}
+                  isCoachOrTD={isCoachOrTD}
+                  isArchiving={archiveMut.isPending && archiveMut.variables === t.id}
+                  onArchive={() => archiveMut.mutate(t.id)}
+                  teamId={teamId}
+                />
+              ))}
+            </div>
+          )
+        )}
+
+        {/* Tab: Historial de asistencia */}
+        {pageTab === "historial" && (
+          isLoading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10 w-full rounded-lg" />)}
+            </div>
+          ) : attendanceStats.length === 0 ? (
+            <div className="border rounded-lg p-12 text-center text-muted-foreground">
+              <p>No hay datos de asistencia registrados.</p>
+              <p className="text-xs mt-1">
+                Registra la asistencia en cada entrenamiento para ver el historial.
+              </p>
+            </div>
+          ) : (
+            <div className="border rounded-lg overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/30">
+                    <th className="text-left px-4 py-2 font-medium">Jugador</th>
+                    <th className="text-center px-3 py-2 font-medium w-24 text-green-700">Presencias</th>
+                    <th className="text-center px-3 py-2 font-medium w-24 text-amber-600">Retrasos</th>
+                    <th className="text-center px-3 py-2 font-medium w-24 text-destructive">Ausencias</th>
+                    <th className="text-center px-3 py-2 font-medium w-28">% Asistencia</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {attendanceStats.map((s) => {
+                    const pct = s.total > 0
+                      ? Math.round(((s.present + s.late) / s.total) * 100)
+                      : 0;
+                    return (
+                      <tr key={s.player_id} className="border-b last:border-0 hover:bg-muted/20">
+                        <td className="px-4 py-2.5 font-medium">{s.player_name}</td>
+                        <td className="text-center px-3 py-2.5 text-green-700 font-medium">{s.present}</td>
+                        <td className="text-center px-3 py-2.5 text-amber-600 font-medium">{s.late}</td>
+                        <td className="text-center px-3 py-2.5 text-destructive font-medium">{s.absent}</td>
+                        <td className="text-center px-3 py-2.5">
+                          <span className={cn(
+                            "font-semibold",
+                            pct >= 80 ? "text-green-700" : pct >= 60 ? "text-amber-600" : "text-destructive",
+                          )}>
+                            {pct}%
+                          </span>
+                          <span className="text-xs text-muted-foreground ml-1">
+                            ({s.present + s.late}/{s.total})
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <p className="text-xs text-muted-foreground text-center py-2 border-t">
+                % = (presencias + retrasos) / total registrado · ordenado por % descendente
+              </p>
+            </div>
+          )
         )}
       </div>
 
+      {/* Create dialog */}
       <Dialog
         open={dialogOpen}
-        onOpenChange={(open) => {
-          setDialogOpen(open);
-          if (!open) setFormError(null);
-        }}
+        onOpenChange={(open) => { setDialogOpen(open); if (!open) setFormError(null); }}
       >
         <DialogContent>
           <DialogHeader>
@@ -266,6 +386,8 @@ export default function TrainingsPage({
   );
 }
 
+// ── TrainingRow ───────────────────────────────────────────────────────────────
+
 function TrainingRow({
   training,
   seasonName,
@@ -289,16 +411,19 @@ function TrainingRow({
   });
   const drillCount = training.training_drills.length;
 
+  // Attendance summary for the row
+  const attended = training.training_attendances.filter((ta) => ta.attended).length;
+  const total = training.training_attendances.length;
+
   return (
     <div className="flex items-center gap-3 px-4 py-3">
       <div className="flex-1 min-w-0">
-        <Link
-          href={`/teams/${teamId}/trainings/${training.id}`}
-          className="block hover:underline"
-        >
+        <Link href={`/teams/${teamId}/trainings/${training.id}`} className="block hover:underline">
           <p className="font-medium text-sm">{training.title}</p>
           <p className="text-xs text-muted-foreground">
-            {dateStr} {timeStr} · {drillCount} ejercicio{drillCount !== 1 ? "s" : ""} · {seasonName}
+            {dateStr} {timeStr} · {drillCount} ejercicio{drillCount !== 1 ? "s" : ""}
+            {total > 0 && <> · {attended}/{total} asistentes</>}
+            {" · "}{seasonName}
           </p>
         </Link>
       </div>
@@ -315,8 +440,7 @@ function TrainingRow({
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button
-              variant="ghost"
-              size="icon"
+              variant="ghost" size="icon"
               className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
               disabled={isArchiving}
               aria-label={`Archivar entrenamiento ${training.title}`}

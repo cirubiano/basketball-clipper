@@ -1,3 +1,12 @@
+export type AbsenceReason = "injury" | "personal" | "sanction" | "other";
+
+export const ABSENCE_REASON_LABELS: Record<AbsenceReason, string> = {
+  injury: "Lesión",
+  personal: "Personal",
+  sanction: "Sanción",
+  other: "Otro",
+};
+
 export interface TrainingDrill {
   id: number;
   training_id: number;
@@ -13,6 +22,9 @@ export interface TrainingAttendance {
   training_id: number;
   player_id: number;
   attended: boolean;
+  is_late: boolean;
+  absence_reason: AbsenceReason | null;
+  notes: string | null;
   player_first_name: string | null;
   player_last_name: string | null;
 }
@@ -57,4 +69,7 @@ export interface TrainingDrillReorderItem {
 export interface AttendanceUpdate {
   player_id: number;
   attended: boolean;
+  is_late?: boolean;
+  absence_reason?: AbsenceReason | null;
+  notes?: string | null;
 }
