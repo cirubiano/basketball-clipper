@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Upload, Film, LogOut, UserCircle, Clock } from "lucide-react";
+import { Film, LogOut, Clock } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { ProfileSelector } from "@/components/layout/ProfileSelector";
@@ -27,6 +27,7 @@ function buildNavLinks(
         { href: `/clubs/${clubId}/teams`, label: "Equipos" },
         { href: `/clubs/${clubId}/seasons`, label: "Temporadas" },
         { href: `/players`, label: "Jugadores" },
+        { href: `/clubs/${clubId}/positions`, label: "Posiciones" },
         { href: `/clubs/${clubId}/members`, label: "Entrenadores" },
         { href: `/clubs/${clubId}/catalog`, label: "Catálogo" },
       ],
@@ -71,7 +72,6 @@ export function Navbar() {
   }
 
   const role = activeProfile?.role;
-  const isTD = role === "technical_director";
 
   const { main, personal } = buildNavLinks(
     role,
@@ -133,30 +133,20 @@ export function Navbar() {
         <div className="flex items-center gap-2 shrink-0">
           <ProfileSelector />
 
-          {/* DT no sube vídeos — eso lo hacen los entrenadores */}
-          {!isTD && (
-            <>
-              <Button asChild size="sm" className="hidden sm:inline-flex">
-                <Link href="/upload">
-                  <Upload className="h-4 w-4 mr-1.5" />
-                  Subir vídeo
-                </Link>
-              </Button>
-              <Button asChild size="icon" variant="ghost" className="sm:hidden" title="Subir vídeo">
-                <Link href="/upload">
-                  <Upload className="h-4 w-4" />
-                </Link>
-              </Button>
-            </>
-          )}
-
           {user && (
             <>
-              <Button variant="ghost" size="icon" asChild title="Mi perfil">
-                <Link href="/profile" aria-label="Mi perfil">
-                  <UserCircle className="h-4 w-4" />
-                </Link>
-              </Button>
+              <Link
+                href="/profile"
+                className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-accent transition-colors min-h-[40px]"
+                title="Mi perfil"
+              >
+                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary shrink-0">
+                  {user.email.slice(0, 2).toUpperCase()}
+                </div>
+                <span className="max-w-[120px] truncate text-sm hidden lg:inline text-foreground">
+                  {user.email}
+                </span>
+              </Link>
               <Button
                 variant="ghost"
                 size="icon"

@@ -8,6 +8,8 @@ from app.core.database import Base
 
 
 class PlayerPosition(str, enum.Enum):
+    """Enum heredado — solo usado por RosterEntry.position (asignación por equipo).
+    El campo Player.position fue reemplazado por la M2M player_positions."""
     point_guard = "point_guard"        # Base
     shooting_guard = "shooting_guard"  # Escolta
     small_forward = "small_forward"    # Alero
@@ -30,10 +32,6 @@ class Player(Base):
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     date_of_birth: Mapped[date | None] = mapped_column(Date)
-    # Posición natural del jugador (puede sobreescribirse por equipo en RosterEntry)
-    position: Mapped[PlayerPosition | None] = mapped_column(
-        Enum(PlayerPosition, name="playerposition")
-    )
     photo_url: Mapped[str | None] = mapped_column(String(512))
     phone: Mapped[str | None] = mapped_column(String(30))
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -46,6 +44,13 @@ class Player(Base):
     club: Mapped["Club"] = relationship("Club", back_populates="players")  # noqa: F821
     roster_entries: Mapped[list["RosterEntry"]] = relationship(  # noqa: F821
         "RosterEntry", back_populates="player", lazy="select"
+    )
+    # Posiciones dinámicas del club asignadas al jugador (M2M)
+    positions: Mapped[list["ClubPosition"]] = relationship(  # noqa: F821
+        "ClubPosition",
+        secondary="player_positions",
+        back_populates="players",
+        lazy="select",
     )
 
 

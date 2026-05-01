@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.routers import auth, clips, video, ws
-from app.routers import clubs, seasons, teams, profiles, players
+from app.routers import clubs, seasons, teams, profiles, players, positions
 from app.routers import drills, catalog, playbook
 from app.routers import matches, trainings
 
@@ -36,6 +36,7 @@ app.include_router(clubs.router, prefix="/clubs", tags=["clubs"])
 app.include_router(seasons.router, prefix="/clubs", tags=["seasons"])
 app.include_router(teams.router, prefix="/clubs", tags=["teams"])
 app.include_router(players.router, prefix="/clubs", tags=["players"])
+app.include_router(positions.router, prefix="/clubs", tags=["positions"])
 
 # ── Video & Clips ─────────────────────────────────────────────────────────────
 app.include_router(video.router, prefix="/videos", tags=["videos"])

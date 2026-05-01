@@ -522,7 +522,9 @@ backend/
 │   ├── 0004_phase_a_org_structure.py
 │   ├── 0005_phase_c_players.py
 │   ├── 0006_phase_d_drills.py
-│   └── 0007_phase_e_catalog_playbook.py
+│   ├── 0007_phase_e_catalog_playbook.py
+│   ├── ...
+│   └── 0010_dynamic_club_positions.py
 ├── models/
 │   └── README.md             # Cómo usar modelos custom de YOLO
 ├── scripts/
@@ -682,6 +684,10 @@ y sus tipos en `shared/types/`. Web y mobile nunca llaman al backend directament
 | GET | /clips/{id} | user | Detalle de clip |
 | DELETE | /clips/{id} | user | Eliminar clip |
 | WS | /ws/{video_id} | — | Progreso en tiempo real |
+| GET | /clubs/{id}/positions | member | Listar posiciones activas del club |
+| POST | /clubs/{id}/positions | td_or_hc | Crear posición |
+| PATCH | /clubs/{id}/positions/{pos_id} | td_or_hc | Actualizar posición |
+| DELETE | /clubs/{id}/positions/{pos_id} | td_or_hc | Archivar posición |
 | POST | /clubs/{id}/players/photo-upload-url | td_or_hc | Presigned PUT URL para subir foto de jugador a S3 |
 | GET | /clubs/{id}/players | member | Listar jugadores del club |
 | POST | /clubs/{id}/players | td_or_hc | Crear jugador |

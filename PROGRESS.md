@@ -274,6 +274,115 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ## Historial de sesiones
 
+### 2026-05-01 — Sesión 27 (Posiciones dinámicas de club — reemplaza enum PlayerPosition)
+
+**Objetivo**: reemplazar el enum estático `PlayerPosition` del jugador por posiciones dinámicas definidas por el club, con soporte completo en backend, shared y web.
+
+**Backend:**
+- Nuevo modelo `ClubPosition` (`club_positions` tabla) + association table `player_positions` (M2M)
+- Nuevo archivo `app/models/club_position.py`; actualizado `app/models/__init__.py`
+- `Player` model: eliminada columna `position` (enum), añadida relación M2M `positions: list[ClubPosition]`
+- `PlayerPosition` enum MANTENIDO para `RosterEntry.position` (compatibilidad)
+- Migración `0010_dynamic_club_positions.py`: crea `club_positions` + `player_positions`, elimina `players.position`
+- Schemas (`app/schemas/player.py`): `ClubPositionBrief`, `ClubPositionCreate/Update/Response`; `PlayerCreate/Update` usan `position_ids: list[int]`; `PlayerResponse.positions: list[ClubPositionBrief]`
+- Nuevo router `app/routers/positions.py`: 4 endpoints `GET/POST/PATCH/DELETE /clubs/{id}/positions`; helper `_load_positions`
+- `app/main.py`: registrado `positions.router` con prefix `/clubs`
+- `app/routers/players.py`: helper `_load_positions`; `selectinload(Player.positions)` en todas las queries de jugadores; `selectinload(RosterEntry.player).selectinload(Player.positions)` en roster; manejo de `position_ids` en create/update
+- Tests actualizados (`test_players_api.py`): helper `_fake_player` actualizado, 3 tests corregidos para nuevo mock pattern con `session.execute`
+- **171 tests pasados ✅**
+
+**Shared:**
+- `shared/types/player.ts` reescrito: eliminados `PlayerPosition` + `POSITION_LABELS`; añadidos `ClubPosition`, `ClubPositionCreate/Update/Detail`; `Player.positions: ClubPosition[]` reemplaza `Player.position`; nuevo `RosterPosition` + `ROSTER_POSITION_LABELS` (antes `PlayerPosition`)
+- Nuevo `shared/api/positions.ts`: `listPositions`, `createPosition`, `updatePosition`, `archivePosition`
+- `shared/api/index.ts`: export de `positions.ts`
+
+**Web:**
+- `web/app/clubs/[clubId]/positions/page.tsx` (NUEVO): página de gestión de posiciones — lista, crear/editar con color picker, archivar con confirmación
+- `web/components/layout/Navbar.tsx`: añadido enlace "Posiciones" para TechnicalDirector
+- `web/app/players/page.tsx`: `EMPTY_FORM` usa `position_ids: []`; query para `listPositions`; multi-select de posiciones (badges toggle) en dialog; badges de color en lista de jugadores
+- `web/app/teams/[teamId]/roster/page.tsx`: `PlayerPosition` → `RosterPosition`, `POSITION_LABELS` → `ROSTER_POSITION_LABELS`; colored badges de `player.positions` en la tabla
+
+**Verificaciones**: ESLint 0 errores ✔, TSC (web + shared) 0 errores ✔, 171 tests ✔
+
+---
+
+### 2026-05-01 — Sesión 26 (Frontend UX: 13 mejoras de interfaz)
+
+**Objetivo**: 13 tareas de mejora de frontend sin cambios de backend.
+
+**TAREA 1 — Navbar: eliminar botón "Subir vídeo"**
+- Eliminado el bloque `{!isTD && (<>...</>)}` con los dos botones de upload
+- Eliminado `Upload` de imports de lucide-react
+- Eliminado `isTD` (ya no usado)
+
+**TAREA 2 — Navbar: reemplazar icono UserCircle con avatar + email**
+- El botón de perfil ahora muestra avatar circular con las 2 primeras letras del email como iniciales (`bg-primary/10`, `text-primary`, `h-8 w-8`)
+- Mínimo 40px de altura (`min-h-[40px]`)
+- Muestra el email completo en pantallas `lg:` (truncado a `max-w-[120px]`)
+- Sigue enlazando a `/profile`
+- Eliminado `UserCircle` de imports
+
+**TAREA 3 — `/profile`: eliminar fila "Tipo de cuenta"**
+- Eliminada la fila con `Badge` que mostraba "Administrador" / "Usuario"
+- Eliminado import de `Badge`
+
+**TAREA 4 — ProfileSelector: añadir "Espacio personal" siempre visible**
+- Eliminado `if (profiles.length === 0) return null;` — el selector ahora siempre se renderiza
+- Añadida opción "Espacio personal" al inicio de la lista, marcada activa cuando `!activeProfile`
+- Llama a `clearActiveProfile()` al hacer clic; si ya está en espacio personal, solo cierra el dropdown
+- Eliminado el botón "Cambiar de perfil o club" del pie del dropdown (reemplazado por esta opción)
+
+**TAREA 5 — Roster: estadísticas acumuladas de partidos**
+- Añadida query `listMatches(token, clubId, teamId)` para todos los partidos del equipo
+- Agregación de `match_stats` por `player_id` (totales: PTS, MIN, AST, RD, RO, REC, PÉR, FAL)
+- La tabla ahora usa `<table>` con columnas de stats leídas solo; las columnas de stats se muestran solo cuando `matches.length > 0`
+- Edit dialog simplificado: solo muestra Dorsal + Posición (eliminadas las columnas ppg/rpg/apg/mpg)
+
+**TAREA 6 — Roster: controles de ordenación**
+- Añadido estado `sortBy: "jersey" | "position"` (por defecto "jersey")
+- Botones "Dorsal" / "Posición" visibles cuando hay jugadores en la plantilla
+- Sort ascending: dorsales numérico, posiciones por orden canónico (PB→SG→SF→PF→C)
+
+**TAREA 7 — Roster: AlertDialog de confirmación antes de retirar**
+- El botón Trash2 de cada jugador ahora abre un `AlertDialog` rojo antes de ejecutar la mutación
+- `AlertDialogAction` con `className="bg-destructive ..."` conforme a las reglas de CLAUDE.md
+
+**TAREA 8 — Playbook: filtrar solo jugadas (type=play)**
+- `playbookEntries` filtra `entries.filter(e => e.drill.type === "play")`
+- `availableDrills` filtra además `d.type === "play"` en el dialog de añadir
+- El copy del h1 y el botón vacío actualizado a "jugadas"
+
+**TAREA 9 — Playbook: botón borrar siempre visible**
+- Eliminadas las clases `opacity-0 group-hover:opacity-100 transition-opacity` del botón Trash2
+- Ahora siempre visible, manteniendo el color rojo destructivo
+
+**TAREA 10 — Playbook: "Ver drill" abre Dialog con canvas de solo lectura**
+- Reemplazado `<Link href="/drills/[id]/edit">` con botón "Ver" que abre un `Dialog`
+- Nuevo componente `ReadOnlyCanvas` que renderiza `CourtBackground` + `ElementRenderer` en SVG sin interactividad
+- Importa `getDrill` de shared/api y hace query lazy cuando se abre el dialog
+- La acción de editar sigue disponible en la fila (click en título si eres el autor)
+- El botón borrar envuelto en `AlertDialog` con confirmación (TAREA 9)
+
+**TAREA 11 — Partidos: ordenar ascendente por fecha**
+- En la lista de partidos, se ordena con `[...matches].sort((a,b) => new Date(a.date) - new Date(b.date))` antes de mapear
+
+**TAREA 12 — Entrenamientos: asistencia por defecto "presente" + botón guardar**
+- Los jugadores no registrados ahora aparecen con `attended: true` (en lugar de `false`)
+- Se introdujo estado local `localAttendance: Map<number, boolean>` para ediciones pendientes
+- Los toggles actualizan solo el estado local (no llaman a la API inmediatamente)
+- Nuevo botón "Guardar asistencia" que hace batch de `upsertAttendance` en paralelo
+- El botón está deshabilitado hasta que haya cambios (`attendanceDirty`)
+
+**TAREA 13 — Entrenamientos: miniatura de canvas para cada ejercicio**
+- Nuevo componente `DrillThumbnail` (80×60px SVG, `bg-zinc-800`, `viewBox` escalado)
+- Usa `useQueries` de React Query para cargar detalles de todos los drills en paralelo
+- Cada fila de ejercicio muestra la miniatura; clicking navega a `/drills/[id]/edit`
+- Si el detalle no está cargado todavía, muestra un placeholder gris
+
+**Verificaciones**: ESLint 0 errores ✔, TSC 0 errores ✔
+
+---
+
 ### 2026-05-01 — Sesión 25 (Auth UX: espacio personal como estado por defecto)
 
 **Objetivo**: eliminar la redirección forzada a /select-profile y hacer que el espacio personal sea el estado natural de un usuario sin perfil de club activo.

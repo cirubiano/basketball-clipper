@@ -8,6 +8,38 @@ from pydantic import BaseModel, Field
 from app.models.player import PlayerPosition
 
 
+# ── Club Position (used inline in PlayerResponse) ─────────────────────────────
+
+class ClubPositionBrief(BaseModel):
+    """Posición del club embebida en la respuesta del jugador."""
+    id: int
+    name: str
+    color: str
+
+    model_config = {"from_attributes": True}
+
+
+class ClubPositionCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    color: str = Field(default="#6366f1", max_length=20)
+
+
+class ClubPositionUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    color: Optional[str] = Field(None, max_length=20)
+
+
+class ClubPositionResponse(BaseModel):
+    id: int
+    club_id: int
+    name: str
+    color: str
+    archived_at: Optional[datetime]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ── Photo upload ───────────────────────────────────────────────────────────────
 
 class PhotoUploadRequest(BaseModel):
@@ -26,7 +58,7 @@ class PlayerCreate(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
     date_of_birth: Optional[date] = None
-    position: Optional[PlayerPosition] = None
+    position_ids: list[int] = Field(default_factory=list)
     photo_url: Optional[str] = Field(None, max_length=512)
     phone: Optional[str] = Field(None, max_length=30)
 
@@ -35,7 +67,7 @@ class PlayerUpdate(BaseModel):
     first_name: Optional[str] = Field(None, min_length=1, max_length=100)
     last_name: Optional[str] = Field(None, min_length=1, max_length=100)
     date_of_birth: Optional[date] = None
-    position: Optional[PlayerPosition] = None
+    position_ids: Optional[list[int]] = None  # None = no change; [] = clear all
     photo_url: Optional[str] = Field(None, max_length=512)
     phone: Optional[str] = Field(None, max_length=30)
 
@@ -46,7 +78,7 @@ class PlayerResponse(BaseModel):
     first_name: str
     last_name: str
     date_of_birth: Optional[date]
-    position: Optional[PlayerPosition]
+    positions: list[ClubPositionBrief]
     photo_url: Optional[str]
     phone: Optional[str]
     archived_at: Optional[datetime]

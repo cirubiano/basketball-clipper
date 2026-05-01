@@ -71,7 +71,7 @@ def _fake_player(player_id: int = 42, club_id: int = 1) -> MagicMock:
     p.first_name = "Pau"
     p.last_name = "Gasol"
     p.date_of_birth = None
-    p.position = "center"
+    p.positions = []  # M2M dynamic positions (replaces position enum)
     p.photo_url = None
     p.phone = None
     p.archived_at = None
@@ -174,28 +174,27 @@ def test_create_player_requires_manage_role():
 def test_create_player_by_admin_returns_201():
     """Admin crea un jugador correctamente."""
     _override_user(_fake_admin())
-    now = datetime.now(timezone.utc)
+    player = _fake_player()
 
-    def _add(p):
-        p.id = 42
-        p.archived_at = None
-        p.created_at = now
+    mock_result = MagicMock()
+    mock_result.scalar_one.return_value = player
 
     session = AsyncMock()
     session.get = AsyncMock(return_value=_fake_club())
-    session.add = MagicMock(side_effect=_add)
+    session.add = MagicMock()
+    session.execute = AsyncMock(return_value=mock_result)
     _override_db(session)
 
     r = TestClient(app).post(
         "/clubs/1/players",
-        json={"first_name": "Pau", "last_name": "Gasol", "position": "center"},
+        json={"first_name": "Pau", "last_name": "Gasol"},
         headers=_auth_headers(),
     )
     assert r.status_code == 201
     body = r.json()
     assert body["id"] == 42
     assert body["first_name"] == "Pau"
-    assert body["position"] == "center"
+    assert body["positions"] == []
 
 
 # ── PATCH /clubs/{id}/players/{pid} ──────────────────────────────────────────
@@ -206,8 +205,13 @@ def test_update_player_modifies_fields():
     club = _fake_club()
     player = _fake_player()
 
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = player
+    mock_result.scalar_one.return_value = player
+
     session = AsyncMock()
-    session.get.side_effect = [club, player]
+    session.get = AsyncMock(return_value=club)
+    session.execute = AsyncMock(return_value=mock_result)
     _override_db(session)
 
     r = TestClient(app).patch(
@@ -226,8 +230,12 @@ def test_update_archived_player_returns_409():
     player = _fake_player()
     player.archived_at = datetime.now(timezone.utc)
 
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = player
+
     session = AsyncMock()
-    session.get.side_effect = [club, player]
+    session.get = AsyncMock(return_value=club)
+    session.execute = AsyncMock(return_value=mock_result)
     _override_db(session)
 
     r = TestClient(app).patch(

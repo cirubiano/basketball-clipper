@@ -20,6 +20,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.club import Club
+from app.models.club_position import ClubPosition
 from app.models.player import Player, RosterEntry
 from app.models.profile import Profile, UserRole
 from app.models.team import Team
@@ -98,6 +99,23 @@ async def _require_manage_access(club_id: int, team_id: int | None, user: User, 
         )
 
 
+async def _load_positions(club_id: int, position_ids: list[int], db: AsyncSession) -> list[ClubPosition]:
+    """Carga y valida posiciones por IDs, verificando que pertenezcan al club."""
+    if not position_ids:
+        return []
+    result = await db.execute(
+        select(ClubPosition).where(
+            ClubPosition.id.in_(position_ids),
+            ClubPosition.club_id == club_id,
+            ClubPosition.archived_at.is_(None),
+        )
+    )
+    positions = list(result.scalars().all())
+    if len(positions) != len(set(position_ids)):
+        raise HTTPException(status_code=422, detail="One or more position IDs are invalid")
+    return positions
+
+
 # ── GET /clubs/{club_id}/players ──────────────────────────────────────────────
 
 @router.get("/{club_id}/players", response_model=list[PlayerResponse])
@@ -110,7 +128,11 @@ async def list_players(
     await _get_club_or_404(club_id, db)
     await _require_club_access(club_id, current_user, db)
 
-    stmt = select(Player).where(Player.club_id == club_id)
+    stmt = (
+        select(Player)
+        .options(selectinload(Player.positions))
+        .where(Player.club_id == club_id)
+    )
     if not include_archived:
         stmt = stmt.where(Player.archived_at.is_(None))
     stmt = stmt.order_by(Player.last_name, Player.first_name)
@@ -131,12 +153,18 @@ async def create_player(
     await _get_club_or_404(club_id, db)
     await _require_manage_access(club_id, None, current_user, db)
 
-    player = Player(club_id=club_id, **body.model_dump())
+    player_data = body.model_dump(exclude={"position_ids"})
+    player = Player(club_id=club_id, **player_data)
+    if body.position_ids:
+        player.positions = await _load_positions(club_id, body.position_ids, db)
     db.add(player)
     await db.flush()
     await db.commit()
-    await db.refresh(player)
-    return player
+
+    result = await db.execute(
+        select(Player).options(selectinload(Player.positions)).where(Player.id == player.id)
+    )
+    return result.scalar_one()
 
 
 # ── POST /clubs/{club_id}/players/photo-upload-url ───────────────────────────
@@ -190,8 +218,13 @@ async def get_player(
     await _get_club_or_404(club_id, db)
     await _require_club_access(club_id, current_user, db)
 
-    player = await db.get(Player, player_id)
-    if player is None or player.club_id != club_id:
+    result = await db.execute(
+        select(Player)
+        .options(selectinload(Player.positions))
+        .where(Player.id == player_id, Player.club_id == club_id)
+    )
+    player = result.scalar_one_or_none()
+    if player is None:
         raise HTTPException(status_code=404, detail="Player not found")
     return player
 
@@ -209,18 +242,30 @@ async def update_player(
     await _get_club_or_404(club_id, db)
     await _require_manage_access(club_id, None, current_user, db)
 
-    player = await db.get(Player, player_id)
-    if player is None or player.club_id != club_id:
+    result = await db.execute(
+        select(Player)
+        .options(selectinload(Player.positions))
+        .where(Player.id == player_id, Player.club_id == club_id)
+    )
+    player = result.scalar_one_or_none()
+    if player is None:
         raise HTTPException(status_code=404, detail="Player not found")
     if player.archived_at is not None:
         raise HTTPException(status_code=409, detail="Cannot update an archived player")
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    data = body.model_dump(exclude_unset=True)
+    position_ids = data.pop("position_ids", None)
+    for field, value in data.items():
         setattr(player, field, value)
+    if position_ids is not None:
+        player.positions = await _load_positions(club_id, position_ids, db)
 
     await db.commit()
-    await db.refresh(player)
-    return player
+
+    result = await db.execute(
+        select(Player).options(selectinload(Player.positions)).where(Player.id == player_id)
+    )
+    return result.scalar_one()
 
 
 # ── DELETE /clubs/{club_id}/players/{player_id} ───────────────────────────────
@@ -276,7 +321,7 @@ async def list_roster(
 
     stmt = (
         select(RosterEntry)
-        .options(selectinload(RosterEntry.player))
+        .options(selectinload(RosterEntry.player).selectinload(Player.positions))
         .where(RosterEntry.team_id == team_id)
     )
     if season_id is not None:
@@ -333,7 +378,7 @@ async def add_to_roster(
 
     result = await db.execute(
         select(RosterEntry)
-        .options(selectinload(RosterEntry.player))
+        .options(selectinload(RosterEntry.player).selectinload(Player.positions))
         .where(RosterEntry.id == entry.id)
     )
     return result.scalar_one()
@@ -367,7 +412,7 @@ async def update_roster_entry(
 
     result = await db.execute(
         select(RosterEntry)
-        .options(selectinload(RosterEntry.player))
+        .options(selectinload(RosterEntry.player).selectinload(Player.positions))
         .where(RosterEntry.id == entry_id)
     )
     return result.scalar_one()

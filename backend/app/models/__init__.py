@@ -8,6 +8,7 @@ from app.models.catalog import ClubCatalogEntry, catalog_entry_tags
 from app.models.clip import Clip
 from app.models.club import Club
 from app.models.club_member import ClubMember
+from app.models.club_position import ClubPosition, player_positions
 from app.models.club_tag import ClubTag
 from app.models.drill import CourtLayoutType, Drill, DrillType, Tag, drill_tags
 from app.models.exercise import Exercise
@@ -27,6 +28,8 @@ __all__ = [
     "Clip",
     "Club",
     "ClubMember",
+    "ClubPosition",
+    "player_positions",
     "ClubTag",
     "CourtLayoutType",
     "Drill",

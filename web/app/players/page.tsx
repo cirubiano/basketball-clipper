@@ -11,6 +11,7 @@ import {
   listRoster,
   getTeams,
   getPlayerPhotoUploadUrl,
+  listPositions,
 } from "@basketball-clipper/shared/api";
 import type { Player, PlayerCreate } from "@basketball-clipper/shared/types";
 import { PageShell } from "@/components/layout/PageShell";
@@ -52,7 +53,7 @@ const EMPTY_FORM: PlayerCreate = {
   first_name: "",
   last_name: "",
   date_of_birth: null,
-  position: null,
+  position_ids: [],
   photo_url: null,
   phone: null,
 };
@@ -127,6 +128,12 @@ export default function PlayersPage() {
   const { data: teams = [] } = useQuery({
     queryKey: ["teams", clubId],
     queryFn: () => getTeams(token!, clubId!),
+    enabled: !!token && !!clubId,
+  });
+
+  const { data: clubPositions = [] } = useQuery({
+    queryKey: ["positions", clubId],
+    queryFn: () => listPositions(token!, clubId!),
     enabled: !!token && !!clubId,
   });
 
@@ -221,7 +228,7 @@ export default function PlayersPage() {
       first_name: p.first_name,
       last_name: p.last_name,
       date_of_birth: p.date_of_birth,
-      position: p.position,
+      position_ids: p.positions.map((pos) => pos.id),
       photo_url: p.photo_url,
       phone: p.phone,
     });
@@ -431,6 +438,20 @@ export default function PlayersPage() {
                       {p.first_name} {p.last_name}
                     </p>
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      {/* Club positions */}
+                      {p.positions.length > 0 && (
+                        <div className="flex gap-1 flex-wrap">
+                          {p.positions.map((pos) => (
+                            <span
+                              key={pos.id}
+                              className="inline-flex items-center rounded px-1.5 py-0 text-xs font-medium text-white"
+                              style={{ backgroundColor: pos.color }}
+                            >
+                              {pos.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       {/* Teams */}
                       {teamNames.length > 0 ? (
                         <div className="flex gap-1 flex-wrap">
@@ -610,7 +631,7 @@ export default function PlayersPage() {
             <div className="flex flex-col items-center gap-3">
               <PlayerAvatar
                 player={{
-                  ...(editPlayer ?? { id: 0, club_id: 0, date_of_birth: null, position: null, phone: null, archived_at: null, created_at: "" }),
+                  ...(editPlayer ?? { id: 0, club_id: 0, date_of_birth: null, positions: [], phone: null, archived_at: null, created_at: "" }),
                   first_name: form.first_name || editPlayer?.first_name || "?",
                   last_name: form.last_name || editPlayer?.last_name || "?",
                   photo_url: form.photo_url ?? null,
@@ -685,6 +706,47 @@ export default function PlayersPage() {
                 placeholder="+34 600 000 000"
               />
             </div>
+
+            {/* Positions */}
+            {clubPositions.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>
+                  Posiciones{" "}
+                  <span className="text-muted-foreground font-normal">(opcional)</span>
+                </Label>
+                <div className="flex gap-1.5 flex-wrap">
+                  {clubPositions.map((pos) => {
+                    const selected = (form.position_ids ?? []).includes(pos.id);
+                    return (
+                      <button
+                        key={pos.id}
+                        type="button"
+                        onClick={() =>
+                          setForm((f) => {
+                            const ids = f.position_ids ?? [];
+                            return {
+                              ...f,
+                              position_ids: selected
+                                ? ids.filter((id) => id !== pos.id)
+                                : [...ids, pos.id],
+                            };
+                          })
+                        }
+                        className="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium transition-opacity"
+                        style={{
+                          backgroundColor: selected ? pos.color : undefined,
+                          color: selected ? "white" : pos.color,
+                          border: `1.5px solid ${pos.color}`,
+                          opacity: selected ? 1 : 0.65,
+                        }}
+                      >
+                        {pos.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {formError && (
               <Alert variant="destructive">
