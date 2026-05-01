@@ -15,8 +15,10 @@ class MatchLocation(str, enum.Enum):
 
 class MatchStatus(str, enum.Enum):
     scheduled = "scheduled"
-    played = "played"
+    in_progress = "in_progress"
+    finished = "finished"
     cancelled = "cancelled"
+    # played is DEPRECATED in PostgreSQL enum — all records migrated to finished
 
 
 class MatchVideoLabel(str, enum.Enum):

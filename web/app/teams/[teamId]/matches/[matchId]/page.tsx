@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { UserPlus, Trash2, Film } from "lucide-react";
+import { UserPlus, Trash2, Film, Play, CheckCircle, XCircle } from "lucide-react";
 import Link from "next/link";
 import {
   getMatch,
@@ -10,6 +10,9 @@ import {
   removeMatchPlayer,
   upsertMatchStat,
   updateMatch,
+  startMatch,
+  finishMatch,
+  cancelMatch,
   addMatchVideo,
   removeMatchVideo,
   listRoster,
@@ -61,11 +64,14 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-const STATUS_VARIANT: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
-  scheduled: "secondary",
-  played: "default",
-  cancelled: "destructive",
-};
+function statusBadgeClass(status: MatchStatus): string {
+  switch (status) {
+    case "scheduled":   return "bg-secondary text-secondary-foreground";
+    case "in_progress": return "bg-green-500 text-white animate-pulse";
+    case "finished":    return "bg-blue-600 text-white";
+    case "cancelled":   return "bg-destructive text-destructive-foreground line-through";
+  }
+}
 
 type TabKey = "convocatoria" | "videos" | "estadisticas";
 
@@ -114,15 +120,39 @@ export default function MatchDetailPage({
   const linkedVideoIds = new Set(match?.match_videos.map((mv) => mv.video_id) ?? []);
   const availableVideos = completedVideos.filter((v) => !linkedVideoIds.has(v.id));
 
-  const updateStatusMut = useMutation({
-    mutationFn: (status: MatchStatus) =>
-      updateMatch(token!, clubId!, teamId, matchId, { status }),
+  // ── Transiciones de estado ──────────────────────────────────────────────────
+
+  const startMut = useMutation({
+    mutationFn: () => startMatch(token!, clubId!, teamId, matchId),
     onSuccess: (m) => {
       void qc.invalidateQueries({ queryKey: ["match", matchId] });
-      toast(`Estado cambiado a ${MATCH_STATUS_LABELS[m.status]}.`);
+      void qc.invalidateQueries({ queryKey: ["matches", teamId] });
+      toast(`Partido vs. ${m.opponent_name} iniciado.`);
     },
     onError: (e: Error) => toast(e.message, "error"),
   });
+
+  const finishMut = useMutation({
+    mutationFn: () => finishMatch(token!, clubId!, teamId, matchId),
+    onSuccess: (m) => {
+      void qc.invalidateQueries({ queryKey: ["match", matchId] });
+      void qc.invalidateQueries({ queryKey: ["matches", teamId] });
+      toast(`Partido vs. ${m.opponent_name} finalizado.`);
+    },
+    onError: (e: Error) => toast(e.message, "error"),
+  });
+
+  const cancelMut = useMutation({
+    mutationFn: () => cancelMatch(token!, clubId!, teamId, matchId),
+    onSuccess: (m) => {
+      void qc.invalidateQueries({ queryKey: ["match", matchId] });
+      void qc.invalidateQueries({ queryKey: ["matches", teamId] });
+      toast(`Partido vs. ${m.opponent_name} cancelado.`);
+    },
+    onError: (e: Error) => toast(e.message, "error"),
+  });
+
+  // ── Otras mutaciones ────────────────────────────────────────────────────────
 
   const addVideoMut = useMutation({
     mutationFn: () =>
@@ -175,9 +205,9 @@ export default function MatchDetailPage({
   const addPlayerMut = useMutation({
     mutationFn: (playerId: number) =>
       addMatchPlayer(token!, clubId!, teamId, matchId, playerId),
-    onSuccess: (mp) => {
+    onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["match", matchId] });
-      toast(`Jugador añadido a la convocatoria.`);
+      toast("Jugador añadido a la convocatoria.");
     },
     onError: (e: Error) => toast(e.message, "error"),
   });
@@ -234,6 +264,11 @@ export default function MatchDetailPage({
     hour: "2-digit", minute: "2-digit",
   });
 
+  const matchDatePassed = new Date(match.date) <= new Date();
+  const isTransitioning = startMut.isPending || finishMut.isPending || cancelMut.isPending;
+
+  const showScore = match.status === "in_progress" || match.status === "finished";
+
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-8 max-w-3xl">
@@ -255,30 +290,56 @@ export default function MatchDetailPage({
                 {dateStr} · {timeStr} · {MATCH_LOCATION_LABELS[match.location]}
               </p>
             </div>
-            {isCoachOrTD ? (
-              <Select
-                value={match.status}
-                onValueChange={(v) => updateStatusMut.mutate(v as MatchStatus)}
-                disabled={updateStatusMut.isPending}
-              >
-                <SelectTrigger className="w-36 h-8 text-xs shrink-0">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="scheduled">Programado</SelectItem>
-                  <SelectItem value="played">Jugado</SelectItem>
-                  <SelectItem value="cancelled">Cancelado</SelectItem>
-                </SelectContent>
-              </Select>
-            ) : (
-              <Badge variant={STATUS_VARIANT[match.status]} className="shrink-0 mt-1">
+
+            {/* Estado + botones de transición */}
+            <div className="flex flex-col items-end gap-2 shrink-0">
+              <Badge className={statusBadgeClass(match.status)}>
                 {MATCH_STATUS_LABELS[match.status]}
               </Badge>
-            )}
+
+              {isCoachOrTD && match.status === "scheduled" && (
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs gap-1"
+                    disabled={!matchDatePassed || isTransitioning}
+                    title={!matchDatePassed ? "El partido aún no ha comenzado" : undefined}
+                    onClick={() => startMut.mutate()}
+                  >
+                    <Play className="h-3 w-3" />
+                    Iniciar partido
+                  </Button>
+                  <CancelMatchDialog
+                    opponentName={match.opponent_name}
+                    disabled={isTransitioning}
+                    onConfirm={() => cancelMut.mutate()}
+                  />
+                </div>
+              )}
+
+              {isCoachOrTD && match.status === "in_progress" && (
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs gap-1"
+                    disabled={isTransitioning}
+                    onClick={() => finishMut.mutate()}
+                  >
+                    <CheckCircle className="h-3 w-3" />
+                    Finalizar partido
+                  </Button>
+                  <CancelMatchDialog
+                    opponentName={match.opponent_name}
+                    disabled={isTransitioning}
+                    onConfirm={() => cancelMut.mutate()}
+                  />
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Score (only when played) */}
-          {match.status === "played" && (
+          {/* Score (during in_progress and after finished) */}
+          {showScore && (
             <div className="mt-3 flex items-center gap-3">
               {match.our_score != null && match.their_score != null ? (
                 <span className="text-3xl font-bold tabular-nums">
@@ -505,42 +566,59 @@ export default function MatchDetailPage({
         {/* Tab: Estadísticas */}
         {tab === "estadisticas" && (
           <div>
-            {match.match_players.length === 0 ? (
+            {match.status === "scheduled" && (
               <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
-                Primero añade jugadores a la convocatoria.
+                Las estadísticas se pueden registrar una vez iniciado el partido.
               </div>
-            ) : (
-              <div className="border rounded-lg overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/30">
-                      <th className="text-left px-4 py-2 font-medium">Jugador</th>
-                      <th className="text-center px-2 py-2 font-medium w-12">Min</th>
-                      <th className="text-center px-2 py-2 font-medium w-12">Pts</th>
-                      <th className="text-center px-2 py-2 font-medium w-12">Reb</th>
-                      <th className="text-center px-2 py-2 font-medium w-12">Ast</th>
-                      <th className="text-center px-2 py-2 font-medium w-12">Rob</th>
-                      <th className="text-center px-2 py-2 font-medium w-12">Pér</th>
-                      <th className="text-center px-2 py-2 font-medium w-12">Falt</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {match.match_players.map((mp) => {
-                      const stat = match.match_stats.find((s) => s.player_id === mp.player_id);
-                      return (
-                        <StatRow
-                          key={stat ? `stat-${stat.id}` : `nostat-${mp.player_id}`}
-                          playerId={mp.player_id}
-                          name={`${mp.player_first_name ?? ""} ${mp.player_last_name ?? ""}`.trim()}
-                          stat={stat}
-                          isCoachOrTD={isCoachOrTD}
-                          onSave={(data) => upsertStatMut.mutate(data)}
-                        />
-                      );
-                    })}
-                  </tbody>
-                </table>
+            )}
+            {match.status === "cancelled" && (
+              <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
+                El partido fue cancelado — no hay estadísticas disponibles.
               </div>
+            )}
+            {(match.status === "in_progress" || match.status === "finished") && (
+              match.match_players.length === 0 ? (
+                <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
+                  Primero añade jugadores a la convocatoria.
+                </div>
+              ) : (
+                <div className="border rounded-lg overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/30">
+                        <th className="text-left px-4 py-2 font-medium">Jugador</th>
+                        <th className="text-center px-2 py-2 font-medium w-12">Min</th>
+                        <th className="text-center px-2 py-2 font-medium w-12">Pts</th>
+                        <th className="text-center px-2 py-2 font-medium w-12">Reb</th>
+                        <th className="text-center px-2 py-2 font-medium w-12">Ast</th>
+                        <th className="text-center px-2 py-2 font-medium w-12">Rob</th>
+                        <th className="text-center px-2 py-2 font-medium w-12">Pér</th>
+                        <th className="text-center px-2 py-2 font-medium w-12">Falt</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {match.match_players.map((mp) => {
+                        const stat = match.match_stats.find((s) => s.player_id === mp.player_id);
+                        return (
+                          <StatRow
+                            key={stat ? `stat-${stat.id}` : `nostat-${mp.player_id}`}
+                            playerId={mp.player_id}
+                            name={`${mp.player_first_name ?? ""} ${mp.player_last_name ?? ""}`.trim()}
+                            stat={stat}
+                            editable={isCoachOrTD && match.status === "in_progress"}
+                            onSave={(data) => upsertStatMut.mutate(data)}
+                          />
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {match.status === "finished" && (
+                    <p className="text-xs text-muted-foreground text-center py-2 border-t">
+                      Partido finalizado — estadísticas en modo lectura.
+                    </p>
+                  )}
+                </div>
+              )
             )}
           </div>
         )}
@@ -591,17 +669,65 @@ export default function MatchDetailPage({
   );
 }
 
+// ── CancelMatchDialog ─────────────────────────────────────────────────────────
+
+function CancelMatchDialog({
+  opponentName,
+  disabled,
+  onConfirm,
+}: {
+  opponentName: string;
+  disabled: boolean;
+  onConfirm: () => void;
+}) {
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
+          disabled={disabled}
+        >
+          <XCircle className="h-3 w-3" />
+          Cancelar partido
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>¿Cancelar partido?</AlertDialogTitle>
+          <AlertDialogDescription>
+            El partido vs. <strong>{opponentName}</strong> quedará marcado como cancelado.
+            Esta acción no se puede deshacer.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Volver</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={onConfirm}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            Cancelar partido
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+// ── StatRow ───────────────────────────────────────────────────────────────────
+
 function StatRow({
   playerId,
   name,
   stat,
-  isCoachOrTD,
+  editable,
   onSave,
 }: {
   playerId: number;
   name: string;
   stat: { points: number | null; minutes: number | null; assists: number | null; defensive_rebounds: number | null; offensive_rebounds: number | null; steals: number | null; turnovers: number | null; fouls: number | null } | undefined;
-  isCoachOrTD: boolean;
+  editable: boolean;
   onSave: (data: MatchStatUpsert) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -638,7 +764,7 @@ function StatRow({
 
   const totalReb = (stat?.defensive_rebounds ?? 0) + (stat?.offensive_rebounds ?? 0);
 
-  if (editing && isCoachOrTD) {
+  if (editing && editable) {
     return (
       <tr className="border-b bg-accent/5">
         <td className="px-4 py-2 font-medium text-sm" colSpan={8}>
@@ -668,9 +794,9 @@ function StatRow({
 
   return (
     <tr
-      className={cn("border-b hover:bg-muted/30 transition-colors", isCoachOrTD && "cursor-pointer")}
-      onClick={() => isCoachOrTD && setEditing(true)}
-      title={isCoachOrTD ? "Clic para editar" : undefined}
+      className={cn("border-b hover:bg-muted/30 transition-colors", editable && "cursor-pointer")}
+      onClick={() => editable && setEditing(true)}
+      title={editable ? "Clic para editar" : undefined}
     >
       <td className="px-4 py-2.5 font-medium">{name}</td>
       <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.minutes ?? "—"}</td>

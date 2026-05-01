@@ -72,10 +72,10 @@ class MatchUpdate(BaseModel):
     opponent_name: str | None = None
     date: datetime | None = None
     location: MatchLocation | None = None
-    status: MatchStatus | None = None
     notes: str | None = None
     our_score: int | None = None
     their_score: int | None = None
+    # status is intentionally excluded — use /start, /finish, /cancel endpoints
 
 
 class MatchVideoAdd(BaseModel):

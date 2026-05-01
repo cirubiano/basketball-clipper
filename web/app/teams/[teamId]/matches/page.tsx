@@ -59,11 +59,14 @@ import { Breadcrumb } from "@/components/layout/Breadcrumb";
 
 const LOCATIONS: MatchLocation[] = ["home", "away", "neutral"];
 
-const STATUS_VARIANT: Record<MatchStatus, "default" | "secondary" | "outline" | "destructive"> = {
-  scheduled: "secondary",
-  played: "default",
-  cancelled: "destructive",
-};
+function statusBadgeClass(status: MatchStatus): string {
+  switch (status) {
+    case "scheduled":   return "bg-secondary text-secondary-foreground";
+    case "in_progress": return "bg-green-500 text-white animate-pulse";
+    case "finished":    return "bg-blue-600 text-white";
+    case "cancelled":   return "bg-destructive text-destructive-foreground line-through";
+  }
+}
 
 export default function MatchesPage({
   params,
@@ -347,8 +350,7 @@ function MatchRow({
           <p className="font-medium text-sm">
             vs. {match.opponent_name}
             <Badge
-              variant={STATUS_VARIANT[match.status]}
-              className="ml-2 text-xs"
+              className={`ml-2 text-xs ${statusBadgeClass(match.status)}`}
             >
               {MATCH_STATUS_LABELS[match.status]}
             </Badge>

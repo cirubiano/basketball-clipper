@@ -69,6 +69,41 @@ export const archiveMatch = (
     method: "DELETE",
   });
 
+// ── Transiciones de estado ────────────────────────────────────────────────────
+
+export const startMatch = (
+  token: string,
+  clubId: number,
+  teamId: number,
+  matchId: number,
+): Promise<Match> =>
+  apiRequest<Match>(`${base(clubId, teamId)}/${matchId}/start`, {
+    token,
+    method: "POST",
+  });
+
+export const finishMatch = (
+  token: string,
+  clubId: number,
+  teamId: number,
+  matchId: number,
+): Promise<Match> =>
+  apiRequest<Match>(`${base(clubId, teamId)}/${matchId}/finish`, {
+    token,
+    method: "POST",
+  });
+
+export const cancelMatch = (
+  token: string,
+  clubId: number,
+  teamId: number,
+  matchId: number,
+): Promise<Match> =>
+  apiRequest<Match>(`${base(clubId, teamId)}/${matchId}/cancel`, {
+    token,
+    method: "POST",
+  });
+
 // ── Convocatoria ──────────────────────────────────────────────────────────────
 
 export const addMatchPlayer = (

@@ -728,6 +728,9 @@ y sus tipos en `shared/types/`. Web y mobile nunca llaman al backend directament
 | GET | /clubs/{id}/teams/{tid}/matches/{mid} | team_member | Detalle de partido (con convocatoria, vídeos, stats) |
 | PATCH | /clubs/{id}/teams/{tid}/matches/{mid} | hc_or_td | Actualizar partido |
 | DELETE | /clubs/{id}/teams/{tid}/matches/{mid} | hc_or_td | Archivar partido (RF-305) |
+| POST | /clubs/{id}/teams/{tid}/matches/{mid}/start | hc_or_td | Iniciar partido: scheduled → in_progress (solo si fecha ≤ now) |
+| POST | /clubs/{id}/teams/{tid}/matches/{mid}/finish | hc_or_td | Finalizar partido: in_progress → finished |
+| POST | /clubs/{id}/teams/{tid}/matches/{mid}/cancel | hc_or_td | Cancelar partido: scheduled\|in_progress → cancelled |
 | POST | /clubs/{id}/teams/{tid}/matches/{mid}/players | hc_or_td | Añadir jugador a convocatoria (RF-311) |
 | DELETE | /clubs/{id}/teams/{tid}/matches/{mid}/players/{pid} | hc_or_td | Retirar jugador de convocatoria |
 | POST | /clubs/{id}/teams/{tid}/matches/{mid}/videos | hc_or_td | Vincular vídeo al partido (RF-321) |

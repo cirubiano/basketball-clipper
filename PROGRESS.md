@@ -15,7 +15,7 @@
 | **C** | Gestión de jugadores | ✅ Completado | Backend + shared + web completos |
 | **D** | Editor de jugadas/ejercicios | ✅ Completado | Backend + shared + web (canvas + árbol + undo/redo) |
 | **E** | Catálogo del club + TeamPlaybook | ✅ Completado | Backend + shared + web |
-| **F** | Partidos, estadísticas, entrenamientos | ✅ Completado | Backend + shared + web |
+| **F** | Partidos, estadísticas, entrenamientos | ✅ Completado | Backend + shared + web; state machine de partido (sesión 28) |
 
 ---
 
@@ -194,12 +194,13 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 **Objetivo**: funcionalidades de seguimiento deportivo (según `REQUIREMENTS.md` §11).
 
-**Pendiente de detallar en `REQUIREMENTS.md`:**
-- Partidos: creación, convocatoria, resultado, estadísticas
-- Estadísticas: métricas por jugador/equipo/temporada
-- Entrenamientos/sesiones: planificación, asistencia, vínculo con ejercicios
+**Completado (sesiones 21-28):**
+- Partidos: CRUD + convocatoria + vídeos vinculados + estadísticas por jugador
+- State machine de partido: scheduled → in_progress → finished | cancelled (endpoints dedicados, sin PATCH de status)
+- Entrenamientos: CRUD + ejercicios del entrenamiento + asistencia
+- Estadísticas: registradas durante `in_progress`, solo lectura en `finished`
 
-**Estado**: 🔴 No iniciado — requisitos por definir
+**Estado**: ✅ Completado — ver sesiones 21-28 del historial
 
 ---
 
@@ -273,6 +274,43 @@ personal, el catálogo del club y los playbooks de los equipos.
 ---
 
 ## Historial de sesiones
+
+### 2026-05-01 — Sesión 28 (Transiciones de estado de partido — state machine)
+
+**Objetivo**: reemplazar el campo `status` editable libremente en PATCH por un estado máquina controlado con endpoints dedicados.
+
+**Estado máquina implementado:**
+- `scheduled` → `in_progress` vía `POST .../start` (solo si `match.date ≤ now`)
+- `in_progress` → `finished` vía `POST .../finish`
+- `scheduled | in_progress` → `cancelled` vía `POST .../cancel`
+- Todos los endpoints devuelven 409 si la transición no es válida
+
+**Backend:**
+- Nueva migración `0011_match_status_transitions.py`: añade `in_progress` + `finished` al enum `matchstatus` (con `autocommit_block` — necesario en PostgreSQL para usar nuevos valores en DML en la misma migración); migra `played` → `finished` en los datos; `played` se mantiene en el tipo DB por compatibilidad pero se elimina del modelo Python
+- `MatchStatus` enum en `app/models/match.py`: nuevo `in_progress`, `finished`, `cancelled`; eliminado `played`
+- `MatchUpdate` en `app/schemas/match.py`: eliminado campo `status`
+- `app/routers/matches.py`: 3 nuevos endpoints `POST .../start`, `POST .../finish`, `POST .../cancel`
+- `tests/test_matches_api.py`: `test_update_match_modifies_fields` actualizado para no intentar patchear `status`
+- **171 tests pasados ✅**
+
+**Shared:**
+- `shared/types/match.ts`: `MatchStatus` → `"scheduled" | "in_progress" | "finished" | "cancelled"`; `MATCH_STATUS_LABELS` actualizado; eliminado `status` de `MatchUpdate`
+- `shared/api/matches.ts`: añadidas `startMatch`, `finishMatch`, `cancelMatch`
+
+**Web — lista de partidos (`web/app/teams/[teamId]/matches/page.tsx`):**
+- `STATUS_VARIANT` → `statusBadgeClass()`: scheduled=gris, in_progress=verde pulsante, finished=azul, cancelled=rojo tachado
+
+**Web — detalle de partido (`web/app/teams/[teamId]/matches/[matchId]/page.tsx`):**
+- Eliminado `updateStatusMut` + `<Select>` dropdown de estado
+- Añadidos `startMut`, `finishMut`, `cancelMut`
+- Header condicional por estado: botón "Iniciar partido" (solo si fecha ≤ now), "Finalizar partido", "Cancelar partido" (AlertDialog rojo)
+- Score visible para `in_progress` y `finished` (antes solo `played`)
+- Stats: editables solo en `in_progress`; read-only en `finished`; mensaje informativo en `scheduled`/`cancelled`
+- Nuevo componente `CancelMatchDialog`
+
+**Verificaciones**: ESLint 0 errores ✔, TSC 0 errores ✔, 171 tests ✔
+
+---
 
 ### 2026-05-01 — Sesión 27 (Posiciones dinámicas de club — reemplaza enum PlayerPosition)
 

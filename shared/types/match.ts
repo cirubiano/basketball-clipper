@@ -1,5 +1,5 @@
 export type MatchLocation = "home" | "away" | "neutral";
-export type MatchStatus = "scheduled" | "played" | "cancelled";
+export type MatchStatus = "scheduled" | "in_progress" | "finished" | "cancelled";
 export type MatchVideoLabel = "scouting" | "post_analysis" | "other";
 
 export const MATCH_LOCATION_LABELS: Record<MatchLocation, string> = {
@@ -10,7 +10,8 @@ export const MATCH_LOCATION_LABELS: Record<MatchLocation, string> = {
 
 export const MATCH_STATUS_LABELS: Record<MatchStatus, string> = {
   scheduled: "Programado",
-  played: "Jugado",
+  in_progress: "En curso",
+  finished: "Finalizado",
   cancelled: "Cancelado",
 };
 
@@ -83,10 +84,10 @@ export interface MatchUpdate {
   opponent_name?: string;
   date?: string;
   location?: MatchLocation;
-  status?: MatchStatus;
   notes?: string | null;
   our_score?: number | null;
   their_score?: number | null;
+  // status is intentionally excluded — use startMatch, finishMatch, cancelMatch
 }
 
 export interface MatchVideoAdd {

@@ -277,7 +277,7 @@ def test_get_match_returns_404_for_missing():
 # ── PATCH /clubs/{id}/teams/{tid}/matches/{mid} ────────────────────────────────
 
 def test_update_match_modifies_fields():
-    """PATCH actualiza campos del partido."""
+    """PATCH actualiza campos del partido (status excluido — usar /start, /finish, /cancel)."""
     _override_user(_fake_admin())
     match = _fake_match()
 
@@ -288,11 +288,10 @@ def test_update_match_modifies_fields():
 
     r = TestClient(app).patch(
         "/clubs/1/teams/10/matches/5",
-        json={"status": "played", "our_score": 85, "their_score": 72},
+        json={"our_score": 85, "their_score": 72},
         headers=_auth_headers(),
     )
     assert r.status_code == 200
-    assert match.status == "played"
     assert match.our_score == 85
     assert match.their_score == 72
 

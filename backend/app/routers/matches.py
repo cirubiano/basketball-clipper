@@ -260,6 +260,88 @@ async def update_match(
     return _serialize_match(await _get_match_or_404(match_id, team_id, db))
 
 
+# ── Transiciones de estado ────────────────────────────────────────────────────
+
+@router.post(
+    "/{club_id}/teams/{team_id}/matches/{match_id}/start",
+    response_model=MatchResponse,
+)
+async def start_match(
+    club_id: int,
+    team_id: int,
+    match_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MatchResponse:
+    """scheduled → in_progress."""
+    await _get_club_or_404(club_id, db)
+    await _get_team_or_404(club_id, team_id, db)
+    profile = await _require_team_member(club_id, team_id, current_user, db)
+    _require_coach_or_td(profile, current_user)
+
+    from app.models.match import MatchStatus as _MS  # local import to avoid circular
+    match = await _get_match_or_404(match_id, team_id, db)
+    if match.status != _MS.scheduled:
+        raise HTTPException(status_code=409, detail="El partido debe estar programado para iniciarlo.")
+    match.status = _MS.in_progress
+    await db.commit()
+    return _serialize_match(await _get_match_or_404(match_id, team_id, db))
+
+
+@router.post(
+    "/{club_id}/teams/{team_id}/matches/{match_id}/finish",
+    response_model=MatchResponse,
+)
+async def finish_match(
+    club_id: int,
+    team_id: int,
+    match_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MatchResponse:
+    """in_progress → finished."""
+    await _get_club_or_404(club_id, db)
+    await _get_team_or_404(club_id, team_id, db)
+    profile = await _require_team_member(club_id, team_id, current_user, db)
+    _require_coach_or_td(profile, current_user)
+
+    from app.models.match import MatchStatus as _MS
+    match = await _get_match_or_404(match_id, team_id, db)
+    if match.status != _MS.in_progress:
+        raise HTTPException(status_code=409, detail="El partido debe estar en curso para finalizarlo.")
+    match.status = _MS.finished
+    await db.commit()
+    return _serialize_match(await _get_match_or_404(match_id, team_id, db))
+
+
+@router.post(
+    "/{club_id}/teams/{team_id}/matches/{match_id}/cancel",
+    response_model=MatchResponse,
+)
+async def cancel_match(
+    club_id: int,
+    team_id: int,
+    match_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MatchResponse:
+    """scheduled | in_progress → cancelled."""
+    await _get_club_or_404(club_id, db)
+    await _get_team_or_404(club_id, team_id, db)
+    profile = await _require_team_member(club_id, team_id, current_user, db)
+    _require_coach_or_td(profile, current_user)
+
+    from app.models.match import MatchStatus as _MS
+    match = await _get_match_or_404(match_id, team_id, db)
+    if match.status == _MS.finished:
+        raise HTTPException(status_code=409, detail="No se puede cancelar un partido ya finalizado.")
+    if match.status == _MS.cancelled:
+        raise HTTPException(status_code=409, detail="El partido ya está cancelado.")
+    match.status = _MS.cancelled
+    await db.commit()
+    return _serialize_match(await _get_match_or_404(match_id, team_id, db))
+
+
 @router.delete("/{club_id}/teams/{team_id}/matches/{match_id}", status_code=204)
 async def archive_match(
     club_id: int,
