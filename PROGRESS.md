@@ -275,6 +275,56 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ## Historial de sesiones
 
+### 2026-05-01 — Sesión 33 (Auditoría completa del repositorio antes de entrega a entrenadores)
+
+**Objetivo**: auditoría de 9 fases para garantizar calidad antes de la primera prueba real con usuarios.
+
+**Resultado final:**
+- pytest: **314/314 passed** (226 → 314, +88 tests nuevos)
+- Cobertura backend: **78% → 85%** (+7 pp, superando el umbral mínimo)
+- ESLint web: **0 errores** ✔
+- TypeScript: **0 errores** ✔
+- Smoke test (login → /auth/me → /profiles): **OK** ✔
+- Git: limpio, `backend/.coverage` desrastreado del repo ✔
+
+**Fix: `web/components/drill-editor/SequenceTreePanel.tsx`**
+- `AlertDialogAction` del botón "Eliminar" usaba `className="bg-red-600 hover:bg-red-700"`
+- Corregido a `className="bg-destructive text-destructive-foreground hover:bg-destructive/90"` (regla shadcn/ui)
+
+**Fix: `.gitignore`**
+- Añadidos `.coverage`, `coverage.xml`, `htmlcov/` para evitar que pytest artifacts entren en el repo
+
+**Nuevos tests (88 tests, 4 archivos):**
+
+**`backend/tests/test_playbook_api.py`** (21 tests):
+- list_playbook: vacío, con entradas, 404 club/equipo, equipo archivado, 403 sin acceso
+- add_to_playbook: éxito, drill not found, propietario incorrecto, archivado, copia catálogo, equipo propio, 409 duplicado, 403 sin acceso
+- remove_from_playbook: éxito (soft-delete), 404 entrada, 403 sin acceso
+
+**`backend/tests/test_profiles_api.py`** (12 tests):
+- list_my_profiles: vacía, con entradas (enriched names), sin team (TD), 401
+- archive_profile: éxito con team (RF-164 freeze), sin miembros restantes (no freeze), TD (freeze_all), 404, ya archivado, 403
+
+**`backend/tests/test_drills_api.py`** (37 tests):
+- Tags: list, create, update (success/404/403/409), archive (success/404/409)
+- Drills: list (vacío, con variant_counts, filtro type, filtro tag_id), create (success/tag inválido), get (success/404/403), update (success/archived/tag_ids/403), archive (success/404/409/403), clone (success/branches recursivo/403), create_variant (success/404/403)
+
+**`backend/tests/test_misc_api.py`** (18 tests):
+- clips: get_clip 404/success, list_clips TD path (sin team_id)
+- auth: change_password success/wrong_current/401
+- clubs: create/list_mine (vacío/con clubs)/get (success/404/403)/update
+- security.py: real get_current_user (JWT válido, JWT inválido, user not in DB), require_admin non-admin 403
+
+**Módulos cubiertos por primera vez o mejorados:**
+- `app/routers/playbook.py`: 36% → 98%
+- `app/routers/profiles.py`: 51% → 100%
+- `app/routers/drills.py`: 26% → 94%
+- `app/routers/clips.py`: 77% → 93%
+- `app/routers/clubs.py`: 41% → 55%
+- `app/core/security.py`: nueva cobertura de `get_current_user` y `require_admin`
+
+---
+
 ### 2026-05-01 — Sesión 32 (Dashboard DT — estadísticas de equipo, asistencia y top performers)
 
 **Objetivo**: añadir tres secciones nuevas al dashboard del Director Técnico usando datos ya cargados.
