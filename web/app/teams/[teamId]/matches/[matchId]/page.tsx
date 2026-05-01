@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { UserPlus, Trash2, Film, Play, CheckCircle, XCircle, Upload } from "lucide-react";
+import { UserPlus, Trash2, Film, Play, CheckCircle, XCircle, Upload, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import {
   getMatch,
@@ -75,6 +75,28 @@ function statusBadgeClass(status: MatchStatus): string {
 
 type TabKey = "convocatoria" | "videos" | "estadisticas";
 
+// ── Live scoring types ────────────────────────────────────────────────────────
+
+type StatKey =
+  | "points"
+  | "assists"
+  | "defensive_rebounds"
+  | "offensive_rebounds"
+  | "steals"
+  | "turnovers"
+  | "fouls";
+
+type ActionLogEntry = {
+  logId: number;
+  playerId: number;
+  playerName: string;
+  label: string;
+  statKey: StatKey | null; // null = missed shot (log only, no stat change)
+  delta: number;
+};
+
+// ── Page component ────────────────────────────────────────────────────────────
+
 export default function MatchDetailPage({
   params,
 }: {
@@ -96,20 +118,28 @@ export default function MatchDetailPage({
   const [scoreDialogOpen, setScoreDialogOpen] = useState(false);
   const [scoreForm, setScoreForm] = useState({ our: "", their: "" });
 
+  // ── Live scoring state ──────────────────────────────────────────────────────
+
+  const logCounterRef = useRef(0);
+  const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
+  const [sessionStats, setSessionStats] = useState<Map<number, MatchStatUpsert>>(new Map());
+  const [minutesDraft, setMinutesDraft] = useState<Map<number, string>>(new Map());
+  const [actionLog, setActionLog] = useState<ActionLogEntry[]>([]);
+
+  // ── Queries ─────────────────────────────────────────────────────────────────
+
   const { data: match, isLoading } = useQuery({
     queryKey: ["match", matchId],
     queryFn: () => getMatch(token!, clubId!, teamId, matchId),
     enabled: !!token && !!clubId,
   });
 
-  // Roster for convocatoria selector
   const { data: roster = [] } = useQuery({
     queryKey: ["roster", teamId],
     queryFn: () => listRoster(token!, clubId!, teamId),
     enabled: !!token && !!clubId,
   });
 
-  // Videos for linking
   const { data: videos = [] } = useQuery({
     queryKey: ["videos"],
     queryFn: () => listVideos(token!),
@@ -120,7 +150,46 @@ export default function MatchDetailPage({
   const linkedVideoIds = new Set(match?.match_videos.map((mv) => mv.video_id) ?? []);
   const availableVideos = completedVideos.filter((v) => !linkedVideoIds.has(v.id));
 
-  // ── Transiciones de estado ──────────────────────────────────────────────────
+  // Sync sessionStats: add any new players that appear after initial load
+  useEffect(() => {
+    if (!match) return;
+    setSessionStats((prev) => {
+      const next = new Map(prev);
+      let changed = false;
+      match.match_players.forEach((mp) => {
+        if (!next.has(mp.player_id)) {
+          const s = match.match_stats.find((st) => st.player_id === mp.player_id);
+          next.set(mp.player_id, {
+            player_id: mp.player_id,
+            minutes: s?.minutes ?? null,
+            points: s?.points ?? 0,
+            assists: s?.assists ?? 0,
+            defensive_rebounds: s?.defensive_rebounds ?? 0,
+            offensive_rebounds: s?.offensive_rebounds ?? 0,
+            steals: s?.steals ?? 0,
+            turnovers: s?.turnovers ?? 0,
+            fouls: s?.fouls ?? 0,
+          });
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+    setMinutesDraft((prev) => {
+      const next = new Map(prev);
+      let changed = false;
+      match.match_players.forEach((mp) => {
+        if (!next.has(mp.player_id)) {
+          const s = match.match_stats.find((st) => st.player_id === mp.player_id);
+          next.set(mp.player_id, s?.minutes != null ? String(s.minutes) : "");
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [match]);
+
+  // ── State transitions ───────────────────────────────────────────────────────
 
   const startMut = useMutation({
     mutationFn: () => startMatch(token!, clubId!, teamId, matchId),
@@ -152,7 +221,7 @@ export default function MatchDetailPage({
     onError: (e: Error) => toast(e.message, "error"),
   });
 
-  // ── Otras mutaciones ────────────────────────────────────────────────────────
+  // ── Other mutations ─────────────────────────────────────────────────────────
 
   const addVideoMut = useMutation({
     mutationFn: () =>
@@ -192,7 +261,6 @@ export default function MatchDetailPage({
     onError: (e: Error) => toast(e.message, "error"),
   });
 
-  // Sync score form when dialog opens
   useEffect(() => {
     if (scoreDialogOpen && match) {
       setScoreForm({
@@ -224,10 +292,58 @@ export default function MatchDetailPage({
   const upsertStatMut = useMutation({
     mutationFn: (data: MatchStatUpsert) =>
       upsertMatchStat(token!, clubId!, teamId, matchId, data),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["match", matchId] });
-    },
+    onError: (e: Error) => toast(e.message, "error"),
   });
+
+  // ── Live scoring handlers ───────────────────────────────────────────────────
+
+  function handleAction(statKey: StatKey | null, delta: number, label: string) {
+    if (!selectedPlayerId || !match) return;
+    const mp = match.match_players.find((p) => p.player_id === selectedPlayerId);
+    const playerName = mp
+      ? `${mp.player_first_name ?? ""} ${mp.player_last_name ?? ""}`.trim()
+      : "Jugador";
+
+    const logId = ++logCounterRef.current;
+    setActionLog((prev) =>
+      [{ logId, playerId: selectedPlayerId, playerName, label, statKey, delta }, ...prev].slice(0, 10),
+    );
+
+    if (statKey === null || delta === 0) return; // missed shot — log only
+
+    const current = sessionStats.get(selectedPlayerId) ?? { player_id: selectedPlayerId };
+    const currentVal = ((current[statKey] ?? 0) as number);
+    const newVal = Math.max(0, currentVal + delta);
+    const updated: MatchStatUpsert = { ...current, [statKey]: newVal };
+    setSessionStats((prev) => new Map(prev).set(selectedPlayerId, updated));
+    upsertStatMut.mutate(updated);
+  }
+
+  function handleUndo() {
+    if (actionLog.length === 0) return;
+    const last = actionLog[0];
+    setActionLog((prev) => prev.slice(1));
+    if (last.statKey === null || last.delta === 0) return; // missed shot — no stat to revert
+
+    const current = sessionStats.get(last.playerId) ?? { player_id: last.playerId };
+    const currentVal = ((current[last.statKey] ?? 0) as number);
+    const newVal = Math.max(0, currentVal - last.delta);
+    const updated: MatchStatUpsert = { ...current, [last.statKey]: newVal };
+    setSessionStats((prev) => new Map(prev).set(last.playerId, updated));
+    upsertStatMut.mutate(updated);
+  }
+
+  function handleMinutesSave(playerId: number) {
+    const minutesStr = minutesDraft.get(playerId) ?? "";
+    const parsed = parseInt(minutesStr, 10);
+    const minutesVal = minutesStr === "" || isNaN(parsed) ? null : parsed;
+    const current = sessionStats.get(playerId) ?? { player_id: playerId };
+    const updated: MatchStatUpsert = { ...current, minutes: minutesVal };
+    setSessionStats((prev) => new Map(prev).set(playerId, updated));
+    upsertStatMut.mutate(updated);
+  }
+
+  // ── Loading / not found ─────────────────────────────────────────────────────
 
   if (isLoading) {
     return (
@@ -256,8 +372,6 @@ export default function MatchDetailPage({
 
   const convocadoIds = new Set(match.match_players.map((mp) => mp.player_id));
   const notConvocado = roster.filter((re) => !convocadoIds.has(re.player_id) && !re.archived_at);
-
-  // Photo lookup from roster data (MatchPlayer doesn't carry photo_url)
   const rosterPhotoMap = new Map(roster.map((re) => [re.player_id, re.player.photo_url]));
 
   const dateStr = new Date(match.date).toLocaleDateString("es-ES", {
@@ -268,12 +382,11 @@ export default function MatchDetailPage({
   });
 
   const isTransitioning = startMut.isPending || finishMut.isPending || cancelMut.isPending;
-
   const showScore = match.status === "in_progress" || match.status === "finished";
 
   return (
     <PageShell>
-      <div className="container mx-auto px-4 py-8 max-w-3xl">
+      <div className="container mx-auto px-4 py-8 max-w-4xl">
         {/* Header */}
         <div className="mb-6">
           <Breadcrumb
@@ -293,7 +406,6 @@ export default function MatchDetailPage({
               </p>
             </div>
 
-            {/* Estado + botones de transición */}
             <div className="flex flex-col items-end gap-2 shrink-0">
               <Badge className={statusBadgeClass(match.status)}>
                 {MATCH_STATUS_LABELS[match.status]}
@@ -339,7 +451,6 @@ export default function MatchDetailPage({
             </div>
           </div>
 
-          {/* Score (during in_progress and after finished) */}
           {showScore && (
             <div className="mt-3 flex items-center gap-3">
               {match.our_score != null && match.their_score != null ? (
@@ -386,7 +497,6 @@ export default function MatchDetailPage({
         {/* Tab: Convocatoria */}
         {tab === "convocatoria" && (
           <div className="space-y-6">
-            {/* Convocados */}
             <div>
               <p className="text-sm font-semibold mb-2">
                 Convocados ({match.match_players.length})
@@ -456,7 +566,6 @@ export default function MatchDetailPage({
               )}
             </div>
 
-            {/* No convocados — visible to all, actions only for coaches */}
             {notConvocado.length > 0 && (
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -624,52 +733,294 @@ export default function MatchDetailPage({
                 Las estadísticas se pueden registrar una vez iniciado el partido.
               </div>
             )}
+
             {match.status === "cancelled" && (
               <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
                 El partido fue cancelado — no hay estadísticas disponibles.
               </div>
             )}
-            {(match.status === "in_progress" || match.status === "finished") && (
+
+            {/* ── PARTIDO EN CURSO: live scoring (solo coach/TD) ── */}
+            {match.status === "in_progress" && isCoachOrTD && (
+              match.match_players.length === 0 ? (
+                <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
+                  Primero añade jugadores a la convocatoria en la pestaña{" "}
+                  <button
+                    className="underline text-foreground"
+                    onClick={() => setTab("convocatoria")}
+                  >
+                    Convocatoria
+                  </button>
+                  .
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex gap-4">
+                    {/* Left column: player cards */}
+                    <div className="w-[32%] flex-shrink-0 space-y-2">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                        Jugadores
+                      </p>
+                      {match.match_players.map((mp) => {
+                        const stats = sessionStats.get(mp.player_id);
+                        const isSelected = selectedPlayerId === mp.player_id;
+                        const pts = (stats?.points ?? 0) as number;
+                        const ast = (stats?.assists ?? 0) as number;
+                        const reb = ((stats?.defensive_rebounds ?? 0) as number) + ((stats?.offensive_rebounds ?? 0) as number);
+                        const fal = (stats?.fouls ?? 0) as number;
+                        return (
+                          <button
+                            key={mp.player_id}
+                            onClick={() => setSelectedPlayerId(mp.player_id)}
+                            className={cn(
+                              "w-full text-left border rounded-lg px-3 py-2 transition-all",
+                              isSelected
+                                ? "border-primary bg-primary/5 ring-1 ring-primary shadow-sm"
+                                : "hover:bg-muted/40 hover:border-muted-foreground/30",
+                            )}
+                          >
+                            <p className="text-sm font-semibold truncate leading-tight">
+                              {mp.player_first_name} {mp.player_last_name}
+                            </p>
+                            <div className="flex gap-2 mt-1 text-xs text-muted-foreground">
+                              <span>
+                                Pts <strong className="text-foreground">{pts}</strong>
+                              </span>
+                              <span>
+                                Ast <strong className="text-foreground">{ast}</strong>
+                              </span>
+                              <span>
+                                Reb <strong className="text-foreground">{reb}</strong>
+                              </span>
+                              <span>
+                                Fal <strong className="text-foreground">{fal}</strong>
+                              </span>
+                            </div>
+                            {/* Minutes input — inline, doesn't trigger player selection */}
+                            <div
+                              className="flex items-center gap-1.5 mt-1.5"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <span className="text-xs text-muted-foreground">Min</span>
+                              <Input
+                                type="number"
+                                min={0}
+                                className="h-5 w-12 text-xs text-center px-1 py-0"
+                                value={minutesDraft.get(mp.player_id) ?? ""}
+                                onChange={(e) =>
+                                  setMinutesDraft((prev) =>
+                                    new Map(prev).set(mp.player_id, e.target.value),
+                                  )
+                                }
+                                onBlur={() => handleMinutesSave(mp.player_id)}
+                                placeholder="—"
+                              />
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Right column: action buttons */}
+                    <div className="flex-1 min-w-0">
+                      {!selectedPlayerId ? (
+                        <div className="border rounded-lg h-full min-h-[280px] flex items-center justify-center text-muted-foreground text-sm text-center p-8">
+                          Selecciona un jugador para registrar acciones
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {/* Anotación */}
+                          <div>
+                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+                              Anotación
+                            </p>
+                            <div className="grid grid-cols-3 gap-2">
+                              <ActionButton
+                                label="+2P"
+                                sublabel="Canasta 2P"
+                                onClick={() => handleAction("points", 2, "+2P")}
+                                colorClass="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white"
+                              />
+                              <ActionButton
+                                label="+3P"
+                                sublabel="Canasta 3P"
+                                onClick={() => handleAction("points", 3, "+3P")}
+                                colorClass="bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white"
+                              />
+                              <ActionButton
+                                label="+TL"
+                                sublabel="Tiro libre"
+                                onClick={() => handleAction("points", 1, "+1 TL")}
+                                colorClass="bg-teal-500 hover:bg-teal-600 active:bg-teal-700 text-white"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Fallos */}
+                          <div>
+                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+                              Fallos
+                            </p>
+                            <div className="grid grid-cols-3 gap-2">
+                              <ActionButton
+                                label="×2P"
+                                sublabel="Fallo 2P"
+                                onClick={() => handleAction(null, 0, "Fallo 2P")}
+                                colorClass="bg-muted hover:bg-muted/80 text-muted-foreground"
+                              />
+                              <ActionButton
+                                label="×3P"
+                                sublabel="Fallo 3P"
+                                onClick={() => handleAction(null, 0, "Fallo 3P")}
+                                colorClass="bg-muted hover:bg-muted/80 text-muted-foreground"
+                              />
+                              <ActionButton
+                                label="×TL"
+                                sublabel="Fallo TL"
+                                onClick={() => handleAction(null, 0, "Fallo TL")}
+                                colorClass="bg-muted hover:bg-muted/80 text-muted-foreground"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Rebotes */}
+                          <div>
+                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+                              Rebotes
+                            </p>
+                            <div className="grid grid-cols-2 gap-2">
+                              <ActionButton
+                                label="REB-O"
+                                sublabel="Ofensivo"
+                                onClick={() => handleAction("offensive_rebounds", 1, "REB-O")}
+                                colorClass="bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white"
+                              />
+                              <ActionButton
+                                label="REB-D"
+                                sublabel="Defensivo"
+                                onClick={() => handleAction("defensive_rebounds", 1, "REB-D")}
+                                colorClass="bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Otros */}
+                          <div>
+                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+                              Otros
+                            </p>
+                            <div className="grid grid-cols-4 gap-2">
+                              <ActionButton
+                                label="AST"
+                                sublabel="Asistencia"
+                                onClick={() => handleAction("assists", 1, "Asistencia")}
+                                colorClass="bg-purple-500 hover:bg-purple-600 active:bg-purple-700 text-white"
+                              />
+                              <ActionButton
+                                label="ROB"
+                                sublabel="Robo"
+                                onClick={() => handleAction("steals", 1, "Robo")}
+                                colorClass="bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white"
+                              />
+                              <ActionButton
+                                label="PÉR"
+                                sublabel="Pérdida"
+                                onClick={() => handleAction("turnovers", 1, "Pérdida")}
+                                colorClass="bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white"
+                              />
+                              <ActionButton
+                                label="FAL"
+                                sublabel="Falta"
+                                onClick={() => handleAction("fouls", 1, "Falta")}
+                                colorClass="bg-yellow-500 hover:bg-yellow-600 active:bg-yellow-700 text-black"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Action log */}
+                  {actionLog.length > 0 && (
+                    <div className="border rounded-lg overflow-hidden">
+                      <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-b">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                          Últimas acciones
+                        </p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-xs gap-1 text-muted-foreground hover:text-foreground"
+                          onClick={handleUndo}
+                        >
+                          <RotateCcw className="h-3 w-3" />
+                          Deshacer
+                        </Button>
+                      </div>
+                      <div className="divide-y">
+                        {actionLog.slice(0, 5).map((entry, i) => (
+                          <div
+                            key={entry.logId}
+                            className={cn(
+                              "flex items-center gap-2 px-4 py-2 text-sm",
+                              i === 0 && "bg-accent/10",
+                            )}
+                          >
+                            <span className="font-medium truncate flex-1">
+                              {entry.playerName}
+                            </span>
+                            <span
+                              className={cn(
+                                "text-xs px-2 py-0.5 rounded-full font-semibold shrink-0",
+                                entry.delta > 0
+                                  ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
+                                  : "bg-muted text-muted-foreground",
+                              )}
+                            >
+                              {entry.label}
+                            </span>
+                            {i === 0 && (
+                              <span className="text-xs text-muted-foreground shrink-0">← último</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            )}
+
+            {/* ── PARTIDO EN CURSO: tabla read-only (no coaches) ── */}
+            {match.status === "in_progress" && !isCoachOrTD && (
               match.match_players.length === 0 ? (
                 <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
                   Primero añade jugadores a la convocatoria.
                 </div>
               ) : (
-                <div className="border rounded-lg overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-muted/30">
-                        <th className="text-left px-4 py-2 font-medium">Jugador</th>
-                        <th className="text-center px-2 py-2 font-medium w-12">Min</th>
-                        <th className="text-center px-2 py-2 font-medium w-12">Pts</th>
-                        <th className="text-center px-2 py-2 font-medium w-12">Reb</th>
-                        <th className="text-center px-2 py-2 font-medium w-12">Ast</th>
-                        <th className="text-center px-2 py-2 font-medium w-12">Rob</th>
-                        <th className="text-center px-2 py-2 font-medium w-12">Pér</th>
-                        <th className="text-center px-2 py-2 font-medium w-12">Falt</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {match.match_players.map((mp) => {
-                        const stat = match.match_stats.find((s) => s.player_id === mp.player_id);
-                        return (
-                          <StatRow
-                            key={stat ? `stat-${stat.id}` : `nostat-${mp.player_id}`}
-                            playerId={mp.player_id}
-                            name={`${mp.player_first_name ?? ""} ${mp.player_last_name ?? ""}`.trim()}
-                            stat={stat}
-                            editable={isCoachOrTD && match.status === "in_progress"}
-                            onSave={(data) => upsertStatMut.mutate(data)}
-                          />
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  {match.status === "finished" && (
-                    <p className="text-xs text-muted-foreground text-center py-2 border-t">
-                      Partido finalizado — estadísticas en modo lectura.
-                    </p>
-                  )}
+                <StatsTable
+                  matchPlayers={match.match_players}
+                  stats={match.match_stats}
+                />
+              )
+            )}
+
+            {/* ── PARTIDO FINALIZADO: tabla read-only ── */}
+            {match.status === "finished" && (
+              match.match_players.length === 0 ? (
+                <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
+                  No hay jugadores en la convocatoria.
+                </div>
+              ) : (
+                <div>
+                  <StatsTable
+                    matchPlayers={match.match_players}
+                    stats={match.match_stats}
+                  />
+                  <p className="text-xs text-muted-foreground text-center py-2 mt-1">
+                    Partido finalizado — estadísticas en modo lectura.
+                  </p>
                 </div>
               )
             )}
@@ -768,97 +1119,81 @@ function CancelMatchDialog({
   );
 }
 
-// ── StatRow ───────────────────────────────────────────────────────────────────
+// ── StatsTable — read-only stats view ────────────────────────────────────────
 
-function StatRow({
-  playerId,
-  name,
-  stat,
-  editable,
-  onSave,
+import type { MatchPlayer, MatchStat } from "@basketball-clipper/shared/types";
+
+function StatsTable({
+  matchPlayers,
+  stats,
 }: {
-  playerId: number;
-  name: string;
-  stat: { points: number | null; minutes: number | null; assists: number | null; defensive_rebounds: number | null; offensive_rebounds: number | null; steals: number | null; turnovers: number | null; fouls: number | null } | undefined;
-  editable: boolean;
-  onSave: (data: MatchStatUpsert) => void;
+  matchPlayers: MatchPlayer[];
+  stats: MatchStat[];
 }) {
-  const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({
-    minutes: String(stat?.minutes ?? ""),
-    points: String(stat?.points ?? ""),
-    defensive_rebounds: String(stat?.defensive_rebounds ?? ""),
-    offensive_rebounds: String(stat?.offensive_rebounds ?? ""),
-    assists: String(stat?.assists ?? ""),
-    steals: String(stat?.steals ?? ""),
-    turnovers: String(stat?.turnovers ?? ""),
-    fouls: String(stat?.fouls ?? ""),
-  });
-
-  function toInt(s: string): number | null {
-    const n = parseInt(s, 10);
-    return isNaN(n) ? null : n;
-  }
-
-  function handleSave() {
-    onSave({
-      player_id: playerId,
-      minutes: toInt(form.minutes),
-      points: toInt(form.points),
-      defensive_rebounds: toInt(form.defensive_rebounds),
-      offensive_rebounds: toInt(form.offensive_rebounds),
-      assists: toInt(form.assists),
-      steals: toInt(form.steals),
-      turnovers: toInt(form.turnovers),
-      fouls: toInt(form.fouls),
-    });
-    setEditing(false);
-  }
-
-  const totalReb = (stat?.defensive_rebounds ?? 0) + (stat?.offensive_rebounds ?? 0);
-
-  if (editing && editable) {
-    return (
-      <tr className="border-b bg-accent/5">
-        <td className="px-4 py-2 font-medium text-sm" colSpan={8}>
-          <div className="flex flex-wrap gap-2 items-end">
-            <span className="text-sm font-medium w-full mb-1">{name}</span>
-            {(["minutes", "points", "defensive_rebounds", "offensive_rebounds", "assists", "steals", "turnovers", "fouls"] as const).map((key) => (
-              <div key={key} className="flex flex-col gap-0.5">
-                <Label className="text-xs text-muted-foreground">
-                  {key === "minutes" ? "Min" : key === "points" ? "Pts" : key === "defensive_rebounds" ? "RD" : key === "offensive_rebounds" ? "RO" : key === "assists" ? "Ast" : key === "steals" ? "Rob" : key === "turnovers" ? "Pér" : "Falt"}
-                </Label>
-                <Input
-                  className="w-14 h-7 text-xs text-center"
-                  type="number"
-                  min={0}
-                  value={form[key]}
-                  onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-                />
-              </div>
-            ))}
-            <Button size="sm" className="h-7 text-xs" onClick={handleSave}>Guardar</Button>
-            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditing(false)}>Cancelar</Button>
-          </div>
-        </td>
-      </tr>
-    );
-  }
-
   return (
-    <tr
-      className={cn("border-b hover:bg-muted/30 transition-colors", editable && "cursor-pointer")}
-      onClick={() => editable && setEditing(true)}
-      title={editable ? "Clic para editar" : undefined}
+    <div className="border rounded-lg overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b bg-muted/30">
+            <th className="text-left px-4 py-2 font-medium">Jugador</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Min</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Pts</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Reb</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Ast</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Rob</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Pér</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Falt</th>
+          </tr>
+        </thead>
+        <tbody>
+          {matchPlayers.map((mp) => {
+            const stat = stats.find((s) => s.player_id === mp.player_id);
+            const totalReb = (stat?.defensive_rebounds ?? 0) + (stat?.offensive_rebounds ?? 0);
+            return (
+              <tr key={mp.player_id} className="border-b last:border-0">
+                <td className="px-4 py-2.5 font-medium">
+                  {mp.player_first_name} {mp.player_last_name}
+                </td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.minutes ?? "—"}</td>
+                <td className="text-center px-2 py-2.5 font-semibold">{stat?.points ?? "—"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat ? totalReb : "—"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.assists ?? "—"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.steals ?? "—"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.turnovers ?? "—"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.fouls ?? "—"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── ActionButton ──────────────────────────────────────────────────────────────
+
+function ActionButton({
+  label,
+  sublabel,
+  onClick,
+  colorClass,
+}: {
+  label: string;
+  sublabel: string;
+  onClick: () => void;
+  colorClass: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex flex-col items-center justify-center rounded-lg py-3 px-2 font-bold",
+        "transition-all active:scale-95 select-none touch-manipulation",
+        colorClass,
+      )}
     >
-      <td className="px-4 py-2.5 font-medium">{name}</td>
-      <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.minutes ?? "—"}</td>
-      <td className="text-center px-2 py-2.5">{stat?.points ?? "—"}</td>
-      <td className="text-center px-2 py-2.5 text-muted-foreground">{stat ? totalReb : "—"}</td>
-      <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.assists ?? "—"}</td>
-      <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.steals ?? "—"}</td>
-      <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.turnovers ?? "—"}</td>
-      <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.fouls ?? "—"}</td>
-    </tr>
+      <span className="text-base leading-none">{label}</span>
+      <span className="text-[10px] mt-1 opacity-75 font-normal leading-none">{sublabel}</span>
+    </button>
   );
 }
