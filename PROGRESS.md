@@ -275,6 +275,44 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ## Historial de sesiones
 
+### 2026-05-01 — Sesión 31 (Tests de integración — posiciones, ciclo de vida partido, asistencia)
+
+**Objetivo**: añadir tests de integración para las tres features implementadas en las sesiones 27-29.
+
+**Cobertura antes**: 171 tests, 75% global
+**Cobertura después**: 226 tests, 78% global (+55 tests nuevos, todos en verde)
+
+**Mejoras de cobertura por módulo:**
+- `app/routers/positions.py`: 35% → 99% (+64 pp)
+- `app/routers/matches.py`: 71% → 87% (+16 pp)
+- `app/schemas/training.py`: 93% → 100% (+7 pp)
+- `app/routers/players.py`: 81% → 85% (+4 pp)
+
+**Nuevo `tests/test_positions_api.py`** (19 tests):
+- GET/POST/PATCH/DELETE posiciones: happy path + 404 + permisos (staff → 403, sin token → 401)
+- GET accesible por cualquier miembro del club (staff_member profile)
+- Soft-delete: posición archivada no aparece en GET posterior
+- Crear jugador con `position_ids=[id1, id2]` → response incluye ambas posiciones
+- Crear jugador con `position_ids=[]` → `positions = []`
+- `position_ids` con IDs de otro club → 422
+
+**Nuevo `tests/test_match_lifecycle.py`** (19 tests):
+- Transiciones válidas: scheduled→in_progress, in_progress→finished, scheduled→cancelled, in_progress→cancelled
+- Transiciones inválidas → 409: in_progress→start, finished→start, cancelled→start, scheduled→finish, finished→finish, finished→cancel, cancelled→cancel
+- Stats en `in_progress` → 200; stats en `finished` → 200 (edición post-partido)
+- Jugador no convocado → 422
+- Permisos: staff → 403, sin token → 401 en start/finish/cancel
+
+**Nuevo `tests/test_attendance_api.py`** (17 tests):
+- Presente (attended=True, is_late=False): nuevo + valor por defecto
+- Retraso (attended=True, is_late=True, notes): nuevo + actualiza existente
+- Ausente (attended=False, absence_reason): injury, personal, sanction, other+notes
+- GET training detail: refleja is_late, absence_reason, notes en training_attendances
+- Validaciones 422: attended=True + absence_reason; attended=False sin absence_reason; absent + is_late=True; enum inválido
+- Resumen: conteos correctos de presentes/retrasos/ausentes en una lista de 3 asistencias
+
+---
+
 ### 2026-05-01 — Sesión 30 (Upload desde la tab Vídeos del partido)
 
 **Objetivo**: añadir acceso directo al upload desde la tab Vídeos del detalle de partido, con redirección automática al completar.
