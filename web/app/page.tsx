@@ -56,32 +56,32 @@ function tdLinks(clubId: number): QuickLink[] {
       icon: Users,
       label: "Equipos",
       description: "Gestiona los equipos de tu club",
-      color: "text-blue-600",
-      bg: "bg-blue-50 hover:bg-blue-100",
+      color: "text-blue-600 dark:text-blue-400",
+      bg: "bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50",
     },
     {
       href: `/clubs/${clubId}/seasons`,
       icon: CalendarDays,
       label: "Temporadas",
       description: "Administra las temporadas activas",
-      color: "text-amber-600",
-      bg: "bg-amber-50 hover:bg-amber-100",
+      color: "text-amber-600 dark:text-amber-400",
+      bg: "bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50",
     },
     {
       href: `/players`,
       icon: ClipboardList,
       label: "Jugadores",
       description: "Plantilla de jugadores del club",
-      color: "text-green-600",
-      bg: "bg-green-50 hover:bg-green-100",
+      color: "text-green-600 dark:text-green-400",
+      bg: "bg-green-50 dark:bg-green-950/40 hover:bg-green-100 dark:hover:bg-green-900/50",
     },
     {
       href: `/clubs/${clubId}/catalog`,
       icon: LayoutGrid,
       label: "Catálogo",
       description: "Jugadas y ejercicios compartidos",
-      color: "text-purple-600",
-      bg: "bg-purple-50 hover:bg-purple-100",
+      color: "text-purple-600 dark:text-purple-400",
+      bg: "bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/50",
     },
   ];
 }
@@ -95,8 +95,8 @@ function coachLinks(clubId: number, teamId: number | null): QuickLink[] {
             icon: Users,
             label: "Mi Equipo",
             description: "Plantilla y gestión del equipo",
-            color: "text-blue-600",
-            bg: "bg-blue-50 hover:bg-blue-100",
+            color: "text-blue-600 dark:text-blue-400",
+            bg: "bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50",
           },
         ]
       : []),
@@ -105,24 +105,24 @@ function coachLinks(clubId: number, teamId: number | null): QuickLink[] {
       icon: LayoutGrid,
       label: "Catálogo del club",
       description: "Jugadas y ejercicios compartidos",
-      color: "text-purple-600",
-      bg: "bg-purple-50 hover:bg-purple-100",
+      color: "text-purple-600 dark:text-purple-400",
+      bg: "bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/50",
     },
     {
       href: "/drills",
       icon: BookOpen,
       label: "Mi Biblioteca",
       description: "Tus jugadas y ejercicios personales",
-      color: "text-indigo-600",
-      bg: "bg-indigo-50 hover:bg-indigo-100",
+      color: "text-indigo-600 dark:text-indigo-400",
+      bg: "bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50",
     },
     {
       href: "/upload",
       icon: Upload,
       label: "Subir vídeo",
       description: "Analiza un partido automáticamente",
-      color: "text-rose-600",
-      bg: "bg-rose-50 hover:bg-rose-100",
+      color: "text-rose-600 dark:text-rose-400",
+      bg: "bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50",
     },
   ];
 }
@@ -134,16 +134,16 @@ function soloLinks(): QuickLink[] {
       icon: BookOpen,
       label: "Mi Biblioteca",
       description: "Crea y organiza jugadas y ejercicios",
-      color: "text-purple-600",
-      bg: "bg-purple-50 hover:bg-purple-100",
+      color: "text-purple-600 dark:text-purple-400",
+      bg: "bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/50",
     },
     {
       href: "/upload",
       icon: Upload,
       label: "Subir vídeo",
       description: "Analiza un partido y genera clips",
-      color: "text-blue-600",
-      bg: "bg-blue-50 hover:bg-blue-100",
+      color: "text-blue-600 dark:text-blue-400",
+      bg: "bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50",
     },
   ];
 }
@@ -484,15 +484,15 @@ export default function DashboardPage() {
           <div className="space-y-2">
             {/* Alerta: sin temporada activa */}
             {activeSeason === null && (
-              <Alert className="border-amber-200 bg-amber-50">
+              <Alert className="border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40">
                 <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
                 <AlertDescription className="flex items-center justify-between gap-3">
-                  <span className="text-amber-800 text-sm">
+                  <span className="text-amber-800 dark:text-amber-200 text-sm">
                     No hay ninguna temporada activa. Sin temporada activa no se pueden registrar partidos ni entrenamientos.
                   </span>
                   <a
                     href={clubId ? `/clubs/${clubId}/seasons` : "#"}
-                    className="shrink-0 text-xs font-medium text-amber-700 underline underline-offset-2 hover:text-amber-900"
+                    className="shrink-0 text-xs font-medium text-amber-700 dark:text-amber-300 underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-100"
                   >
                     Gestionar
                   </a>
@@ -503,10 +503,10 @@ export default function DashboardPage() {
             {nextMatch && (() => {
               const daysUntil = Math.ceil((new Date(nextMatch.date).getTime() - Date.now()) / 86400000);
               return daysUntil >= 0 && daysUntil <= 7 ? (
-                <Alert className="border-blue-200 bg-blue-50">
+                <Alert className="border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40">
                   <Info className="h-4 w-4 shrink-0 text-blue-600" />
                   <AlertDescription className="flex items-center justify-between gap-3">
-                    <span className="text-blue-800 text-sm">
+                    <span className="text-blue-800 dark:text-blue-200 text-sm">
                       {daysUntil === 0
                         ? `Partido hoy vs. ${nextMatch.opponent_name} (${nextMatch.teamName})`
                         : daysUntil === 1
@@ -515,7 +515,7 @@ export default function DashboardPage() {
                     </span>
                     <a
                       href={`/teams/${nextMatch.teamId}/matches/${nextMatch.id}`}
-                      className="shrink-0 text-xs font-medium text-blue-700 underline underline-offset-2 hover:text-blue-900"
+                      className="shrink-0 text-xs font-medium text-blue-700 dark:text-blue-300 underline underline-offset-2 hover:text-blue-900 dark:hover:text-blue-100"
                     >
                       Ver partido
                     </a>
@@ -527,7 +527,7 @@ export default function DashboardPage() {
         )}
 
                 {!activeProfile && profiles.length === 0 && (
-          <Alert className="border-blue-200 bg-blue-50 text-blue-800">
+          <Alert className="border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-200">
             <Info className="h-4 w-4 shrink-0 text-blue-500" />
             <AlertDescription>
               Tu cuenta está activa. Cuando un club te invite, tus perfiles
@@ -906,7 +906,7 @@ export default function DashboardPage() {
                                     <span className="truncate max-w-[60%]">{p.name}</span>
                                     <span className={cn(
                                       "font-medium shrink-0",
-                                      p.pct >= 80 ? "text-green-600" : p.pct >= 60 ? "text-amber-600" : "text-destructive",
+                                      p.pct >= 80 ? "text-green-600 dark:text-green-400" : p.pct >= 60 ? "text-amber-600 dark:text-amber-400" : "text-destructive",
                                     )}>
                                       {p.pct}%
                                     </span>
@@ -1390,7 +1390,7 @@ function WeekStrip({
                       "block w-full rounded px-1 py-0.5 text-[9px] font-medium leading-tight truncate transition-opacity hover:opacity-80",
                       ev.type === "match"
                         ? "bg-primary/15 text-primary"
-                        : "bg-amber-100 text-amber-800",
+                        : "bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200",
                     )}
                   >
                     {ev.time}

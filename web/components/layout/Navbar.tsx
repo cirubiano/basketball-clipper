@@ -1,84 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { Film, LogOut, Clock, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Film, LogOut, Search } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { ProfileSelector } from "@/components/layout/ProfileSelector";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
-import { cn } from "@/lib/utils";
-
-interface NavLink {
-  href: string;
-  label: string;
-  soon?: boolean;
-}
-
-function buildNavLinks(
-  role: string | undefined,
-  clubId: number | undefined,
-  teamId: number | null | undefined,
-): { main: NavLink[]; personal: NavLink[] } {
-  if (role === "technical_director" && clubId) {
-    return {
-      main: [
-        { href: "/", label: "Inicio" },
-        { href: `/clubs/${clubId}/teams`, label: "Equipos" },
-        { href: `/clubs/${clubId}/seasons`, label: "Temporadas" },
-        { href: `/players`, label: "Jugadores" },
-        { href: `/clubs/${clubId}/positions`, label: "Posiciones" },
-        { href: `/clubs/${clubId}/members`, label: "Entrenadores" },
-        { href: `/clubs/${clubId}/catalog`, label: "Catálogo" },
-      ],
-      personal: [
-        { href: "/drills", label: "Mi Biblioteca" },
-      ],
-    };
-  }
-
-  const personal: NavLink[] = [
-    { href: "/drills", label: "Mi Biblioteca" },
-    { href: "/videos", label: "Vídeos" },
-  ];
-
-  if (!role || !clubId) {
-    return { main: [{ href: "/", label: "Inicio" }], personal };
-  }
-
-  return {
-    main: [
-      { href: "/", label: "Inicio" },
-      ...(teamId ? [{ href: `/teams/${teamId}/roster`, label: "Mi Equipo" }] : []),
-      ...(teamId ? [{ href: `/teams/${teamId}/playbook`, label: "Playbook" }] : []),
-      ...(teamId ? [{ href: `/teams/${teamId}/matches`, label: "Partidos" }] : []),
-      ...(teamId ? [{ href: `/teams/${teamId}/trainings`, label: "Entrenamientos" }] : []),
-      { href: `/clubs/${clubId}/catalog`, label: "Catálogo" },
-    ],
-    personal,
-  };
-}
 
 export function Navbar() {
-  const pathname = usePathname();
   const router = useRouter();
-  const { user, logout, activeProfile } = useAuth();
+  const { user, logout } = useAuth();
 
   function handleLogout() {
     logout();
     router.push("/login");
   }
-
-  const role = activeProfile?.role;
-
-  const { main, personal } = buildNavLinks(
-    role,
-    activeProfile?.club_id ?? undefined,
-    activeProfile?.team_id,
-  );
-
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname.startsWith(href);
 
   return (
     <header className="sticky top-0 z-[100] w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -89,44 +26,7 @@ export function Navbar() {
           <span className="hidden sm:inline">Basketball Clipper</span>
         </Link>
 
-        <nav className="flex items-center gap-0.5 flex-1 overflow-x-auto scrollbar-none">
-          {main.map(({ href, label, soon }) => (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                "relative whitespace-nowrap px-3 py-1.5 text-sm rounded-md transition-colors",
-                isActive(href)
-                  ? "bg-accent text-accent-foreground font-medium"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
-              )}
-            >
-              {label}
-              {soon && (
-                <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary/10">
-                  <Clock className="h-2 w-2 text-primary" />
-                </span>
-              )}
-            </Link>
-          ))}
-
-          <div className="mx-2 h-4 w-px bg-border shrink-0" />
-
-          {personal.map(({ href, label }) => (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                "whitespace-nowrap px-3 py-1.5 text-sm rounded-md transition-colors",
-                isActive(href)
-                  ? "bg-accent text-accent-foreground font-medium"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
-              )}
-            >
-              {label}
-            </Link>
-          ))}
-        </nav>
+        <div className="flex-1" />
 
         <div className="flex items-center gap-2 shrink-0">
           <button

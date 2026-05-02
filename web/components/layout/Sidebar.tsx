@@ -11,6 +11,7 @@ import { usePathname } from "next/navigation";
 import {
   Home, BookOpen, Users, LayoutGrid, Trophy, Dumbbell,
   CalendarDays, ClipboardList, ChevronLeft, ChevronRight,
+  Tag, UserCheck, BookMarked, Video,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -29,27 +30,34 @@ function buildItems(
 ): SidebarItem[] {
   if (role === "technical_director" && clubId) {
     return [
-      { href: "/",                            label: "Inicio",       icon: <Home         className="h-4 w-4 shrink-0" /> },
-      { href: `/clubs/${clubId}/teams`,       label: "Equipos",      icon: <Users        className="h-4 w-4 shrink-0" /> },
-      { href: "/players",                     label: "Jugadores",    icon: <ClipboardList className="h-4 w-4 shrink-0" /> },
-      { href: `/clubs/${clubId}/catalog`,     label: "Catálogo",     icon: <LayoutGrid   className="h-4 w-4 shrink-0" /> },
-      { href: "/drills",                      label: "Mi Biblioteca", icon: <BookOpen    className="h-4 w-4 shrink-0" /> },
+      { href: "/",                          label: "Inicio",        icon: <Home          className="h-4 w-4 shrink-0" /> },
+      { href: `/clubs/${clubId}/teams`,     label: "Equipos",       icon: <Users         className="h-4 w-4 shrink-0" /> },
+      { href: `/clubs/${clubId}/seasons`,   label: "Temporadas",    icon: <CalendarDays  className="h-4 w-4 shrink-0" /> },
+      { href: "/players",                   label: "Jugadores",     icon: <ClipboardList className="h-4 w-4 shrink-0" /> },
+      { href: `/clubs/${clubId}/positions`, label: "Posiciones",    icon: <Tag           className="h-4 w-4 shrink-0" /> },
+      { href: `/clubs/${clubId}/members`,   label: "Entrenadores",  icon: <UserCheck     className="h-4 w-4 shrink-0" /> },
+      { href: `/clubs/${clubId}/catalog`,   label: "Catálogo",      icon: <LayoutGrid    className="h-4 w-4 shrink-0" /> },
+      { href: "/drills",                    label: "Mi Biblioteca", icon: <BookOpen      className="h-4 w-4 shrink-0" /> },
     ];
   }
 
   if (teamId) {
     return [
-      { href: "/",                             label: "Inicio",         icon: <Home      className="h-4 w-4 shrink-0" /> },
-      { href: `/teams/${teamId}/matches`,      label: "Partidos",       icon: <Trophy    className="h-4 w-4 shrink-0" /> },
-      { href: `/teams/${teamId}/trainings`,    label: "Entrenamientos", icon: <Dumbbell  className="h-4 w-4 shrink-0" /> },
-      { href: `/teams/${teamId}/roster`,       label: "Plantilla",      icon: <CalendarDays className="h-4 w-4 shrink-0" /> },
-      { href: "/drills",                       label: "Mi Biblioteca",  icon: <BookOpen  className="h-4 w-4 shrink-0" /> },
+      { href: "/",                           label: "Inicio",         icon: <Home         className="h-4 w-4 shrink-0" /> },
+      { href: `/teams/${teamId}/matches`,    label: "Partidos",       icon: <Trophy       className="h-4 w-4 shrink-0" /> },
+      { href: `/teams/${teamId}/trainings`,  label: "Entrenamientos", icon: <Dumbbell     className="h-4 w-4 shrink-0" /> },
+      { href: `/teams/${teamId}/roster`,     label: "Plantilla",      icon: <CalendarDays className="h-4 w-4 shrink-0" /> },
+      { href: `/teams/${teamId}/playbook`,   label: "Playbook",       icon: <BookMarked   className="h-4 w-4 shrink-0" /> },
+      ...(clubId ? [{ href: `/clubs/${clubId}/catalog`, label: "Catálogo", icon: <LayoutGrid className="h-4 w-4 shrink-0" /> }] : []),
+      { href: "/drills",                     label: "Mi Biblioteca",  icon: <BookOpen     className="h-4 w-4 shrink-0" /> },
+      { href: "/videos",                     label: "Vídeos",         icon: <Video        className="h-4 w-4 shrink-0" /> },
     ];
   }
 
   return [
-    { href: "/",       label: "Inicio",        icon: <Home     className="h-4 w-4 shrink-0" /> },
-    { href: "/drills", label: "Mi Biblioteca", icon: <BookOpen className="h-4 w-4 shrink-0" /> },
+    { href: "/",        label: "Inicio",        icon: <Home     className="h-4 w-4 shrink-0" /> },
+    { href: "/drills",  label: "Mi Biblioteca", icon: <BookOpen className="h-4 w-4 shrink-0" /> },
+    { href: "/videos",  label: "Vídeos",        icon: <Video    className="h-4 w-4 shrink-0" /> },
   ];
 }
 
