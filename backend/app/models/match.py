@@ -125,6 +125,7 @@ class MatchStat(Base):
     steals: Mapped[int | None] = mapped_column(Integer)
     turnovers: Mapped[int | None] = mapped_column(Integer)
     fouls: Mapped[int | None] = mapped_column(Integer)
+    blocks: Mapped[int | None] = mapped_column(Integer)
 
     match: Mapped["Match"] = relationship("Match", back_populates="match_stats")
     player: Mapped["Player"] = relationship("Player", lazy="select")  # noqa: F821

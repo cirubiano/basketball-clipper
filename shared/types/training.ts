@@ -7,14 +7,36 @@ export const ABSENCE_REASON_LABELS: Record<AbsenceReason, string> = {
   other: "Otro",
 };
 
+export interface TrainingDrillGroupPlayer {
+  id: number;
+  first_name: string;
+  last_name: string;
+}
+
+export interface TrainingDrillGroup {
+  id: number;
+  training_drill_id: number;
+  group_number: number;
+  players: TrainingDrillGroupPlayer[];
+}
+
+export interface TrainingDrillGroupUpsert {
+  groups: Array<{
+    group_number: number;
+    player_ids: number[];
+  }>;
+}
+
 export interface TrainingDrill {
   id: number;
   training_id: number;
   drill_id: number;
   position: number;
   notes: string | null;
+  duration_minutes: number | null;
   drill_title: string | null;
   drill_type: string | null;
+  groups: TrainingDrillGroup[];
 }
 
 export interface TrainingAttendance {
@@ -59,6 +81,12 @@ export interface TrainingUpdate {
 export interface TrainingDrillAdd {
   drill_id: number;
   notes?: string | null;
+  duration_minutes?: number | null;
+}
+
+export interface TrainingDrillUpdate {
+  duration_minutes?: number | null;
+  notes?: string | null;
 }
 
 export interface TrainingDrillReorderItem {
@@ -73,3 +101,21 @@ export interface AttendanceUpdate {
   absence_reason?: AbsenceReason | null;
   notes?: string | null;
 }
+
+export interface TrainingBulkDrillItem {
+  drill_id: number;
+  duration_minutes?: number | null;
+}
+
+export interface TrainingBulkItem {
+  title: string;
+  date: string;
+  notes?: string | null;
+  drills: TrainingBulkDrillItem[];
+}
+
+export interface TrainingBulkCreate {
+  season_id: number;
+  trainings: TrainingBulkItem[];
+}
+

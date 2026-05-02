@@ -16,6 +16,7 @@
 | **D** | Editor de jugadas/ejercicios | ✅ Completado | Backend + shared + web (canvas + árbol + undo/redo) |
 | **E** | Catálogo del club + TeamPlaybook | ✅ Completado | Backend + shared + web |
 | **F** | Partidos, estadísticas, entrenamientos | ✅ Completado | Backend + shared + web; state machine de partido (sesión 28) |
+| **G** | Experiencia del entrenador (mejoras) | ✅ Completado | Favoritos, duration+auto-scheduling, calendario home, informes, grupos, generador |
 
 ---
 
@@ -204,6 +205,33 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ---
 
+---
+
+## Fase G — Experiencia del entrenador (mejoras)
+
+**Objetivo**: mejorar la productividad del entrenador en el día a día, basado en análisis comparativo con aplicaciones del sector (mayo 2026).
+
+**Qué incluye:**
+- RF-500–503: Calendario de entrenamientos como home (frontend)
+- RF-510–513: Duración por ejercicio + auto-scheduling visual
+- RF-520–523: Grupos por ejercicio en entrenamientos
+- RF-530–534: Generador automático de planes de entrenamiento
+- RF-540–543: Informes de asistencia por equipo
+- RF-550–552: Favoritos en ejercicios y jugadas
+
+| Feature | Backend | Shared | Web | Estado |
+|---|---|---|---|---|
+| Favoritos (RF-550–552) | ✅ | ✅ | ✅ | ✅ Completado |
+| Duration + auto-scheduling (RF-510–513) | ✅ | ✅ | ✅ | ✅ Completado |
+| Calendario home (RF-500–503) | — | — | ✅ | ✅ Completado |
+| Informes de asistencia (RF-540–543) | — | — | ✅ | ✅ Completado |
+| Grupos por ejercicio (RF-520–523) | ✅ | ✅ | ✅ | ✅ Completado |
+| Generador automático (RF-530–534) | ✅ | ✅ | ✅ | ✅ Completado |
+
+**Estado**: ✅ Completado — sesión 34
+
+---
+
 ## Detalle técnico — módulos construidos
 
 ### Backend (`backend/`)
@@ -274,6 +302,58 @@ personal, el catálogo del club y los playbooks de los equipos.
 ---
 
 ## Historial de sesiones
+
+### 2026-05-02 — Sesión 36 (Prueba E2E completa Fases A–G — bugs y resultados)
+
+**Objetivo**: prueba E2E de extremo a extremo de toda la plataforma (Fases A–G) con el perfil de DT (`admin@example.com`) y el perfil de HeadCoach (Infantil A). Cobertura de flujos: login → gestión de club → jugadores → editor de ejercicios/jugadas → catálogo → playbook → partidos → entrenamientos.
+
+**Bugs encontrados y corregidos:**
+
+**BUG-1 — `IntegrityError: duplicate key value violates unique constraint "uq_roster_player_team_season"` al añadir Alex Navarro a la plantilla**
+- **Causa**: la sesión anterior había hecho un INSERT del jugador antes de crashear (null bytes en matches.py causaron reinicio de uvicorn). La entrada quedó archivada pero el UNIQUE constraint cubre todas las entradas independientemente de `archived_at`.
+- **`backend/app/routers/players.py`** (`add_to_roster`): widened la query de comprobación de duplicados para incluir entradas archivadas — `select(RosterEntry).where(...sin filtro archived_at...)`. Devuelve HTTP 409 con mensajes distintos: "Player is already in this team's roster" (activo) vs. "Player was previously in this roster and cannot be re-added to the same season" (archivado).
+
+**BUG-2 — `[object Object]` mostrado en formulario de creación de partido**
+- **Causa**: FastAPI devuelve errores 422 con `detail` como array `[{loc: [...], msg: "...", type: "..."}]`. El constructor de `ApiError` hacía `String(rawDetail)` sobre el array, produciendo `"[object Object]"`.
+- **`shared/api/client.ts`** (`ApiError` constructor): detecta si `rawDetail` es un array → mapea cada elemento a `"loc: msg"` filtrando `"body"` del `loc` → une con `"; "`. Las cadenas simples siguen funcionando igual. Fix aplica a todos los errores 422 de validación Pydantic en toda la plataforma.
+
+**Resultados de la prueba E2E — todo ✅:**
+- **Login y selector de perfil**: login → selector → perfil DT → switch a perfil HeadCoach. OK.
+- **Gestión de club**: temporadas, equipos. Crear, activar, navegar. OK.
+- **Jugadores y plantilla**: lista de jugadores, crear, añadir a plantilla, gestión de dorsales. OK tras BUG-1.
+- **Editor de ejercicios/jugadas**: canvas interactivo, drag-and-drop de elementos, árbol de secuencias, Ctrl+Z, auto-save. OK.
+- **Catálogo del club**: publicar drill al catálogo, copiar al catálogo. OK.
+- **Playbook del equipo**: añadir jugada, ver canvas en dialog de solo lectura. OK (estado vacío correcto: el ejercicio E2E Test es tipo Ejercicio, no Jugada — solo jugadas van al playbook).
+- **Partidos**: crear partido (con fix de [object Object]), iniciar, añadir stats, finalizar. OK tras BUG-2.
+- **Entrenamientos**: crear entrenamiento, añadir ejercicio desde "Mi biblioteca", marcar asistencia en 3 estados (Presente/Retraso/Ausente+Lesión), guardar. OK.
+
+**Verificaciones**: `py_compile backend/app/routers/players.py` ✅, ESLint 0 errores ✔, TSC 0 errores ✔
+
+---
+
+### 2026-05-02 — Sesión 35 (Prueba E2E de Fase G + fix generador de planes)
+
+**Objetivo**: validar con el perfil de entrenador (Coach / Infantil A) que todas las features de Fase G funcionan correctamente en el navegador.
+
+**Corrección de bug detectado durante las pruebas:**
+
+`web/app/teams/[teamId]/trainings/generate/page.tsx` — función `generateSessions`:
+- **Bug**: el algoritmo iteraba `w = 0..weeks-1` y saltaba los slots con `daysOffset < 0`. Si el día de inicio caía después de los días seleccionados en la misma "semana 0" (ej: inicio en sábado, días L+X seleccionados), toda la semana 0 se saltaba y se generaban `weeks-1` semanas en lugar de `weeks`.
+- **Síntoma**: paso 1 mostraba "8 sesiones" pero paso 3 generaba solo 6 (con inicio en sábado + L+X).
+- **Fix**: para cada `dow` seleccionado, calcular el primer día en o después de `startDate` con `(dow - startDow + 7) % 7`, luego añadir `w * 7` para las semanas siguientes. Garantiza exactamente `days.length * weeks` sesiones siempre.
+
+**Resultados de la prueba E2E — todo ✅:**
+- Dashboard: calendario mes/semana funcionando, training dot en May 5 visible
+- Training detail: duración inline (+ duración → Enter → tab muestra "20 min"), grupos modal (GRUPO 1 con jugadores, añadir GRUPO 2)
+- Asistencia: 3 estados (Presente/Retraso/Ausente), motivo retraso opcional, motivo ausencia obligatorio (select Lesión/Personal/Sanción/Otro), save → toast "Asistencia guardada."
+- Lista entrenamientos: "X/Y asistentes" en cada fila, Historial de asistencia tab con % coloreados
+- Informe de asistencia: vista Por jugador y Entrenamientos, Exportar PDF visible, filtro de fechas
+- Generador de planes: 3 pasos (Configuración → Ejercicios → Vista previa), Seleccionar todos, 8 sesiones confirmadas tras el fix, "8 entrenamientos creados." toast
+- Favoritos: corazón → rojo, tab Favoritos filtra correctamente
+
+**Verificaciones**: ESLint 0 errores ✔ (generate/page.tsx)
+
+---
 
 ### 2026-05-01 — Sesión 33 (Auditoría completa del repositorio antes de entrega a entrenadores)
 

@@ -22,6 +22,7 @@ from app.models.drill import Drill, DrillType, Tag, _default_root_sequence
 from app.models.user import User
 from app.schemas.drill import (
     DrillCreate,
+    DrillFavoriteUpdate,
     DrillResponse,
     DrillSummaryResponse,
     DrillUpdate,
@@ -259,6 +260,21 @@ async def archive_drill(
     drill.archived_at = datetime.now(timezone.utc)
     await db.commit()
     return Response(status_code=204)
+
+
+@router.patch("/{drill_id}/favorite", response_model=DrillResponse)
+async def set_favorite(
+    drill_id: int,
+    body: DrillFavoriteUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> DrillResponse:
+    """RF-550 — marca o desmarca un drill como favorito personal."""
+    drill = await _get_drill_or_404(drill_id, db)
+    await _require_author(drill, current_user)
+    drill.is_favorite = body.is_favorite
+    await db.commit()
+    return await _get_drill_or_404(drill_id, db)
 
 
 @router.post("/{drill_id}/clone", response_model=DrillResponse, status_code=201)

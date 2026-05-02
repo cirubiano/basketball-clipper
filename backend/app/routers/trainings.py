@@ -7,7 +7,8 @@ GET    /{club_id}/teams/{team_id}/trainings/{training_id}               → deta
 PATCH  /{club_id}/teams/{team_id}/trainings/{training_id}               → actualizar
 DELETE /{club_id}/teams/{team_id}/trainings/{training_id}               → archivar
 
-POST   /{club_id}/teams/{team_id}/trainings/{training_id}/drills        → añadir ejercicio
+POST   /{club_id}/teams/{team_id}/trainings/{training_id}/drills              → añadir ejercicio
+PATCH  /{club_id}/teams/{team_id}/trainings/{training_id}/drills/{did}  → actualizar ejercicio
 DELETE /{club_id}/teams/{team_id}/trainings/{training_id}/drills/{did}  → eliminar ejercicio
 
 POST   /{club_id}/teams/{team_id}/trainings/{training_id}/attendance    → registrar asistencia
@@ -27,16 +28,21 @@ from app.models.drill import Drill
 from app.models.player import Player
 from app.models.profile import Profile, UserRole
 from app.models.team import Team
-from app.models.training import AbsenceReason, Training, TrainingAttendance, TrainingDrill
+from app.models.training import AbsenceReason, Training, TrainingAttendance, TrainingDrill, TrainingDrillGroup
 from app.models.user import User
 from app.routers.clubs import _get_club_or_404
 from app.schemas.training import (
     AttendanceUpdate,
     TrainingAttendanceResponse,
+    TrainingBulkCreate,
     TrainingCreate,
     TrainingDrillAdd,
+    TrainingDrillGroupResponse,
+    TrainingDrillGroupPlayerResponse,
+    TrainingDrillGroupUpsert,
     TrainingDrillReorderItem,
     TrainingDrillResponse,
+    TrainingDrillUpdate,
     TrainingResponse,
     TrainingUpdate,
 )
@@ -85,6 +91,7 @@ async def _get_training_or_404(training_id: int, team_id: int, db: AsyncSession)
         select(Training)
         .options(
             selectinload(Training.training_drills).selectinload(TrainingDrill.drill),
+            selectinload(Training.training_drills).selectinload(TrainingDrill.groups).selectinload(TrainingDrillGroup.players),
             selectinload(Training.training_attendances).selectinload(TrainingAttendance.player),
         )
         .where(
@@ -107,8 +114,25 @@ def _serialize_training(training: Training) -> TrainingResponse:
             drill_id=td.drill_id,
             position=td.position,
             notes=td.notes,
+            duration_minutes=td.duration_minutes,
             drill_title=td.drill.name if td.drill else None,
             drill_type=td.drill.type.value if td.drill and td.drill.type else None,
+            groups=[
+                TrainingDrillGroupResponse(
+                    id=g.id,
+                    training_drill_id=g.training_drill_id,
+                    group_number=g.group_number,
+                    players=[
+                        TrainingDrillGroupPlayerResponse(
+                            id=p.id,
+                            first_name=p.first_name,
+                            last_name=p.last_name,
+                        )
+                        for p in g.players
+                    ],
+                )
+                for g in sorted(td.groups, key=lambda x: x.group_number)
+            ],
         )
         for td in sorted(training.training_drills, key=lambda x: x.position)
     ]
@@ -159,6 +183,7 @@ async def list_trainings(
         select(Training)
         .options(
             selectinload(Training.training_drills).selectinload(TrainingDrill.drill),
+            selectinload(Training.training_drills).selectinload(TrainingDrill.groups).selectinload(TrainingDrillGroup.players),
             selectinload(Training.training_attendances).selectinload(TrainingAttendance.player),
         )
         .where(Training.team_id == team_id, Training.archived_at.is_(None))
@@ -196,6 +221,54 @@ async def create_training(
     await db.flush()
     await db.commit()
     return _serialize_training(await _get_training_or_404(training.id, team_id, db))
+
+
+
+@router.post("/{club_id}/teams/{team_id}/trainings/bulk", response_model=list[TrainingResponse], status_code=201)
+async def bulk_create_trainings(
+    club_id: int,
+    team_id: int,
+    body: TrainingBulkCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[TrainingResponse]:
+    """RF-530 — crea múltiples entrenamientos en una sola transacción (confirmación del generador)."""
+    await _get_club_or_404(club_id, db)
+    await _get_team_or_404(club_id, team_id, db)
+    profile = await _require_team_member(club_id, team_id, current_user, db)
+    _require_coach_or_td(profile, current_user)
+
+    created_ids: list[int] = []
+    for item in body.trainings:
+        training = Training(
+            team_id=team_id,
+            season_id=body.season_id,
+            date=item.date,
+            title=item.title,
+            notes=item.notes,
+            created_by=current_user.id,
+        )
+        db.add(training)
+        await db.flush()
+
+        for pos, drill_item in enumerate(item.drills):
+            drill = await db.get(Drill, drill_item.drill_id)
+            if drill is None or drill.archived_at is not None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Ejercicio {drill_item.drill_id} no encontrado",
+                )
+            td = TrainingDrill(
+                training_id=training.id,
+                drill_id=drill_item.drill_id,
+                position=pos,
+                duration_minutes=drill_item.duration_minutes,
+            )
+            db.add(td)
+        created_ids.append(training.id)
+
+    await db.commit()
+    return [_serialize_training(await _get_training_or_404(tid, team_id, db)) for tid in created_ids]
 
 
 @router.get("/{club_id}/teams/{team_id}/trainings/{training_id}", response_model=TrainingResponse)
@@ -298,6 +371,7 @@ async def add_training_drill(
         drill_id=body.drill_id,
         position=position,
         notes=body.notes,
+        duration_minutes=body.duration_minutes,
     )
     db.add(td)
     await db.flush()
@@ -310,9 +384,95 @@ async def add_training_drill(
         drill_id=td.drill_id,
         position=td.position,
         notes=td.notes,
+        duration_minutes=td.duration_minutes,
         drill_title=drill.name,
         drill_type=drill.type.value if drill.type else None,
     )
+
+
+
+@router.put(
+    "/{club_id}/teams/{team_id}/trainings/{training_id}/drills/{td_id}/groups",
+    response_model=list[TrainingDrillGroupResponse],
+)
+async def upsert_drill_groups(
+    club_id: int,
+    team_id: int,
+    training_id: int,
+    td_id: int,
+    body: TrainingDrillGroupUpsert,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[TrainingDrillGroupResponse]:
+    """RF-520 — reemplaza todos los grupos del ejercicio (máx. 4 grupos, 1–4 jugadores por grupo)."""
+    await _get_club_or_404(club_id, db)
+    await _get_team_or_404(club_id, team_id, db)
+    profile = await _require_team_member(club_id, team_id, current_user, db)
+    _require_coach_or_td(profile, current_user)
+
+    td = await db.scalar(
+        select(TrainingDrill).where(
+            TrainingDrill.id == td_id,
+            TrainingDrill.training_id == training_id,
+        )
+    )
+    if td is None:
+        raise HTTPException(status_code=404, detail="Training drill not found")
+
+    if len(body.groups) > 4:
+        raise HTTPException(status_code=422, detail="Máximo 4 grupos por ejercicio")
+
+    # Delete existing groups for this td
+    existing = await db.execute(
+        select(TrainingDrillGroup).where(TrainingDrillGroup.training_drill_id == td_id)
+    )
+    for g in existing.scalars().all():
+        await db.delete(g)
+    await db.flush()
+
+    # Create new groups
+    from app.models.player import Player  # local import to avoid circular
+    new_groups: list[TrainingDrillGroup] = []
+    for item in body.groups:
+        if not 1 <= item.group_number <= 4:
+            raise HTTPException(status_code=422, detail=f"group_number debe estar entre 1 y 4")
+        players = []
+        for pid in item.player_ids:
+            player = await db.get(Player, pid)
+            if player is None or player.archived_at is not None:
+                raise HTTPException(status_code=404, detail=f"Jugador {pid} no encontrado")
+            players.append(player)
+        group = TrainingDrillGroup(
+            training_drill_id=td_id,
+            group_number=item.group_number,
+        )
+        group.players = players
+        db.add(group)
+        new_groups.append(group)
+
+    await db.flush()
+    await db.commit()
+
+    # Refresh to load player data
+    result_groups = []
+    for g in new_groups:
+        await db.refresh(g)
+        result_groups.append(
+            TrainingDrillGroupResponse(
+                id=g.id,
+                training_drill_id=g.training_drill_id,
+                group_number=g.group_number,
+                players=[
+                    TrainingDrillGroupPlayerResponse(
+                        id=p.id,
+                        first_name=p.first_name,
+                        last_name=p.last_name,
+                    )
+                    for p in g.players
+                ],
+            )
+        )
+    return sorted(result_groups, key=lambda x: x.group_number)
 
 
 @router.delete("/{club_id}/teams/{team_id}/trainings/{training_id}/drills/{td_id}", status_code=204)
@@ -356,6 +516,55 @@ async def remove_training_drill(
     await db.commit()
     return Response(status_code=204)
 
+
+
+@router.patch(
+    "/{club_id}/teams/{team_id}/trainings/{training_id}/drills/{td_id}",
+    response_model=TrainingDrillResponse,
+)
+async def update_training_drill(
+    club_id: int,
+    team_id: int,
+    training_id: int,
+    td_id: int,
+    body: TrainingDrillUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TrainingDrillResponse:
+    """RF-511 — actualiza duration_minutes y/o notes de un ejercicio del entrenamiento."""
+    await _get_club_or_404(club_id, db)
+    await _get_team_or_404(club_id, team_id, db)
+    profile = await _require_team_member(club_id, team_id, current_user, db)
+    _require_coach_or_td(profile, current_user)
+
+    td = await db.scalar(
+        select(TrainingDrill).where(
+            TrainingDrill.id == td_id,
+            TrainingDrill.training_id == training_id,
+        )
+    )
+    if td is None:
+        raise HTTPException(status_code=404, detail="Training drill not found")
+
+    data = body.model_dump(exclude_unset=True)
+    for key, value in data.items():
+        setattr(td, key, value)
+
+    await db.commit()
+    await db.refresh(td)
+
+    drill = await db.get(Drill, td.drill_id)
+    return TrainingDrillResponse(
+        id=td.id,
+        training_id=td.training_id,
+        drill_id=td.drill_id,
+        position=td.position,
+        notes=td.notes,
+        duration_minutes=td.duration_minutes,
+        drill_title=drill.name if drill else None,
+        drill_type=drill.type.value if drill and drill.type else None,
+        groups=[],
+    )
 
 @router.patch(
     "/{club_id}/teams/{team_id}/trainings/{training_id}/drills",

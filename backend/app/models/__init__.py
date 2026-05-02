@@ -18,7 +18,7 @@ from app.models.playbook import TeamPlaybookEntry
 from app.models.profile import Profile, UserRole
 from app.models.season import Season, SeasonStatus
 from app.models.team import Team
-from app.models.training import Training, TrainingAttendance, TrainingDrill
+from app.models.training import Training, TrainingAttendance, TrainingDrill, TrainingDrillGroup, training_drill_group_players
 from app.models.user import User
 from app.models.video import Video, VideoStatus
 
@@ -56,6 +56,8 @@ __all__ = [
     "Training",
     "TrainingAttendance",
     "TrainingDrill",
+    "TrainingDrillGroup",
+    "training_drill_group_players",
     "User",
     "Video",
     "VideoStatus",

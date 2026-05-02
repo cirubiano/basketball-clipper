@@ -486,12 +486,20 @@ backend/
 │   │   ├── video.py          # Multipart upload lifecycle + gestión de jobs
 │   │   ├── clips.py          # GET /clips, GET /clips/{id}, DELETE /clips/{id}
 │   │   ├── exercises.py      # Stub — no implementado aún
-│   │   └── ws.py             # WebSocket /ws/{video_id}
+│   │   ├── ws.py             # WebSocket /ws/{video_id}
+│   │   ├── players.py        # CRUD jugadores + CRUD plantilla (Fase C)
+│   │   ├── positions.py      # CRUD posiciones dinámicas del club (Fase C)
+│   │   ├── drills.py         # Tags + drills CRUD + clone + variantes (Fase D)
+│   │   ├── catalog.py        # Tags del club + catálogo CRUD (Fase E)
+│   │   ├── playbook.py       # Playbook del equipo (Fase E)
+│   │   ├── matches.py        # Partidos + convocatoria + vídeos + stats (Fase F)
+│   │   └── trainings.py      # Entrenamientos + ejercicios + asistencia (Fase F)
 │   ├── services/
 │   │   ├── detector.py       # YOLOv8 + OpenCV — detección de posesión (LAB + K-means)
 │   │   ├── cutter.py         # FFmpeg — corte de clips
 │   │   ├── storage.py        # S3/MinIO — upload/download/presigned URLs
-│   │   └── queue.py          # Celery tasks — orquestación del pipeline
+│   │   ├── queue.py          # Celery tasks — orquestación del pipeline
+│   │   └── catalog.py        # Lógica de negocio del catálogo: copias, freeze, ruptura de referencias
 │   ├── models/
 │   │   ├── __init__.py
 │   │   ├── user.py           # User (+ is_admin)
@@ -503,18 +511,25 @@ backend/
 │   │   ├── video.py          # Video + VideoStatus enum (+ team_id FK)
 │   │   ├── clip.py           # Clip
 │   │   ├── exercise.py       # Exercise (stub)
-│   │   ├── drill.py          # Drill, Tag, DrillType, CourtLayoutType, drill_tags M2M
-│   │   ├── club_tag.py       # ClubTag — tags del catálogo del club
-│   │   ├── catalog.py        # ClubCatalogEntry + catalog_entry_tags M2M
-│   │   └── playbook.py       # TeamPlaybookEntry
+│   │   ├── player.py         # Player + RosterEntry + PlayerPosition enum (Fase C)
+│   │   ├── club_position.py  # ClubPosition + player_positions M2M (Fase C)
+│   │   ├── drill.py          # Drill, Tag, DrillType, CourtLayoutType, drill_tags M2M (Fase D)
+│   │   ├── club_tag.py       # ClubTag — tags del catálogo del club (Fase E)
+│   │   ├── catalog.py        # ClubCatalogEntry + catalog_entry_tags M2M (Fase E)
+│   │   ├── playbook.py       # TeamPlaybookEntry (Fase E)
+│   │   ├── match.py          # Match + MatchPlayer + MatchStat + MatchVideo + enums (Fase F)
+│   │   └── training.py       # Training + TrainingDrill + TrainingAttendance + AbsenceReason (Fase F)
 │   └── schemas/
 │       ├── auth.py           # Login, Register, TokenResponse, UserResponse, SwitchProfileRequest
 │       ├── club.py           # Club, Season, Team, ClubMember, Profile schemas
 │       ├── video.py          # InitUpload, CompleteUpload, etc.
 │       ├── clip.py
-│       ├── drill.py          # Drill, Tag schemas
-│       ├── catalog.py        # ClubTag, CatalogEntry schemas
-│       └── playbook.py       # PlaybookEntry schemas
+│       ├── drill.py          # Drill, Tag schemas (Fase D)
+│       ├── catalog.py        # ClubTag, CatalogEntry schemas (Fase E)
+│       ├── playbook.py       # PlaybookEntry schemas (Fase E)
+│       ├── player.py         # Player, RosterEntry, ClubPosition schemas (Fase C)
+│       ├── match.py          # Match, MatchPlayer, MatchStat, MatchVideo schemas (Fase F)
+│       └── training.py       # Training, TrainingDrill, TrainingAttendance, AttendanceUpdate schemas (Fase F)
 ├── alembic/versions/
 │   ├── 0001_initial_schema.py
 │   ├── 0002_multipart_upload.py
@@ -523,8 +538,16 @@ backend/
 │   ├── 0005_phase_c_players.py
 │   ├── 0006_phase_d_drills.py
 │   ├── 0007_phase_e_catalog_playbook.py
-│   ├── ...
-│   └── 0010_dynamic_club_positions.py
+│   ├── 0008_add_player_phone.py
+│   ├── 1f6f880ded2f_phase_f_matches_trainings.py  # Fase F — nombre usa hash Alembic
+│   ├── 0009_match_scores_drill_unique.py
+│   ├── 0010_dynamic_club_positions.py
+│   ├── 0011_match_status_transitions.py
+│   ├── 0012_training_attendance_states.py
+│   ├── 0013_match_stat_blocks.py
+│   ├── 0014_phase_g_favorites.py
+│   ├── 0015_phase_g_training_duration.py
+│   └── 0016_phase_g_drill_groups.py
 ├── models/
 │   └── README.md             # Cómo usar modelos custom de YOLO
 ├── scripts/
@@ -552,23 +575,54 @@ backend/
 web/
 ├── app/
 │   ├── layout.tsx            # Layout raíz — incluye FloatingUploadWidget global
-│   ├── page.tsx              # Dashboard / landing
+│   ├── page.tsx              # Dashboard / landing (con secciones DT: equipos, asistencia, top performers)
 │   ├── select-profile/page.tsx  # Selector de perfil a pantalla completa (sin perfil activo)
-│   ├── upload/page.tsx       # Página de subida de vídeo
+│   ├── profile/page.tsx      # Página de perfil del usuario
+│   ├── upload/page.tsx       # Página de subida de vídeo (acepta ?returnTo= y ?opponent=)
 │   ├── videos/
 │   │   ├── page.tsx          # Lista de vídeos del usuario
 │   │   └── [id]/
 │   │       ├── page.tsx      # Detalle: progreso + clips generados
 │   │       └── clips/[clipId]/page.tsx
+│   ├── players/page.tsx      # Lista de jugadores del club (Fase C)
+│   ├── drills/
+│   │   ├── page.tsx          # Biblioteca personal — tabs drill/play (Fase D)
+│   │   └── [id]/edit/page.tsx  # Editor canvas + árbol de secuencias (Fase D)
+│   ├── clubs/[clubId]/
+│   │   ├── catalog/page.tsx  # Catálogo del club (Fase E)
+│   │   ├── members/page.tsx  # Gestión de miembros del club
+│   │   ├── positions/page.tsx  # Posiciones dinámicas del club (Fase C)
+│   │   ├── seasons/page.tsx  # Temporadas del club
+│   │   └── teams/page.tsx    # Equipos del club
+│   ├── teams/[teamId]/
+│   │   ├── roster/page.tsx   # Plantilla del equipo (Fase C)
+│   │   ├── playbook/page.tsx # Playbook del equipo (Fase E)
+│   │   ├── matches/
+│   │   │   ├── page.tsx      # Lista de partidos (Fase F)
+│   │   │   └── [matchId]/page.tsx  # Detalle: convocatoria, vídeos, stats (Fase F)
+│   │   └── trainings/
+│   │       ├── page.tsx      # Lista + historial de asistencia (Fase F)
+│   │       └── [trainingId]/page.tsx  # Detalle: ejercicios + asistencia 3 estados (Fase F)
 │   └── (auth)/
 │       ├── login/page.tsx
 │       └── register/page.tsx
 ├── components/
-│   ├── ui/                   # shadcn/ui
+│   ├── ui/                   # shadcn/ui: alert, alert-dialog, badge, button, card, dialog, input, label, progress, select, skeleton
 │   ├── layout/
 │   │   ├── Navbar.tsx
+│   │   ├── Breadcrumb.tsx
 │   │   ├── ProfileSelector.tsx   # Dropdown selector de perfil activo (RF-010)
 │   │   └── PageShell.tsx         # requireAuth + requireProfile (→ /select-profile)
+│   ├── drill-editor/
+│   │   ├── CourtBackground.tsx   # Cancha SVG FIBA
+│   │   ├── CourtCanvas.tsx       # Canvas interactivo: drag, drop, dibujo de líneas
+│   │   ├── ElementPalette.tsx    # Barra lateral de elementos arrastrables
+│   │   ├── ElementRenderer.tsx   # Renderiza cada SketchElement como SVG
+│   │   ├── PropertiesPanel.tsx   # Panel de propiedades del elemento seleccionado
+│   │   ├── SequenceTreePanel.tsx # Árbol de secuencias (RF-192)
+│   │   ├── DrillEditor.tsx       # Orquestador: tabs, Ctrl+Z/Y/S, auto-save
+│   │   ├── court-utils.ts        # Constantes FIBA y helpers de coordenadas
+│   │   └── tree-utils.ts         # Manipulación inmutable del árbol de SequenceNode
 │   └── video/
 │       ├── VideoUploader.tsx
 │       ├── FloatingUploadWidget.tsx
@@ -602,9 +656,23 @@ web/
 ```
 shared/
 ├── types/
-│   ├── video.ts, clip.ts, user.ts, auth.ts, club.ts, player.ts, drill.ts, index.ts
+│   ├── video.ts, clip.ts, user.ts, auth.ts, club.ts
+│   ├── player.ts         # Player, RosterEntry, PlayerPosition, POSITION_LABELS (Fase C)
+│   ├── drill.ts          # DrillType, CourtLayoutType, SketchElement, SequenceNode, Tag, Drill (Fase D)
+│   ├── catalog.ts        # ClubTag, CatalogEntry, PlaybookEntry (Fases E)
+│   ├── match.ts          # Match, MatchStatus, MatchPlayer, MatchStat, MatchVideo (Fase F)
+│   ├── training.ts       # Training, TrainingDrill, TrainingAttendance, AbsenceReason (Fase F)
+│   └── index.ts
 └── api/
-    ├── client.ts, auth.ts, videos.ts, videoUpload.ts, clips.ts, clubs.ts, players.ts, drills.ts, index.ts
+    ├── client.ts, auth.ts, videos.ts, videoUpload.ts, clips.ts, clubs.ts
+    ├── players.ts        # listPlayers, createPlayer, updatePlayer, archivePlayer, roster CRUD (Fase C)
+    ├── positions.ts      # listPositions, createPosition, updatePosition, archivePosition (Fase C)
+    ├── drills.ts         # Tags CRUD + drills CRUD + clone + variants (Fase D)
+    ├── catalog.ts        # Tags del club + catálogo CRUD (Fase E)
+    ├── playbook.ts       # listPlaybook, addToPlaybook, removeFromPlaybook (Fase E)
+    ├── matches.ts        # CRUD + convocatoria + vídeos + stats + startMatch/finishMatch/cancelMatch (Fase F)
+    ├── trainings.ts      # CRUD + ejercicios + asistencia (Fase F)
+    └── index.ts
 ```
 
 **Regla**: al añadir un endpoint nuevo, añadir su función en `shared/api/`
@@ -712,97 +780,4 @@ y sus tipos en `shared/types/`. Web y mobile nunca llaman al backend directament
 | GET | /clubs/{id}/catalog/tags | member | Listar tags del catálogo del club |
 | POST | /clubs/{id}/catalog/tags | tech_director | Crear tag del club |
 | PATCH | /clubs/{id}/catalog/tags/{tag_id} | tech_director | Actualizar tag del club |
-| DELETE | /clubs/{id}/catalog/tags/{tag_id} | tech_director | Archivar tag del club |
-| GET | /clubs/{id}/catalog | member | Listar entradas del catálogo |
-| POST | /clubs/{id}/catalog | member | Publicar drill al catálogo (RF-120) |
-| GET | /clubs/{id}/catalog/{entry_id} | member | Detalle de entrada del catálogo |
-| POST | /clubs/{id}/catalog/{entry_id}/update-copy | author | Actualizar copia con original (RF-122) |
-| POST | /clubs/{id}/catalog/{entry_id}/copy-to-library | member | Copiar a biblioteca personal (RF-150) |
-| PATCH | /clubs/{id}/catalog/{entry_id}/tags | author_or_td | Actualizar tags de la entrada |
-| DELETE | /clubs/{id}/catalog/{entry_id} | author_or_td | Retirar del catálogo (RF-123) |
-| GET | /clubs/{id}/teams/{tid}/playbook | team_member | Listar playbook del equipo (RF-167) |
-| POST | /clubs/{id}/teams/{tid}/playbook | team_member | Añadir drill al playbook (RF-160) |
-| DELETE | /clubs/{id}/teams/{tid}/playbook/{eid} | team_member | Quitar drill del playbook (RF-166) |
-| GET | /clubs/{id}/teams/{tid}/matches | team_member | Listar partidos (filtrable por season_id) |
-| POST | /clubs/{id}/teams/{tid}/matches | hc_or_td | Crear partido |
-| GET | /clubs/{id}/teams/{tid}/matches/{mid} | team_member | Detalle de partido (con convocatoria, vídeos, stats) |
-| PATCH | /clubs/{id}/teams/{tid}/matches/{mid} | hc_or_td | Actualizar partido |
-| DELETE | /clubs/{id}/teams/{tid}/matches/{mid} | hc_or_td | Archivar partido (RF-305) |
-| POST | /clubs/{id}/teams/{tid}/matches/{mid}/start | hc_or_td | Iniciar partido: scheduled → in_progress (solo si fecha ≤ now) |
-| POST | /clubs/{id}/teams/{tid}/matches/{mid}/finish | hc_or_td | Finalizar partido: in_progress → finished |
-| POST | /clubs/{id}/teams/{tid}/matches/{mid}/cancel | hc_or_td | Cancelar partido: scheduled\|in_progress → cancelled |
-| POST | /clubs/{id}/teams/{tid}/matches/{mid}/players | hc_or_td | Añadir jugador a convocatoria (RF-311) |
-| DELETE | /clubs/{id}/teams/{tid}/matches/{mid}/players/{pid} | hc_or_td | Retirar jugador de convocatoria |
-| POST | /clubs/{id}/teams/{tid}/matches/{mid}/videos | hc_or_td | Vincular vídeo al partido (RF-321) |
-| DELETE | /clubs/{id}/teams/{tid}/matches/{mid}/videos/{vid} | hc_or_td | Desvincular vídeo |
-| POST | /clubs/{id}/teams/{tid}/matches/{mid}/stats | hc_or_td | Crear/actualizar estadísticas de jugador (RF-331) |
-| GET | /clubs/{id}/teams/{tid}/trainings | team_member | Listar entrenamientos (filtrable por season_id) |
-| POST | /clubs/{id}/teams/{tid}/trainings | hc_or_td | Crear entrenamiento (RF-400) |
-| GET | /clubs/{id}/teams/{tid}/trainings/{trid} | team_member | Detalle de entrenamiento (con ejercicios + asistencia) |
-| PATCH | /clubs/{id}/teams/{tid}/trainings/{trid} | hc_or_td | Actualizar entrenamiento |
-| DELETE | /clubs/{id}/teams/{tid}/trainings/{trid} | hc_or_td | Archivar entrenamiento (RF-404) |
-| POST | /clubs/{id}/teams/{tid}/trainings/{trid}/drills | hc_or_td | Añadir ejercicio al entrenamiento (RF-410) |
-| PATCH | /clubs/{id}/teams/{tid}/trainings/{trid}/drills | hc_or_td | Reordenar ejercicios del entrenamiento (body: [{drill_id, position}]) |
-| DELETE | /clubs/{id}/teams/{tid}/trainings/{trid}/drills/{did} | hc_or_td | Eliminar ejercicio del entrenamiento |
-| POST | /clubs/{id}/teams/{tid}/trainings/{trid}/attendance | hc_or_td | Registrar asistencia de jugador — presente/retraso/ausente + motivo (RF-421) |
-
----
-
-## Roadmap de fases
-
-| Fase | Descripción | Estado |
-|---|---|---|
-| **A** | Estructura organizativa + auth multi-perfil | ✅ Completado |
-| **B** | Módulo de vídeo integrado en equipos | ✅ Completado |
-| **C** | Gestión de jugadores | ✅ Completado |
-| **D** | Editor de jugadas/ejercicios (sketch + árbol) | ✅ Completado |
-| **E** | Catálogo del club + TeamPlaybook | ✅ Completado |
-| **F** | Partidos, estadísticas, entrenamientos | ✅ Completado |
-
-Consulta `PROGRESS.md` para el detalle de cada fase y su estado.
-**No implementes funcionalidades de fases posteriores hasta que la fase activa esté sólida.**
-
----
-
-## Desarrollo local
-
-```bash
-# Todo el entorno
-docker-compose up
-# Levanta: FastAPI (8000), Celery worker, PostgreSQL (5432), Redis (6379), MinIO (9000/9001)
-
-# Solo backend
-cd backend && pip install -r requirements.txt
-uvicorn app.main:app --reload
-
-# Solo web
-cd web && npm install && npm run dev   # http://localhost:3000
-
-# Solo mobile
-cd mobile && npm install && npx expo start
-
-# Verificar entorno
-cd backend && python scripts/preflight.py
-
-# Migraciones
-cd backend && alembic revision --autogenerate -m "descripcion"
-cd backend && alembic upgrade head
-
-# Tests
-cd backend && pytest -v
-```
-
-**Nunca commitees archivos `.env`**
-
----
-
-## Lo que NO hacer
-
-- No pongas lógica de negocio en los routers — va en `services/`
-- No llames a la API directamente desde componentes — usa `shared/api/`
-- No uses `pages/` en Next.js — usa `app/` (App Router)
-- No hardcodees credenciales ni URLs
-- No modifiques tablas de BD a mano — siempre migraciones Alembic
-- No implementes fases posteriores hasta que la fase activa esté sólida
-- No uses el glosario en español en el código — usa los términos canónicos en inglés de `REQUIREMENTS.md` §1
-- No uses la ruta `/clips` en el frontend — la navegación es `/videos`
+| DELETE | /clubs/{id}/catalog/tags/{tag_id} | te

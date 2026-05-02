@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Dumbbell, Plus, Archive, ChevronRight } from "lucide-react";
+import { Dumbbell, Plus, Archive, ChevronRight, BarChart2, Wand2 } from "lucide-react";
 import Link from "next/link";
 import {
   listTrainings,
@@ -188,12 +188,28 @@ export default function TrainingsPage({
               {filterSeasonId !== "all" && <> · {seasonName(Number(filterSeasonId))}</>}
             </p>
           </div>
-          {isCoachOrTD && (
-            <Button onClick={openCreate} disabled={seasons.length === 0}>
-              <Plus className="h-4 w-4 mr-2" />
-              Nuevo entrenamiento
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/teams/${teamId}/trainings/report`}>
+                <BarChart2 className="h-4 w-4 mr-1.5" />
+                Informe
+              </Link>
             </Button>
-          )}
+            {isCoachOrTD && (
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/teams/${teamId}/trainings/generate`}>
+                  <Wand2 className="h-4 w-4 mr-1.5" />
+                  Generar plan
+                </Link>
+              </Button>
+            )}
+            {isCoachOrTD && (
+              <Button onClick={openCreate} disabled={seasons.length === 0}>
+                <Plus className="h-4 w-4 mr-2" />
+                Nuevo entrenamiento
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Season filter */}

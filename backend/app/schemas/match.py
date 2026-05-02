@@ -37,6 +37,7 @@ class MatchStatResponse(BaseModel):
     steals: int | None
     turnovers: int | None
     fouls: int | None
+    blocks: int | None = None
 
 
 class MatchResponse(BaseModel):
@@ -93,3 +94,4 @@ class MatchStatUpsert(BaseModel):
     steals: int | None = None
     turnovers: int | None = None
     fouls: int | None = None
+    blocks: int | None = None

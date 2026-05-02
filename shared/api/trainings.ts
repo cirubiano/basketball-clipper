@@ -3,10 +3,14 @@ import type {
   AttendanceUpdate,
   Training,
   TrainingAttendance,
+  TrainingBulkCreate,
   TrainingCreate,
   TrainingDrill,
   TrainingDrillAdd,
+  TrainingDrillGroup,
+  TrainingDrillGroupUpsert,
   TrainingDrillReorderItem,
+  TrainingDrillUpdate,
   TrainingUpdate,
 } from "../types";
 
@@ -84,6 +88,23 @@ export const addTrainingDrill = (
     body: JSON.stringify(data),
   });
 
+export const updateTrainingDrill = (
+  token: string,
+  clubId: number,
+  teamId: number,
+  trainingId: number,
+  tdId: number,
+  data: TrainingDrillUpdate,
+): Promise<TrainingDrill> =>
+  apiRequest<TrainingDrill>(
+    `${base(clubId, teamId)}/${trainingId}/drills/${tdId}`,
+    {
+      token,
+      method: "PATCH",
+      body: JSON.stringify(data),
+    },
+  );
+
 export const removeTrainingDrill = (
   token: string,
   clubId: number,
@@ -109,6 +130,23 @@ export const reorderTrainingDrills = (
     body: JSON.stringify(items),
   });
 
+export const upsertDrillGroups = (
+  token: string,
+  clubId: number,
+  teamId: number,
+  trainingId: number,
+  tdId: number,
+  data: TrainingDrillGroupUpsert,
+): Promise<TrainingDrillGroup[]> =>
+  apiRequest<TrainingDrillGroup[]>(
+    `${base(clubId, teamId)}/${trainingId}/drills/${tdId}/groups`,
+    {
+      token,
+      method: "PUT",
+      body: JSON.stringify(data),
+    },
+  );
+
 // ── Asistencia ────────────────────────────────────────────────────────────────
 
 export const upsertAttendance = (
@@ -126,3 +164,15 @@ export const upsertAttendance = (
       body: JSON.stringify(data),
     },
   );
+
+export const bulkCreateTrainings = (
+  token: string,
+  clubId: number,
+  teamId: number,
+  data: TrainingBulkCreate,
+): Promise<Training[]> =>
+  apiRequest<Training[]>(`${base(clubId, teamId)}/bulk`, {
+    token,
+    method: "POST",
+    body: JSON.stringify(data),
+  });

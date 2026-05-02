@@ -95,6 +95,7 @@ export interface DrillSummary {
   court_layout: CourtLayoutType;
   description: string | null;
   parent_id: number | null;
+  is_favorite: boolean;
   archived_at: string | null;
   created_at: string;
   updated_at: string;

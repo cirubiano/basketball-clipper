@@ -152,6 +152,13 @@ export default function DashboardPage() {
   const queryClient = useQueryClient();
   const [toDelete, setToDelete] = useState<VideoListItem | null>(null);
   const [retryError, setRetryError] = useState<string | null>(null);
+  const [calMode, setCalMode] = useState<"month" | "week">("month");
+  const [calDate, setCalDate] = useState<Date>(() => {
+    const d = new Date();
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
 
   const role = activeProfile?.role;
   const clubId = activeProfile?.club_id;
@@ -196,6 +203,13 @@ export default function DashboardPage() {
     })),
   });
 
+  // Coach training query (non-TD with a team)
+  const { data: coachTrainings = [] } = useQuery({
+    queryKey: ["trainings", clubId, teamId],
+    queryFn: () => listTrainings(token!, clubId!, teamId!),
+    enabled: !isTD && !!token && !!clubId && !!teamId,
+  });
+
   // ── TD computed values ──────────────────────────────────────────────────────
 
   const activeSeason = seasons.find((s) => s.status === "active") ?? null;
@@ -229,6 +243,45 @@ export default function DashboardPage() {
   );
   allTrainings.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   const recentTrainings = allTrainings.slice(0, 3);
+
+  // Build unified calendar training list
+  const calendarTrainings: Array<{ id: number; date: string; title: string; teamId: number; teamName: string }> =
+    isTD
+      ? allTrainings
+      : coachTrainings
+          .filter((t) => !t.archived_at)
+          .map((t) => ({
+            id: t.id,
+            date: t.date,
+            title: t.title,
+            teamId: teamId ?? 0,
+            teamName: activeProfile?.team_name ?? "",
+          }));
+
+  // Group calendar trainings by "YYYY-MM-DD"
+  const trainingsByDay = new Map<string, Array<{ id: number; teamId: number; title: string; teamName: string }>>();
+  for (const t of calendarTrainings) {
+    const key = t.date.slice(0, 10);
+    const list = trainingsByDay.get(key) ?? [];
+    list.push({ id: t.id, teamId: t.teamId, title: t.title, teamName: t.teamName });
+    trainingsByDay.set(key, list);
+  }
+
+  // Next upcoming training per team (for RF-502)
+  const now = new Date();
+  const upcomingByTeam: Array<{ id: number; date: string; title: string; teamId: number; teamName: string }> = [];
+  const seenTeams = new Set<number>();
+  [...calendarTrainings]
+    .filter((t) => new Date(t.date) >= now)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .forEach((t) => {
+      if (!seenTeams.has(t.teamId)) {
+        seenTeams.add(t.teamId);
+        upcomingByTeam.push(t);
+      }
+    });
+
+  const calendarLoading = isTD ? trainingQueries.some((q) => q.isLoading) : false;
 
   const tdLoading = loadingSeasons || loadingTeams || loadingPlayers;
   const matchesLoading = matchQueries.some((q) => q.isLoading);
@@ -474,6 +527,75 @@ export default function DashboardPage() {
             ))}
           </div>
         </div>
+
+        {/* ── Training calendar (RF-500–503) ──────────────────────────────── */}
+        {!!activeProfile && (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xs font-medium text-muted-foreground mb-0 uppercase tracking-wide flex items-center gap-1.5">
+                <CalendarDays className="h-3.5 w-3.5" />
+                Calendario de entrenamientos
+              </h2>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCalMode("month")}
+                  className={cn(
+                    "px-2.5 py-1 text-xs rounded border transition-colors",
+                    calMode === "month"
+                      ? "bg-foreground text-background border-foreground"
+                      : "border-border text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  Mes
+                </button>
+                <button
+                  onClick={() => setCalMode("week")}
+                  className={cn(
+                    "px-2.5 py-1 text-xs rounded border transition-colors",
+                    calMode === "week"
+                      ? "bg-foreground text-background border-foreground"
+                      : "border-border text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  Semana
+                </button>
+              </div>
+            </div>
+            <TrainingCalendar
+              mode={calMode}
+              currentDate={calDate}
+              trainingsByDay={trainingsByDay}
+              isLoading={calendarLoading}
+              onNavigate={setCalDate}
+            />
+            {/* Next training per team (RF-502) */}
+            {upcomingByTeam.length > 0 && (
+              <div className="mt-3 border rounded-lg divide-y">
+                {upcomingByTeam.map((t) => (
+                  <Link
+                    key={`${t.teamId}-${t.id}`}
+                    href={`/teams/${t.teamId}/trainings/${t.id}`}
+                    className="flex items-center justify-between px-4 py-2.5 hover:bg-muted/40 transition-colors"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">{t.teamName}</p>
+                      <p className="text-xs text-muted-foreground">{t.title}</p>
+                    </div>
+                    <p className="text-xs text-muted-foreground shrink-0 ml-4">
+                      {new Date(t.date).toLocaleDateString("es-ES", {
+                        weekday: "short", day: "2-digit", month: "short",
+                      })}
+                      {" · "}
+                      {new Date(t.date).toLocaleTimeString("es-ES", {
+                        hour: "2-digit", minute: "2-digit",
+                      })}
+                    </p>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── TD Dashboard ─────────────────────────────────────────────────── */}
         {isTD && (
@@ -868,3 +990,156 @@ export default function DashboardPage() {
     </PageShell>
   );
 }
+
+// ── TrainingCalendar ──────────────────────────────────────────────────────────
+
+import { useRouter } from "next/navigation";
+
+function TrainingCalendar({
+  mode,
+  currentDate,
+  trainingsByDay,
+  isLoading,
+  onNavigate,
+}: {
+  mode: "month" | "week";
+  currentDate: Date;
+  trainingsByDay: Map<string, Array<{ id: number; teamId: number; title: string; teamName: string }>>;
+  isLoading: boolean;
+  onNavigate: (d: Date) => void;
+}) {
+  const router = useRouter();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Compute the cells to render
+  function getMonthCells(base: Date): Date[] {
+    const year = base.getFullYear();
+    const month = base.getMonth();
+    const firstDay = new Date(year, month, 1);
+    // ISO week: Monday=0
+    const startOffset = (firstDay.getDay() + 6) % 7;
+    const cells: Date[] = [];
+    for (let i = -startOffset; i < 42 - startOffset; i++) {
+      cells.push(new Date(year, month, 1 + i));
+    }
+    return cells;
+  }
+
+  function getWeekCells(base: Date): Date[] {
+    const d = new Date(base);
+    const dow = (d.getDay() + 6) % 7; // Mon=0
+    d.setDate(d.getDate() - dow);
+    return Array.from({ length: 7 }, (_, i) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + i));
+  }
+
+  const cells = mode === "month" ? getMonthCells(currentDate) : getWeekCells(currentDate);
+
+  function navigate(dir: -1 | 1) {
+    const next = new Date(currentDate);
+    if (mode === "month") {
+      next.setMonth(next.getMonth() + dir);
+    } else {
+      next.setDate(next.getDate() + dir * 7);
+    }
+    next.setDate(1);
+    if (mode === "week") next.setDate(currentDate.getDate() + dir * 7);
+    onNavigate(next);
+  }
+
+  const WEEKDAYS = ["L", "M", "X", "J", "V", "S", "D"];
+
+  const label =
+    mode === "month"
+      ? currentDate.toLocaleDateString("es-ES", { month: "long", year: "numeric" })
+      : (() => {
+          const wCells = getWeekCells(currentDate);
+          const s = wCells[0].toLocaleDateString("es-ES", { day: "2-digit", month: "short" });
+          const e = wCells[6].toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
+          return `${s} – ${e}`;
+        })();
+
+  const curMonth = currentDate.getMonth();
+
+  function handleDayClick(date: Date) {
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    const dayTrainings = trainingsByDay.get(key);
+    if (dayTrainings && dayTrainings.length > 0) {
+      router.push(`/teams/${dayTrainings[0].teamId}/trainings/${dayTrainings[0].id}`);
+    }
+  }
+
+  if (isLoading) {
+    return <div className="border rounded-lg p-4"><Skeleton className="h-48 w-full" /></div>;
+  }
+
+  return (
+    <div className="border rounded-lg p-3">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
+        <button
+          onClick={() => navigate(-1)}
+          className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground"
+          aria-label="Anterior"
+        >
+          ‹
+        </button>
+        <span className="text-sm font-medium capitalize">{label}</span>
+        <button
+          onClick={() => navigate(1)}
+          className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground"
+          aria-label="Siguiente"
+        >
+          ›
+        </button>
+      </div>
+
+      {/* Weekday headers */}
+      <div className="grid grid-cols-7 mb-1">
+        {WEEKDAYS.map((d) => (
+          <div key={d} className="text-center text-xs text-muted-foreground font-medium py-1">
+            {d}
+          </div>
+        ))}
+      </div>
+
+      {/* Day cells */}
+      <div className={cn("grid grid-cols-7", mode === "week" ? "gap-1" : "")}>
+        {cells.map((date, idx) => {
+          const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+          const hasTraining = trainingsByDay.has(key);
+          const isToday = date.getTime() === today.getTime();
+          const isCurrentMonth = mode === "week" || date.getMonth() === curMonth;
+
+          return (
+            <button
+              key={idx}
+              onClick={() => handleDayClick(date)}
+              disabled={!hasTraining}
+              className={cn(
+                "relative flex flex-col items-center justify-center rounded py-1.5 text-xs transition-colors",
+                isToday && "font-bold",
+                !isCurrentMonth && "text-muted-foreground/40",
+                hasTraining && "cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950",
+                !hasTraining && "cursor-default",
+              )}
+            >
+              <span
+                className={cn(
+                  "h-6 w-6 flex items-center justify-center rounded-full text-xs",
+                  isToday && "bg-foreground text-background",
+                )}
+              >
+                {date.getDate()}
+              </span>
+              {hasTraining && (
+                <span className="absolute bottom-0.5 h-1.5 w-1.5 rounded-full bg-blue-500" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+

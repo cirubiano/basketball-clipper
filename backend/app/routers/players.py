@@ -353,17 +353,20 @@ async def add_to_roster(
     if player is None or player.club_id != club_id or player.archived_at is not None:
         raise HTTPException(status_code=404, detail="Player not found in this club")
 
-    # Verificar unicidad (player, team, season)
+    # Verificar unicidad (player, team, season) — la constraint de BD no permite
+    # duplicados aunque la entrada esté archivada, así que comprobamos ambos casos.
     existing = await db.scalar(
         select(RosterEntry).where(
             RosterEntry.player_id == body.player_id,
             RosterEntry.team_id == team_id,
             RosterEntry.season_id == team.season_id,
-            RosterEntry.archived_at.is_(None),
         )
     )
     if existing is not None:
-        raise HTTPException(status_code=409, detail="Player is already in this team's roster")
+        if existing.archived_at is None:
+            raise HTTPException(status_code=409, detail="Player is already in this team's roster")
+        else:
+            raise HTTPException(status_code=409, detail="Player was previously in this roster and cannot be re-added to the same season")
 
     entry = RosterEntry(
         player_id=body.player_id,
@@ -374,12 +377,13 @@ async def add_to_roster(
     )
     db.add(entry)
     await db.flush()
+    entry_id = entry.id
     await db.commit()
 
     result = await db.execute(
         select(RosterEntry)
         .options(selectinload(RosterEntry.player).selectinload(Player.positions))
-        .where(RosterEntry.id == entry.id)
+        .where(RosterEntry.id == entry_id)
     )
     return result.scalar_one()
 

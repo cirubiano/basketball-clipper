@@ -1,8 +1,18 @@
 from datetime import datetime
-
 from pydantic import BaseModel, model_validator
-
 from app.models.training import AbsenceReason
+
+
+class TrainingDrillGroupPlayerResponse(BaseModel):
+    model_config = {"from_attributes": True}
+    player_id: int
+
+
+class TrainingDrillGroupResponse(BaseModel):
+    model_config = {"from_attributes": True}
+    id: int
+    group_number: int
+    players: list[TrainingDrillGroupPlayerResponse] = []
 
 
 class TrainingDrillResponse(BaseModel):
@@ -12,8 +22,10 @@ class TrainingDrillResponse(BaseModel):
     drill_id: int
     position: int
     notes: str | None
+    duration_minutes: int | None = None
     drill_title: str | None = None
     drill_type: str | None = None
+    groups: list[TrainingDrillGroupResponse] = []
 
 
 class TrainingAttendanceResponse(BaseModel):
@@ -59,6 +71,12 @@ class TrainingUpdate(BaseModel):
 
 class TrainingDrillAdd(BaseModel):
     drill_id: int
+    duration_minutes: int | None = None
+    notes: str | None = None
+
+
+class TrainingDrillUpdate(BaseModel):
+    duration_minutes: int | None = None
     notes: str | None = None
 
 
@@ -85,3 +103,27 @@ class AttendanceUpdate(BaseModel):
             if self.is_late:
                 raise ValueError("is_late debe ser false si attended=False")
         return self
+
+
+class TrainingDrillGroupUpsert(BaseModel):
+    class GroupItem(BaseModel):
+        group_number: int
+        player_ids: list[int]
+    groups: list[GroupItem]
+
+
+class TrainingBulkDrillItem(BaseModel):
+    drill_id: int
+    duration_minutes: int | None = None
+
+
+class TrainingBulkItem(BaseModel):
+    title: str
+    date: datetime
+    notes: str | None = None
+    drills: list[TrainingBulkDrillItem] = []
+
+
+class TrainingBulkCreate(BaseModel):
+    season_id: int
+    trainings: list[TrainingBulkItem]

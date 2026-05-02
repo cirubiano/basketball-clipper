@@ -562,6 +562,55 @@ Un `Training` representa una sesión de entrenamiento de un equipo en una tempor
 
 ---
 
+## 13. Fase G — Experiencia del entrenador (mejoras)
+
+> Requisitos identificados a partir del análisis comparativo con aplicaciones del sector (mayo 2026).
+> Cubren mejoras de productividad para el rol `HeadCoach` y `TechnicalDirector` en el día a día.
+
+### 13.1 Calendario de entrenamientos como home
+
+- **RF-500.** La pantalla de inicio muestra un calendario mensual con todos los entrenamientos del usuario (de todos sus equipos activos). Los días con entrenamiento quedan marcados visualmente.
+- **RF-501.** El calendario puede navegarse por semana o por mes.
+- **RF-502.** Debajo del calendario se listan los equipos del usuario con la fecha y hora de su próximo entrenamiento programado.
+- **RF-503.** Al pulsar un día del calendario que tiene entrenamiento, la aplicación navega al detalle de ese entrenamiento.
+
+### 13.2 Duración por ejercicio y auto-scheduling
+
+- **RF-510.** Cada `TrainingDrill` puede tener un campo `duration_minutes` (entero positivo, opcional). Si no se especifica, no contribuye al cálculo de franjas.
+- **RF-511.** El detalle del entrenamiento muestra la franja horaria calculada automáticamente para cada ejercicio: `hora_inicio_entreno + suma_duraciones_previas` → `hora_inicio_ejercicio`.
+- **RF-512.** Al modificar la duración de un ejercicio, las horas de inicio de todos los ejercicios posteriores se recalculan en tiempo real (solo frontend; se persiste `duration_minutes`).
+- **RF-513.** El tiempo total del entrenamiento (suma de `duration_minutes` de todos los ejercicios) se muestra al pie de la lista.
+
+### 13.3 Grupos por ejercicio
+
+- **RF-520.** Para cada `TrainingDrill`, el `HeadCoach` o `TechnicalDirector` puede definir cero o más grupos de jugadores (hasta 4 grupos por ejercicio).
+- **RF-521.** Cada grupo consiste en un número de grupo (1–4) y una lista de `Player` de la plantilla del equipo.
+- **RF-522.** Los grupos se almacenan como `TrainingDrillGroup` asociados al `TrainingDrill`, no al `Drill` base.
+- **RF-523.** Un jugador puede estar en más de un grupo del mismo ejercicio (útil para rotaciones).
+
+### 13.4 Generador automático de planes de entrenamiento
+
+- **RF-530.** El sistema puede generar automáticamente un plan de entrenamientos para un equipo a partir de un wizard multi-paso.
+- **RF-531.** Parámetros del generador: equipo, duración del plan (nº de semanas), duración por sesión (minutos), fecha de inicio, días de la semana + hora de inicio.
+- **RF-532.** El generador crea `Training` records con ejercicios seleccionados automáticamente del `ClubCatalog` y de la `PersonalLibrary` del entrenador, priorizando ejercicios con tags relevantes para el equipo.
+- **RF-533.** El entrenador puede revisar y modificar el plan generado antes de confirmarlo. Los entrenamientos no se crean en BD hasta la confirmación.
+- **RF-534.** El generador respeta la duración por sesión: el total de `duration_minutes` de los ejercicios asignados no supera la duración configurada.
+
+### 13.5 Informes de asistencia
+
+- **RF-540.** La aplicación ofrece un informe de asistencia para un equipo en un rango de fechas seleccionable.
+- **RF-541.** El informe muestra: total de entrenamientos en el período, % de asistencia por jugador (presentes / total), % medio del equipo, y lista de entrenamientos con su fecha.
+- **RF-542.** Existe una vista alternativa "Entrenamientos completados" que lista los entrenamientos del período con su título, fecha y nº de asistentes.
+- **RF-543.** El informe puede exportarse o compartirse (enlace público temporal o PDF generado en cliente).
+
+### 13.6 Favoritos en ejercicios y jugadas
+
+- **RF-550.** Un usuario puede marcar cualquier ejercicio/jugada de su `PersonalLibrary` como favorito.
+- **RF-551.** La biblioteca personal muestra una pestaña o filtro "Favoritos" que lista solo los ejercicios/jugadas marcados.
+- **RF-552.** El campo `is_favorite` es personal: no se hereda al clonar ni al copiar al catálogo.
+
+---
+
 ## 12. Bloques pendientes de definir
 
 Las siguientes áreas están identificadas pero no detalladas todavía. Cuando se aborden, se añadirán como nuevas secciones a este documento.

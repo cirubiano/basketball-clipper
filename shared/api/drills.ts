@@ -92,6 +92,20 @@ export function archiveDrill(token: string, drillId: number): Promise<void> {
   });
 }
 
+
+/** RF-550 — marca o desmarca un drill como favorito personal. */
+export function setDrillFavorite(
+  token: string,
+  drillId: number,
+  isFavorite: boolean,
+): Promise<Drill> {
+  return apiRequest<Drill>(`/drills/${drillId}/favorite`, {
+    token,
+    method: "PATCH",
+    body: JSON.stringify({ is_favorite: isFavorite }),
+  });
+}
+
 /** RF-151 — clona un drill dentro de la biblioteca personal. */
 export function cloneDrill(token: string, drillId: number): Promise<Drill> {
   return apiRequest<Drill>(`/drills/${drillId}/clone`, {

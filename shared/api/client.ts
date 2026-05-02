@@ -47,12 +47,24 @@ export class ApiError extends Error {
     public readonly status: number,
     public readonly body: unknown,
   ) {
-    const detail =
-      typeof body === "object" &&
-      body !== null &&
-      "detail" in body
-        ? String((body as Record<string, unknown>)["detail"])
-        : `HTTP ${status}`;
+    const rawDetail =
+      typeof body === "object" && body !== null && "detail" in body
+        ? (body as Record<string, unknown>)["detail"]
+        : null;
+    const detail = rawDetail === null
+      ? `HTTP ${status}`
+      : Array.isArray(rawDetail)
+        // FastAPI 422 validation errors: [{loc, msg, type}, ...]
+        ? (rawDetail as Array<Record<string, unknown>>)
+            .map((e) => {
+              const loc = Array.isArray(e["loc"])
+                ? (e["loc"] as string[]).filter((s) => s !== "body").join(".")
+                : "";
+              const msg = String(e["msg"] ?? "error");
+              return loc ? `${loc}: ${msg}` : msg;
+            })
+            .join("; ")
+        : String(rawDetail);
     super(detail);
     this.name = "ApiError";
   }

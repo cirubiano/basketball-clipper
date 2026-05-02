@@ -53,6 +53,10 @@ class DrillUpdate(BaseModel):
     tag_ids: list[int] | None = None  # None = no tocar tags; [] = quitar todos
 
 
+class DrillFavoriteUpdate(BaseModel):
+    is_favorite: bool
+
+
 class DrillResponse(BaseModel):
     id: int
     user_id: int
@@ -62,6 +66,7 @@ class DrillResponse(BaseModel):
     description: str | None
     root_sequence: dict[str, Any]
     parent_id: int | None
+    is_favorite: bool
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -79,6 +84,7 @@ class DrillSummaryResponse(BaseModel):
     court_layout: CourtLayoutType
     description: str | None
     parent_id: int | None
+    is_favorite: bool
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime

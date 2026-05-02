@@ -2,13 +2,15 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
-import { Plus, Trash2, ChevronUp, ChevronDown, Save } from "lucide-react";
+import { Plus, Trash2, ChevronUp, ChevronDown, Save, Clock, Users } from "lucide-react";
 import Link from "next/link";
 import {
   getTraining,
   addTrainingDrill,
   removeTrainingDrill,
   reorderTrainingDrills,
+  updateTrainingDrill,
+  upsertDrillGroups,
   upsertAttendance,
   listDrills,
   listRoster,
@@ -22,6 +24,8 @@ import type {
   TrainingAttendance,
   TrainingDrill,
   TrainingDrillAdd,
+  TrainingDrillUpdate,
+  TrainingDrillGroupUpsert,
   CourtLayoutType,
   SequenceNode,
   SketchElement,
@@ -81,6 +85,20 @@ const DRILL_TYPES: { value: DrillType; label: string }[] = [
   { value: "play", label: "Jugada" },
 ];
 
+function computeTimeSlots(trainingDate: string, drills: TrainingDrill[]): string[] {
+  const start = new Date(trainingDate);
+  let accumulated = 0;
+  return drills.map((td) => {
+    const slotStart = new Date(start.getTime() + accumulated * 60000);
+    const timeStr = slotStart.toLocaleTimeString("es-ES", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    accumulated += td.duration_minutes ?? 0;
+    return timeStr;
+  });
+}
+
 function taToState(ta: TrainingAttendance): AttendanceState {
   if (!ta.attended) return "absent";
   if (ta.is_late) return "late";
@@ -128,6 +146,14 @@ export default function TrainingDetailPage({
   // New mode
   const [newDrillName, setNewDrillName] = useState("");
   const [newDrillType, setNewDrillType] = useState<DrillType>("drill");
+
+  // Inline duration editing state (RF-511)
+  const [editingDurationId, setEditingDurationId] = useState<number | null>(null);
+  const [editingDurationValue, setEditingDurationValue] = useState<string>("");
+
+  // Groups modal state (RF-520)
+  const [groupsModalTd, setGroupsModalTd] = useState<TrainingDrill | null>(null);
+  const [groupsDraft, setGroupsDraft] = useState<Array<{ group_number: number; player_ids: number[] }>>([]);
 
   // Local attendance state — richer than boolean
   const [localAttendance, setLocalAttendance] = useState<Map<number, LocalAttendanceRecord>>(
@@ -243,6 +269,14 @@ export default function TrainingDetailPage({
   const absentCount = Array.from(localAttendance.values()).filter((r) => r.state === "absent").length;
   const totalCount = allAttendancePlayers.length;
 
+  const totalMinutes = training
+    ? training.training_drills.reduce((sum, td) => sum + (td.duration_minutes ?? 0), 0)
+    : 0;
+
+  const timeSlots = training
+    ? computeTimeSlots(training.date, training.training_drills)
+    : [];
+
   // ── Drill mutations ───────────────────────────────────────────────────────────
 
   const addDrillMut = useMutation({
@@ -303,6 +337,66 @@ export default function TrainingDetailPage({
       toast("Ejercicio eliminado.");
     },
   });
+
+  const updateDrillMut = useMutation({
+    mutationFn: ({ tdId, data }: { tdId: number; data: TrainingDrillUpdate }) =>
+      updateTrainingDrill(token!, clubId!, teamId, trainingId, tdId, data),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["training", trainingId] });
+    },
+    onError: (e: Error) => toast(e.message, "error"),
+  });
+
+  const upsertGroupsMut = useMutation({
+    mutationFn: ({ tdId, data }: { tdId: number; data: TrainingDrillGroupUpsert }) =>
+      upsertDrillGroups(token!, clubId!, teamId, trainingId, tdId, data),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["training", trainingId] });
+      setGroupsModalTd(null);
+      toast("Grupos guardados.");
+    },
+    onError: (e: Error) => toast(e.message, "error"),
+  });
+
+  function openGroupsModal(td: TrainingDrill) {
+    setGroupsDraft(
+      td.groups.length > 0
+        ? td.groups.map((g) => ({ group_number: g.group_number, player_ids: g.players.map((p) => p.id) }))
+        : [{ group_number: 1, player_ids: [] }],
+    );
+    setGroupsModalTd(td);
+  }
+
+  function togglePlayerInGroup(groupIdx: number, playerId: number) {
+    setGroupsDraft((prev) => {
+      const next = prev.map((g, i) => {
+        if (i !== groupIdx) return g;
+        const ids = g.player_ids.includes(playerId)
+          ? g.player_ids.filter((id) => id !== playerId)
+          : [...g.player_ids, playerId];
+        return { ...g, player_ids: ids };
+      });
+      return next;
+    });
+  }
+
+  function addGroup() {
+    setGroupsDraft((prev) => {
+      const next = prev.length + 1;
+      return [...prev, { group_number: next, player_ids: [] }];
+    });
+  }
+
+  function removeLastGroup() {
+    setGroupsDraft((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
+  }
+
+  function commitDurationEdit(tdId: number) {
+    const parsed = parseInt(editingDurationValue, 10);
+    const value = isNaN(parsed) || parsed <= 0 ? null : parsed;
+    updateDrillMut.mutate({ tdId, data: { duration_minutes: value } });
+    setEditingDurationId(null);
+  }
 
   // ── Attendance mutation ───────────────────────────────────────────────────────
 
@@ -436,7 +530,7 @@ export default function TrainingDetailPage({
               )}
             >
               {t === "ejercicios"
-                ? `Ejercicios (${training.training_drills.length})`
+                ? `Ejercicios (${training.training_drills.length})${totalMinutes > 0 ? ` · ${totalMinutes} min` : ""}`
                 : `Asistencia (${totalCount})`}
             </button>
           ))}
@@ -471,6 +565,12 @@ export default function TrainingDetailPage({
                       )}
 
                       <div className="flex-1 min-w-0">
+                        {timeSlots[idx] && (
+                          <p className="text-xs text-muted-foreground font-mono mb-0.5">
+                            <Clock className="inline h-2.5 w-2.5 mr-0.5 -mt-px" />
+                            {timeSlots[idx]}
+                          </p>
+                        )}
                         <Link href={`/drills/${td.drill_id}/edit`} className="block hover:underline">
                           <p className="text-sm font-medium">
                             {td.drill_title ?? `Ejercicio #${td.drill_id}`}
@@ -485,6 +585,73 @@ export default function TrainingDetailPage({
                           )}
                         </Link>
                       </div>
+
+                      {/* Groups indicator/button (RF-520) */}
+                      {isCoachOrTD && (
+                        <button
+                          className={cn(
+                            "shrink-0 flex items-center gap-1 text-xs rounded border px-2 py-1 transition-colors",
+                            td.groups.length > 0
+                              ? "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                              : "border-dashed border-muted-foreground/40 text-muted-foreground hover:text-foreground",
+                          )}
+                          onClick={() => openGroupsModal(td)}
+                          title="Gestionar grupos"
+                        >
+                          <Users className="h-3 w-3" />
+                          {td.groups.length > 0 ? `${td.groups.length}G` : "+ grupos"}
+                        </button>
+                      )}
+                      {!isCoachOrTD && td.groups.length > 0 && (
+                        <button
+                          className="shrink-0 flex items-center gap-1 text-xs rounded border border-blue-200 bg-blue-50 text-blue-700 px-2 py-1"
+                          onClick={() => openGroupsModal(td)}
+                        >
+                          <Users className="h-3 w-3" />
+                          {td.groups.length}G
+                        </button>
+                      )}
+
+                      {/* Duration control */}
+                      {isCoachOrTD && (
+                        <div className="shrink-0">
+                          {editingDurationId === td.id ? (
+                            <div className="flex items-center gap-1">
+                              <Input
+                                type="number"
+                                min="1"
+                                max="240"
+                                className="h-7 w-16 text-xs text-center"
+                                value={editingDurationValue}
+                                autoFocus
+                                onChange={(e) => setEditingDurationValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") commitDurationEdit(td.id);
+                                  if (e.key === "Escape") setEditingDurationId(null);
+                                }}
+                                onBlur={() => commitDurationEdit(td.id)}
+                              />
+                              <span className="text-xs text-muted-foreground">min</span>
+                            </div>
+                          ) : (
+                            <button
+                              className="text-xs text-muted-foreground hover:text-foreground border border-dashed border-muted-foreground/40 rounded px-2 py-1 transition-colors"
+                              onClick={() => {
+                                setEditingDurationId(td.id);
+                                setEditingDurationValue(td.duration_minutes ? String(td.duration_minutes) : "");
+                              }}
+                              title="Editar duración"
+                            >
+                              {td.duration_minutes ? `${td.duration_minutes} min` : "+ duración"}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {!isCoachOrTD && td.duration_minutes && (
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {td.duration_minutes} min
+                        </span>
+                      )}
 
                       {isCoachOrTD && (
                         <div className="flex flex-col gap-0.5 shrink-0">
@@ -724,6 +891,82 @@ export default function TrainingDetailPage({
           </div>
         )}
       </div>
+
+      {/* Groups modal (RF-520) */}
+      <Dialog open={!!groupsModalTd} onOpenChange={(open) => { if (!open) setGroupsModalTd(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Grupos — {groupsModalTd?.drill_title ?? "Ejercicio"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2 max-h-96 overflow-y-auto">
+            {groupsDraft.map((group, gIdx) => (
+              <div key={gIdx} className="border rounded-lg p-3">
+                <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
+                  Grupo {group.group_number}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {roster.map((re) => {
+                    const name = [re.player?.first_name, re.player?.last_name].filter(Boolean).join(" ") || `#${re.player_id}`;
+                    const selected = group.player_ids.includes(re.player_id);
+                    return (
+                      <button
+                        key={re.player_id}
+                        onClick={() => togglePlayerInGroup(gIdx, re.player_id)}
+                        className={cn(
+                          "px-2.5 py-1 rounded-full text-xs border transition-colors",
+                          selected
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : "border-border text-muted-foreground hover:border-blue-400 hover:text-foreground",
+                        )}
+                      >
+                        {name}
+                      </button>
+                    );
+                  })}
+                  {roster.length === 0 && (
+                    <p className="text-xs text-muted-foreground">Sin jugadores en la plantilla.</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          {isCoachOrTD && (
+            <div className="flex gap-2 pt-1">
+              {groupsDraft.length < 4 && (
+                <Button variant="outline" size="sm" onClick={addGroup}>
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Añadir grupo
+                </Button>
+              )}
+              {groupsDraft.length > 1 && (
+                <Button variant="ghost" size="sm" onClick={removeLastGroup} className="text-destructive hover:text-destructive hover:bg-destructive/10">
+                  Quitar último
+                </Button>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGroupsModalTd(null)}>Cancelar</Button>
+            {isCoachOrTD && (
+              <Button
+                onClick={() => {
+                  if (!groupsModalTd) return;
+                  upsertGroupsMut.mutate({
+                    tdId: groupsModalTd.id,
+                    data: { groups: groupsDraft.filter((g) => g.player_ids.length > 0) },
+                  });
+                }}
+                disabled={upsertGroupsMut.isPending}
+              >
+                {upsertGroupsMut.isPending ? "Guardando..." : "Guardar grupos"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add drill dialog */}
       <Dialog open={addDrillOpen} onOpenChange={(open) => { if (!open) closeDialog(); }}>

@@ -84,7 +84,8 @@ type StatKey =
   | "offensive_rebounds"
   | "steals"
   | "turnovers"
-  | "fouls";
+  | "fouls"
+  | "blocks";
 
 type ActionLogEntry = {
   logId: number;
@@ -117,6 +118,8 @@ export default function MatchDetailPage({
   const [selectedVideoLabel, setSelectedVideoLabel] = useState<MatchVideoLabel>("other");
   const [scoreDialogOpen, setScoreDialogOpen] = useState(false);
   const [scoreForm, setScoreForm] = useState({ our: "", their: "" });
+  const [rivalScoreDialogOpen, setRivalScoreDialogOpen] = useState(false);
+  const [rivalScoreForm, setRivalScoreForm] = useState("");
 
   // ── Live scoring state ──────────────────────────────────────────────────────
 
@@ -169,6 +172,7 @@ export default function MatchDetailPage({
             steals: s?.steals ?? 0,
             turnovers: s?.turnovers ?? 0,
             fouls: s?.fouls ?? 0,
+            blocks: s?.blocks ?? 0,
           });
           changed = true;
         }
@@ -295,6 +299,29 @@ export default function MatchDetailPage({
     onError: (e: Error) => toast(e.message, "error"),
   });
 
+  // Auto-updates our_score in the background as points are recorded
+  const updateScoreMut = useMutation({
+    mutationFn: (ourScore: number) =>
+      updateMatch(token!, clubId!, teamId, matchId, { our_score: ourScore }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["match", matchId] });
+    },
+    onError: (e: Error) => toast(e.message, "error"),
+  });
+
+  const saveRivalScoreMut = useMutation({
+    mutationFn: () =>
+      updateMatch(token!, clubId!, teamId, matchId, {
+        their_score: rivalScoreForm === "" ? null : Number(rivalScoreForm),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["match", matchId] });
+      setRivalScoreDialogOpen(false);
+      toast("Resultado rival guardado.");
+    },
+    onError: (e: Error) => toast(e.message, "error"),
+  });
+
   // ── Live scoring handlers ───────────────────────────────────────────────────
 
   function handleAction(statKey: StatKey | null, delta: number, label: string) {
@@ -317,6 +344,17 @@ export default function MatchDetailPage({
     const updated: MatchStatUpsert = { ...current, [statKey]: newVal };
     setSessionStats((prev) => new Map(prev).set(selectedPlayerId, updated));
     upsertStatMut.mutate(updated);
+
+    // Auto-update our_score whenever points are recorded
+    if (statKey === "points" && delta > 0) {
+      const currentPlayerPoints = ((current.points ?? 0) as number);
+      const totalPoints = Array.from(sessionStats.values()).reduce(
+        (sum, s) => sum + ((s.points ?? 0) as number),
+        0,
+      );
+      const newTotal = totalPoints - currentPlayerPoints + newVal;
+      updateScoreMut.mutate(newTotal);
+    }
   }
 
   function handleUndo() {
@@ -331,6 +369,16 @@ export default function MatchDetailPage({
     const updated: MatchStatUpsert = { ...current, [last.statKey]: newVal };
     setSessionStats((prev) => new Map(prev).set(last.playerId, updated));
     upsertStatMut.mutate(updated);
+
+    // Reverse our_score when undoing a points action
+    if (last.statKey === "points" && last.delta > 0) {
+      const totalPoints = Array.from(sessionStats.values()).reduce(
+        (sum, s) => sum + ((s.points ?? 0) as number),
+        0,
+      );
+      const newTotal = Math.max(0, totalPoints - last.delta);
+      updateScoreMut.mutate(newTotal);
+    }
   }
 
   function handleMinutesSave(playerId: number) {
@@ -453,21 +501,32 @@ export default function MatchDetailPage({
 
           {showScore && (
             <div className="mt-3 flex items-center gap-3">
-              {match.our_score != null && match.their_score != null ? (
-                <span className="text-3xl font-bold tabular-nums">
-                  {match.our_score} <span className="text-muted-foreground">—</span> {match.their_score}
-                </span>
-              ) : (
-                <span className="text-xl font-medium text-muted-foreground">— — —</span>
+              <span className="text-3xl font-bold tabular-nums">
+                {match.our_score ?? "—"}
+                <span className="text-muted-foreground mx-2">—</span>
+                {match.their_score ?? "—"}
+              </span>
+              {isCoachOrTD && match.status === "in_progress" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-7"
+                  onClick={() => {
+                    setRivalScoreForm(match.their_score != null ? String(match.their_score) : "");
+                    setRivalScoreDialogOpen(true);
+                  }}
+                >
+                  Resultado rival
+                </Button>
               )}
-              {isCoachOrTD && (
+              {isCoachOrTD && match.status === "finished" && (
                 <Button
                   variant="outline"
                   size="sm"
                   className="text-xs h-7"
                   onClick={() => setScoreDialogOpen(true)}
                 >
-                  {match.our_score != null ? "Editar resultado" : "Añadir resultado"}
+                  Editar resultado
                 </Button>
               )}
             </div>
@@ -909,7 +968,7 @@ export default function MatchDetailPage({
                             <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
                               Otros
                             </p>
-                            <div className="grid grid-cols-4 gap-2">
+                            <div className="grid grid-cols-5 gap-2">
                               <ActionButton
                                 label="AST"
                                 sublabel="Asistencia"
@@ -917,10 +976,16 @@ export default function MatchDetailPage({
                                 colorClass="bg-purple-500 hover:bg-purple-600 active:bg-purple-700 text-white"
                               />
                               <ActionButton
-                                label="ROB"
-                                sublabel="Robo"
-                                onClick={() => handleAction("steals", 1, "Robo")}
+                                label="REC"
+                                sublabel="Recuperación"
+                                onClick={() => handleAction("steals", 1, "Recuperación")}
                                 colorClass="bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white"
+                              />
+                              <ActionButton
+                                label="TAP"
+                                sublabel="Tapón"
+                                onClick={() => handleAction("blocks", 1, "Tapón")}
+                                colorClass="bg-cyan-600 hover:bg-cyan-700 active:bg-cyan-800 text-white"
                               />
                               <ActionButton
                                 label="PÉR"
@@ -1028,7 +1093,35 @@ export default function MatchDetailPage({
         )}
       </div>
 
-      {/* Score dialog */}
+      {/* Rival score dialog (used during in_progress — our score is auto-tracked from stats) */}
+      <Dialog open={rivalScoreDialogOpen} onOpenChange={setRivalScoreDialogOpen}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Resultado rival</DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-1">
+            <Label htmlFor="rival-score" className="text-xs">Puntos del rival</Label>
+            <Input
+              id="rival-score"
+              type="number"
+              min={0}
+              className="text-center h-10 text-lg"
+              value={rivalScoreForm}
+              onChange={(e) => setRivalScoreForm(e.target.value)}
+              placeholder="—"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRivalScoreDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={() => saveRivalScoreMut.mutate()} disabled={saveRivalScoreMut.isPending}>
+              {saveRivalScoreMut.isPending ? "Guardando..." : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Score dialog (used after match is finished — both scores editable) */}
       <Dialog open={scoreDialogOpen} onOpenChange={setScoreDialogOpen}>
         <DialogContent className="max-w-xs">
           <DialogHeader>
@@ -1140,7 +1233,8 @@ function StatsTable({
             <th className="text-center px-2 py-2 font-medium w-12">Pts</th>
             <th className="text-center px-2 py-2 font-medium w-12">Reb</th>
             <th className="text-center px-2 py-2 font-medium w-12">Ast</th>
-            <th className="text-center px-2 py-2 font-medium w-12">Rob</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Rec</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Tap</th>
             <th className="text-center px-2 py-2 font-medium w-12">Pér</th>
             <th className="text-center px-2 py-2 font-medium w-12">Falt</th>
           </tr>
@@ -1159,6 +1253,7 @@ function StatsTable({
                 <td className="text-center px-2 py-2.5 text-muted-foreground">{stat ? totalReb : "—"}</td>
                 <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.assists ?? "—"}</td>
                 <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.steals ?? "—"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.blocks ?? "—"}</td>
                 <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.turnovers ?? "—"}</td>
                 <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.fouls ?? "—"}</td>
               </tr>

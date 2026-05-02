@@ -50,6 +50,7 @@ export interface MatchStat {
   steals: number | null;
   turnovers: number | null;
   fouls: number | null;
+  blocks: number | null;
 }
 
 export interface Match {
@@ -105,4 +106,5 @@ export interface MatchStatUpsert {
   steals?: number | null;
   turnovers?: number | null;
   fouls?: number | null;
+  blocks?: number | null;
 }

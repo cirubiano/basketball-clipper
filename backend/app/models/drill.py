@@ -124,6 +124,11 @@ class Drill(Base):
         ForeignKey("teams.id", ondelete="SET NULL"), nullable=True
     )
 
+    # Favorito personal del usuario (RF-550)
+    is_favorite: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )
+
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

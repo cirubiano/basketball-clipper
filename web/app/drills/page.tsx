@@ -36,12 +36,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Plus, Archive, Copy, BookOpen, Pencil, BookMarked } from "lucide-react";
+import { Plus, Archive, Copy, BookOpen, Pencil, BookMarked, Heart } from "lucide-react";
 import {
   listDrills,
   createDrill,
   archiveDrill,
   cloneDrill,
+  setDrillFavorite,
   listCatalog,
   publishToCatalog,
 } from "@basketball-clipper/shared/api";
@@ -99,10 +100,11 @@ function CourtSVG({ layout }: { layout: CourtLayoutType }) {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-const TYPE_TABS: { value: DrillType | "all"; label: string }[] = [
-  { value: "all",   label: "Todo" },
-  { value: "drill", label: "Ejercicios" },
-  { value: "play",  label: "Jugadas" },
+const TYPE_TABS: { value: DrillType | "all" | "favorites"; label: string }[] = [
+  { value: "all",       label: "Todo" },
+  { value: "drill",     label: "Ejercicios" },
+  { value: "play",      label: "Jugadas" },
+  { value: "favorites", label: "Favoritos" },
 ];
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -115,7 +117,7 @@ export default function DrillsPage() {
 
   const clubId = activeProfile?.club_id ?? null;
 
-  const [tab,        setTab]        = useState<DrillType | "all">("all");
+  const [tab,        setTab]        = useState<DrillType | "all" | "favorites">("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState<{ type: DrillType; name: string; court_layout: CourtLayoutType }>({
     type: "drill", name: "", court_layout: "half_fiba",
@@ -123,7 +125,10 @@ export default function DrillsPage() {
 
   const { data: drills = [], isLoading } = useQuery({
     queryKey: ["drills", tab],
-    queryFn: () => listDrills(token!, { type: tab === "all" ? undefined : tab }),
+    queryFn: () =>
+      listDrills(token!, {
+        type: tab === "all" || tab === "favorites" ? undefined : tab,
+      }),
     enabled: !!token,
   });
 
@@ -166,6 +171,13 @@ export default function DrillsPage() {
     },
   });
 
+  const favoriteMut = useMutation({
+    mutationFn: ({ id, isFavorite }: { id: number; isFavorite: boolean }) =>
+      setDrillFavorite(token!, id, isFavorite),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["drills"] }),
+    onError: () => toast("No se pudo actualizar el favorito.", "error"),
+  });
+
   const publishMut = useMutation({
     mutationFn: (drillId: number) => publishToCatalog(token!, clubId!, { drill_id: drillId }),
     onSuccess: (_, drillId) => {
@@ -177,7 +189,9 @@ export default function DrillsPage() {
     onError: () => toast("No se pudo publicar en el catálogo.", "error"),
   });
 
-  const active = drills.filter((d) => !d.archived_at);
+  const active = drills
+    .filter((d) => !d.archived_at)
+    .filter((d) => (tab === "favorites" ? d.is_favorite : true));
 
   return (
     <PageShell>
@@ -219,18 +233,31 @@ export default function DrillsPage() {
           </div>
         ) : active.length === 0 ? (
           <div className="rounded-lg border border-dashed p-14 text-center text-muted-foreground">
-            <BookOpen className="h-8 w-8 mx-auto mb-3 opacity-40" />
+            {tab === "favorites"
+              ? <Heart className="h-8 w-8 mx-auto mb-3 opacity-40" />
+              : <BookOpen className="h-8 w-8 mx-auto mb-3 opacity-40" />
+            }
             <p className="text-sm font-medium mb-1">
-              {tab === "play" ? "No tienes jugadas aún" : tab === "drill" ? "No tienes ejercicios aún" : "Tu biblioteca está vacía"}
+              {tab === "favorites"
+                ? "No tienes favoritos aún"
+                : tab === "play"
+                ? "No tienes jugadas aún"
+                : tab === "drill"
+                ? "No tienes ejercicios aún"
+                : "Tu biblioteca está vacía"}
             </p>
             <p className="text-xs mb-4">
-              {tab === "play"
+              {tab === "favorites"
+                ? "Pulsa el corazón en cualquier ejercicio o jugada para guardarlo aquí."
+                : tab === "play"
                 ? "Las jugadas te permiten diagramar estrategias de ataque y defensa con canvas interactivo."
                 : tab === "drill"
                 ? "Los ejercicios te permiten diseñar entrenamientos con movimientos y elementos de cancha."
                 : "Crea ejercicios y jugadas para compartirlos con tu equipo o publicarlos en el catálogo del club."}
             </p>
-            <Button onClick={() => setCreateOpen(true)}>Crear el primero</Button>
+            {tab !== "favorites" && (
+              <Button onClick={() => setCreateOpen(true)}>Crear el primero</Button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -244,6 +271,9 @@ export default function DrillsPage() {
                 onPublish={clubId ? () => publishMut.mutate(drill.id) : undefined}
                 isCloningThis={cloneMut.isPending && cloneMut.variables === drill.id}
                 isPublishingThis={publishMut.isPending && publishMut.variables === drill.id}
+                onFavoriteToggle={() =>
+                  favoriteMut.mutate({ id: drill.id, isFavorite: !drill.is_favorite })
+                }
                 isPublished={publishedDrillIds.has(drill.id)}
               />
             ))}
@@ -326,6 +356,7 @@ function DrillCard({
   onClone,
   onArchive,
   onPublish,
+  onFavoriteToggle,
   isCloningThis,
   isPublishingThis,
   isPublished,
@@ -335,6 +366,7 @@ function DrillCard({
   onClone: () => void;
   onArchive: () => void;
   onPublish?: () => void;
+  onFavoriteToggle: () => void;
   isCloningThis: boolean;
   isPublishingThis: boolean;
   isPublished: boolean;
@@ -344,20 +376,35 @@ function DrillCard({
   return (
     <div className="group flex flex-col rounded-lg border border-border bg-card hover:border-primary/40 transition-colors overflow-hidden">
 
-      {/* Court preview — clicable */}
-      <button
-        onClick={onEdit}
-        className="block p-4 pb-3 text-muted-foreground hover:text-foreground transition-colors"
-        aria-label={`Editar ${drill.name}`}
-      >
-        <div className={cn(
-          "rounded-md flex items-center justify-center p-3",
-          isPlay ? "bg-blue-50" : "bg-amber-50",
-          "aspect-[3/2]",
-        )}>
-          <CourtSVG layout={drill.court_layout} />
-        </div>
-      </button>
+      {/* Court preview — clicable + favorite button */}
+      <div className="relative">
+        <button
+          onClick={onEdit}
+          className="block w-full p-4 pb-3 text-muted-foreground hover:text-foreground transition-colors"
+          aria-label={`Editar ${drill.name}`}
+        >
+          <div className={cn(
+            "rounded-md flex items-center justify-center p-3",
+            isPlay ? "bg-blue-50" : "bg-amber-50",
+            "aspect-[3/2]",
+          )}>
+            <CourtSVG layout={drill.court_layout} />
+          </div>
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onFavoriteToggle(); }}
+          className={cn(
+            "absolute top-5 right-5 p-1 rounded-full transition-colors",
+            drill.is_favorite
+              ? "text-red-500 hover:text-red-600"
+              : "text-muted-foreground/40 hover:text-red-400",
+          )}
+          aria-label={drill.is_favorite ? "Quitar de favoritos" : "Añadir a favoritos"}
+          title={drill.is_favorite ? "Quitar de favoritos" : "Añadir a favoritos"}
+        >
+          <Heart className={cn("h-4 w-4", drill.is_favorite && "fill-current")} />
+        </button>
+      </div>
 
       {/* Content */}
       <div className="px-4 pb-4 flex flex-col flex-1">

@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, JSON, String, Table, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -64,10 +64,43 @@ class TrainingDrill(Base):
         ForeignKey("drills.id", ondelete="CASCADE"), nullable=False
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text)
 
     training: Mapped["Training"] = relationship("Training", back_populates="training_drills")
     drill: Mapped["Drill"] = relationship("Drill", lazy="select")  # noqa: F821
+    groups: Mapped[list["TrainingDrillGroup"]] = relationship(
+        "TrainingDrillGroup", back_populates="training_drill", cascade="all, delete-orphan", lazy="select"
+    )
+
+
+
+# M2M: grupo ↔ jugadores
+training_drill_group_players = Table(
+    "training_drill_group_players",
+    Base.metadata,
+    Column("group_id", Integer, ForeignKey("training_drill_groups.id", ondelete="CASCADE"), primary_key=True),
+    Column("player_id", Integer, ForeignKey("players.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class TrainingDrillGroup(Base):
+    """RF-520 — grupo de jugadores asignado a un TrainingDrill (1–4 grupos por ejercicio)."""
+
+    __tablename__ = "training_drill_groups"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    training_drill_id: Mapped[int] = mapped_column(
+        ForeignKey("training_drills.id", ondelete="CASCADE"), nullable=False
+    )
+    group_number: Mapped[int] = mapped_column(Integer, nullable=False)  # 1–4
+
+    training_drill: Mapped["TrainingDrill"] = relationship(
+        "TrainingDrill", back_populates="groups"
+    )
+    players: Mapped[list["Player"]] = relationship(  # noqa: F821
+        "Player", secondary=training_drill_group_players, lazy="select"
+    )
 
 
 class TrainingAttendance(Base):
