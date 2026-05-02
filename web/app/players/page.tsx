@@ -239,7 +239,19 @@ export default function PlayersPage() {
 
   const archiveMutation = useMutation({
     mutationFn: (playerId: number) => archivePlayer(token!, clubId!, playerId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["players", clubId] }),
+    // #49 — optimistic update: mark player archived instantly
+    onMutate: async (playerId) => {
+      await queryClient.cancelQueries({ queryKey: ["players", clubId] });
+      const snapshot = queryClient.getQueryData<typeof players>(["players", clubId]);
+      queryClient.setQueryData<typeof players>(["players", clubId], (old) =>
+        old?.map((p) => p.id === playerId ? { ...p, archived_at: new Date().toISOString() } : p),
+      );
+      return { snapshot };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.snapshot) queryClient.setQueryData(["players", clubId], ctx.snapshot);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["players", clubId] }),
   });
 
   // ── Dialog helpers ─────────────────────────────────────────────────────────

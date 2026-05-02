@@ -157,13 +157,19 @@ export default function CatalogPage({
             ))}
           </div>
         ) : active.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-12 text-center">
-            <BookOpen className="h-8 w-8 mx-auto mb-3 text-muted-foreground/40" />
+          <div className="rounded-lg border border-dashed p-14 text-center">
+            <BookOpen className="h-9 w-9 mx-auto mb-3 text-muted-foreground/40" />
             <p className="text-sm font-medium mb-1">El catálogo está vacío</p>
-            <p className="text-xs text-muted-foreground max-w-xs mx-auto">
+            <p className="text-xs text-muted-foreground max-w-xs mx-auto mb-4">
               Los miembros del club pueden publicar jugadas y ejercicios de su
-              biblioteca personal en este catálogo.
+              biblioteca personal en este catálogo compartido.
             </p>
+            <Button size="sm" variant="outline" asChild>
+              <Link href="/drills">
+                <BookOpen className="h-3.5 w-3.5 mr-1.5" />
+                Ir a Mi biblioteca para publicar
+              </Link>
+            </Button>
           </div>
         ) : (
           <div className="border rounded-lg divide-y">

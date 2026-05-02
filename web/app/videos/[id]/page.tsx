@@ -119,10 +119,20 @@ export default function VideoDetailPage({ params }: PageProps) {
             ))}
           </div>
         ) : !clips || clips.length === 0 ? (
-          <div className="py-12 text-center text-sm text-muted-foreground">
-            {video?.status === "processing" || video?.status === "pending"
-              ? "El vídeo aún se está procesando..."
-              : "No hay clips disponibles para este vídeo."}
+          <div className="rounded-lg border border-dashed py-14 text-center text-muted-foreground">
+            {video?.status === "processing" || video?.status === "pending" ? (
+              <>
+                <div className="h-8 w-8 mx-auto mb-3 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                <p className="text-sm font-medium">El vídeo se está procesando…</p>
+                <p className="text-xs mt-1">Los clips aparecerán aquí cuando termine el análisis.</p>
+              </>
+            ) : (
+              <>
+                <p className="text-4xl mb-3">🎬</p>
+                <p className="text-sm font-medium mb-1">No se generaron clips</p>
+                <p className="text-xs">No se detectaron posesiones en este vídeo o ocurrió un error durante el procesado.</p>
+              </>
+            )}
           </div>
         ) : (
           <>

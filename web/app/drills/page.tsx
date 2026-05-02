@@ -115,10 +115,23 @@ export default function DrillsPage() {
 
   const archiveMut = useMutation({
     mutationFn: (id: number) => archiveDrill(token!, id),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["drills"] });
-      toast("Drill archivado.");
+    // #49 — optimistic update: hide archived drill instantly
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: ["drills"] });
+      const snapshot = qc.getQueriesData<DrillSummary[]>({ queryKey: ["drills"] });
+      qc.setQueriesData<DrillSummary[]>({ queryKey: ["drills"] }, (old) =>
+        old?.map((d) => d.id === id ? { ...d, archived_at: new Date().toISOString() } : d),
+      );
+      return { snapshot };
     },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.snapshot) {
+        ctx.snapshot.forEach(([key, data]) => qc.setQueryData(key, data));
+      }
+      toast("No se pudo archivar el drill.", "error");
+    },
+    onSuccess: () => toast("Drill archivado."),
+    onSettled: () => void qc.invalidateQueries({ queryKey: ["drills"] }),
   });
 
   const cloneMut = useMutation({

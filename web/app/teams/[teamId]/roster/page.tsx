@@ -44,6 +44,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import { cn } from "@/lib/utils";
 
@@ -92,6 +93,9 @@ export default function RosterPage({
   const { activeProfile, token } = useAuth();
   const clubId = activeProfile?.club_id;
   const queryClient = useQueryClient();
+  const isCoachOrTD =
+    activeProfile?.role === "head_coach" ||
+    activeProfile?.role === "technical_director";
 
   const [addOpen, setAddOpen] = useState(false);
   const [editEntry, setEditEntry] = useState<number | null>(null);
@@ -200,7 +204,19 @@ export default function RosterPage({
 
   const removeMutation = useMutation({
     mutationFn: (entryId: number) => removeFromRoster(token!, clubId!, teamId, entryId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["roster", clubId, teamId] }),
+    // #49 — optimistic update: remove roster entry instantly
+    onMutate: async (entryId) => {
+      await queryClient.cancelQueries({ queryKey: ["roster", clubId, teamId] });
+      const snapshot = queryClient.getQueryData(["roster", clubId, teamId]);
+      queryClient.setQueryData<typeof roster>(["roster", clubId, teamId], (old) =>
+        old?.filter((e) => e.id !== entryId),
+      );
+      return { snapshot };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.snapshot) queryClient.setQueryData(["roster", clubId, teamId], ctx.snapshot);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["roster", clubId, teamId] }),
   });
 
   function openEdit(entryId: number) {
@@ -245,14 +261,24 @@ export default function RosterPage({
         </div>
 
         {rosterLoading ? (
-          <div className="text-muted-foreground text-sm">Cargando...</div>
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
+          </div>
         ) : roster.length === 0 ? (
-          <div className="border rounded-lg p-12 text-center text-muted-foreground">
-            <UserPlus className="h-8 w-8 mx-auto mb-3 opacity-40" />
-            <p>La plantilla está vacía.</p>
-            <Button variant="link" onClick={() => setAddOpen(true)}>
-              Añade el primer jugador
-            </Button>
+          <div className="border rounded-lg border-dashed p-14 text-center text-muted-foreground">
+            <UserPlus className="h-9 w-9 mx-auto mb-3 opacity-40" />
+            <p className="text-sm font-medium mb-1">La plantilla está vacía</p>
+            <p className="text-xs mb-4">
+              {isCoachOrTD
+                ? "Asigna jugadores del club a este equipo para gestionar dorsales, posiciones y estadísticas."
+                : "El cuerpo técnico aún no ha configurado la plantilla de este equipo."}
+            </p>
+            {isCoachOrTD && (
+              <Button size="sm" onClick={() => setAddOpen(true)}>
+                <UserPlus className="h-3.5 w-3.5 mr-1.5" />
+                Añadir primer jugador
+              </Button>
+            )}
           </div>
         ) : (
           <div className="border rounded-lg overflow-x-auto">

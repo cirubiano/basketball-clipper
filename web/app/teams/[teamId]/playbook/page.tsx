@@ -32,7 +32,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Plus, Trash2, Lock, Pencil, ChevronLeft, ChevronRight, GitBranch, MessageSquare } from "lucide-react";
+import { Plus, Trash2, Lock, Pencil, ChevronLeft, ChevronRight, GitBranch, MessageSquare, BookMarked } from "lucide-react";
+import Link from "next/link";
 import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import {
   listPlaybook,
@@ -180,11 +181,24 @@ export default function PlaybookPage({
         {isLoading ? (
           <p className="text-muted-foreground text-sm">Cargando playbook...</p>
         ) : playbookEntries.length === 0 ? (
-          <div className="text-center py-16 text-muted-foreground">
-            <p className="mb-3">Este equipo no tiene jugadas asignadas.</p>
-            <Button variant="outline" onClick={() => setAddOpen(true)} disabled={!clubId}>
-              Añadir la primera
-            </Button>
+          <div className="border rounded-lg border-dashed p-14 text-center text-muted-foreground">
+            <BookMarked className="h-9 w-9 mx-auto mb-3 opacity-40" />
+            <p className="text-sm font-medium mb-1">El playbook del equipo está vacío</p>
+            <p className="text-xs mb-4 max-w-xs mx-auto">
+              Añade jugadas desde tu biblioteca personal para compartirlas con todo el equipo.
+              Puedes adjuntar notas tácticas a cada una.
+            </p>
+            <div className="flex items-center justify-center gap-2">
+              {clubId && (
+                <Button size="sm" onClick={() => setAddOpen(true)}>
+                  <Plus className="h-3.5 w-3.5 mr-1.5" />
+                  Añadir jugada
+                </Button>
+              )}
+              <Button size="sm" variant="outline" asChild>
+                <Link href="/drills">Ir a Mi biblioteca</Link>
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="flex flex-col gap-2">

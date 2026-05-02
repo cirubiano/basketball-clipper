@@ -303,6 +303,28 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ## Historial de sesiones
 
+### 2026-05-02 — Sesión 39 (UX Roadmap — #44 Empty states, #49 Optimistic updates)
+
+**Objetivo**: completar los últimos ítems pendientes del UX_ROADMAP no-"Grande": empty states mejorados y optimistic updates ampliados.
+
+**#44 Empty states con CTAs contextuales:**
+- **`web/app/teams/[teamId]/roster/page.tsx`**: sustituido texto plano "Cargando..." por 3 skeleton rows; empty state mejorado con dashed border, icono `UserPlus` grande, texto descriptivo diferenciado por rol (coach/TD vs. staff), botón "Añadir primer jugador" (solo si es coach/TD). Añadida variable `isCoachOrTD` y `Skeleton` import.
+- **`web/app/teams/[teamId]/playbook/page.tsx`**: empty state reemplazado — añadido icono `BookMarked`, título, descripción, dos botones ("Añadir jugada" + "Ir a Mi biblioteca" como Link). Añadidos imports `BookMarked` y `Link`.
+- **`web/app/clubs/[clubId]/catalog/page.tsx`**: añadido CTA "Ir a Mi biblioteca para publicar" (Button asChild → Link /drills) al empty state del catálogo vacío.
+- **`web/app/videos/[id]/page.tsx`**: empty state de 0 clips mejorado — si procesando: spinner animado + texto contextual; si terminado sin clips: icono 🎬 + mensaje explicativo.
+
+**#49 Optimistic updates en mutaciones frecuentes:**
+- **`web/app/drills/page.tsx`** (`archiveMut`): optimistic — marca `archived_at` instantáneamente en cache; rollback en error con snapshot de todas las queries `["drills"]`.
+- **`web/app/players/page.tsx`** (`archiveMutation`): optimistic — marca `archived_at` en cache `["players", clubId]`; rollback en error.
+- **`web/app/teams/[teamId]/roster/page.tsx`** (`removeMutation`): optimistic — elimina la entrada del roster del cache `["roster", clubId, teamId]` instantáneamente; rollback en error.
+
+**Ítems del UX_ROADMAP verificados como ya implementados:**
+Fases 1–3 completas (no-"Grande"), Fase 4 no-"Grande" (#36 thumbnails, #30 CSV, #40 notas playbook, #35 timeline). Los ítems "Grande" (#19, #31, #24, #45 de Fase 4; #47, #29 de Fase 5) anotados para futuras sprints.
+
+**Verificaciones**: ESLint 0 errores ✔, TSC 0 errores ✔
+
+---
+
 ### 2026-05-02 — Sesión 38 (Fase 2 UX — Bloques E y F: paginación, vistas por rol, búsqueda global)
 
 **Objetivo**: implementar los ítems de Fase 2 del UX_ROADMAP que no requieren cambios de navegación estructurales.
