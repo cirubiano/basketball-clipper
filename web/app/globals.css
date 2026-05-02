@@ -13,7 +13,8 @@
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
     --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* #12 WCAG 2.1 SC 1.4.3: oscurecido a 40% para garantizar ≥ 4.5:1 sobre fondo blanco */
+    --muted-foreground: 215.4 16.3% 40%;
     --accent: 210 40% 96.1%;
     --accent-foreground: 222.2 47.4% 11.2%;
     --destructive: 0 84.2% 60.2%;
@@ -23,6 +24,27 @@
     --ring: 221.2 83.2% 53.3%;
     --radius: 0.5rem;
   }
+
+  /* #43 — Modo oscuro: paleta complementaria manteniendo contraste WCAG ≥ 4.5:1 */
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 50%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+  }
 }
 
 @layer base {
@@ -31,5 +53,17 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
+  }
+
+  /* #10 WCAG 2.2 SC 2.4.11 — Focus indicators visibles */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+}
+
+@layer utilities {
+  /* #15 — Micro-interacciones: transición suave en botones y links */
+  .transition-smooth {
+    @apply transition-all duration-150 ease-in-out;
   }
 }

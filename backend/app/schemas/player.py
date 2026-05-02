@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -121,3 +121,11 @@ class RosterEntryResponse(BaseModel):
     player: PlayerResponse
 
     model_config = {"from_attributes": True}
+
+
+# ── CSV Import ─────────────────────────────────────────────────────────────────
+
+class CsvImportResponse(BaseModel):
+    created: int
+    skipped: int
+    errors: list[dict[str, Any]]

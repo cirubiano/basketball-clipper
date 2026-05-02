@@ -22,7 +22,7 @@ from app.models.profile import Profile, UserRole
 from app.models.team import Team
 from app.models.user import User
 from app.routers.clubs import _get_club_or_404
-from app.schemas.playbook import AddToPlaybookRequest, PlaybookEntryResponse
+from app.schemas.playbook import AddToPlaybookRequest, PlaybookEntryResponse, UpdatePlaybookNoteRequest
 
 router = APIRouter()
 
@@ -171,3 +171,27 @@ async def remove_from_playbook(
     entry.archived_at = datetime.now(timezone.utc)
     await db.commit()
     return Response(status_code=204)
+
+@router.patch(
+    "/{club_id}/teams/{team_id}/playbook/{entry_id}",
+    response_model=PlaybookEntryResponse,
+)
+async def update_playbook_note(
+    club_id: int,
+    team_id: int,
+    entry_id: int,
+    body: UpdatePlaybookNoteRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PlaybookEntryResponse:
+    """
+    Actualiza la nota del coach en una entrada del playbook.
+    Cualquier miembro del equipo puede editar la nota (RF-169).
+    """
+    await _get_club_or_404(club_id, db)
+    await _require_team_access(club_id, team_id, current_user, db)
+    entry = await _get_entry_or_404(entry_id, team_id, db)
+    note_text = body.note.strip() if body.note and body.note.strip() else None
+    entry.note = note_text
+    await db.commit()
+    return await _get_entry_or_404(entry.id, team_id, db)

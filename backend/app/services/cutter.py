@@ -15,6 +15,12 @@ porque los partidos se graban con GOP corto. Para análisis táctico de
 posesiones esto es aceptable. Si en el futuro hace falta precisión
 frame-accurate, basta con cambiar las opciones de ``output()`` a
 ``vcodec="libx264", crf=23, preset="fast"`` (el coste es el tiempo).
+
+Thumbnails
+----------
+Despues de cortar cada clip, ``extract_thumbnail`` extrae un fotograma JPEG
+del punto medio del clip. El thumbnail se usa en la UI para scanning visual
+de la lista de clips sin necesidad de cargar el video completo.
 """
 import logging
 import os
@@ -26,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 ClipProgressCallback = Callable[[int, int], None]
-"""(current_clip_index_1based, total_clips) — invocado al terminar cada clip."""
+"""(current_clip_index_1based, total_clips) -- invocado al terminar cada clip."""
 
 
 def cut_clips(
@@ -39,7 +45,7 @@ def cut_clips(
     Cuts one MP4 clip per segment using stream copy.
 
     Args:
-        video_path: ruta absoluta al vídeo fuente.
+        video_path: ruta absoluta al video fuente.
         segments: lista de ``(start_seconds, end_seconds, team_label)``.
         output_dir: directorio donde escribir los clips (debe existir).
         on_progress: callback opcional invocado al terminar cada clip con
@@ -62,15 +68,13 @@ def cut_clips(
         try:
             (
                 ffmpeg
-                # Fast seek (-ss antes de -i) busca a nivel de container,
-                # luego copia los streams sin re-encodear.
                 .input(video_path, ss=start_sec)
                 .output(
                     output_path,
                     t=duration,
-                    c="copy",                # Sin re-encoding
+                    c="copy",
                     avoid_negative_ts="make_zero",
-                    movflags="+faststart",   # moov atom al inicio para streaming web
+                    movflags="+faststart",
                 )
                 .overwrite_output()
                 .run(capture_stdout=True, capture_stderr=True, quiet=True)
@@ -93,3 +97,53 @@ def cut_clips(
 
     logger.info("cutter: produced %d clips from %d segments", len(output_paths), len(segments))
     return output_paths
+
+
+def extract_thumbnail(clip_path: str, output_dir: str, clip_name: str) -> str | None:
+    """
+    Extrae un fotograma JPEG del punto medio del clip dado.
+
+    Usa seek exacto al 50% de la duracion del clip. La imagen resultante se
+    escala a 320x180 (16:9) para reducir el tamano de almacenamiento
+    manteniendo buena resolucion para thumbnails.
+
+    Args:
+        clip_path: ruta al archivo MP4 del clip.
+        output_dir: directorio de salida (debe existir).
+        clip_name: nombre base del clip (sin extension) para el archivo JPEG.
+
+    Returns:
+        Ruta al JPEG generado, o ``None`` si FFmpeg falla (no es bloqueante).
+    """
+    thumb_path = os.path.join(output_dir, f"{clip_name}.jpg")
+
+    try:
+        probe = ffmpeg.probe(clip_path)
+        duration = float(probe["format"].get("duration", 0))
+        seek_pos = max(0.0, duration / 2.0)
+
+        (
+            ffmpeg
+            .input(clip_path, ss=seek_pos)
+            .output(
+                thumb_path,
+                vframes=1,
+                vf="scale=320:180",
+                format="image2",
+                vcodec="mjpeg",
+                q=3,
+            )
+            .overwrite_output()
+            .run(capture_stdout=True, capture_stderr=True, quiet=True)
+        )
+
+        if os.path.exists(thumb_path) and os.path.getsize(thumb_path) > 0:
+            logger.debug("cutter: thumbnail extracted for %s (%.1fs)", clip_name, seek_pos)
+            return thumb_path
+
+        logger.warning("cutter: thumbnail for %s is empty, skipping", clip_name)
+        return None
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("cutter: thumbnail extraction failed for %s: %s", clip_name, exc)
+        return None

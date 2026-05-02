@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Film, LogOut, Clock } from "lucide-react";
+import { Film, LogOut, Clock, Search } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { ProfileSelector } from "@/components/layout/ProfileSelector";
+import { ThemeToggle } from "@/components/layout/ThemeToggle";
 import { cn } from "@/lib/utils";
 
 interface NavLink {
@@ -19,7 +20,6 @@ function buildNavLinks(
   clubId: number | undefined,
   teamId: number | null | undefined,
 ): { main: NavLink[]; personal: NavLink[] } {
-  // DT: no tiene sección de vídeos — gestiona el club, no analiza partidos
   if (role === "technical_director" && clubId) {
     return {
       main: [
@@ -43,11 +43,9 @@ function buildNavLinks(
   ];
 
   if (!role || !clubId) {
-    // Modo personal / sin perfil de club
     return { main: [{ href: "/", label: "Inicio" }], personal };
   }
 
-  // head_coach | staff_member
   return {
     main: [
       { href: "/", label: "Inicio" },
@@ -131,6 +129,20 @@ export function Navbar() {
         </nav>
 
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => {
+              window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }));
+            }}
+            className="hidden sm:flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted transition-colors"
+            aria-label="Abrir búsqueda"
+          >
+            <Search className="h-3.5 w-3.5" />
+            <span>Buscar</span>
+            <kbd className="ml-1 font-mono text-[10px] opacity-70">Ctrl K</kbd>
+          </button>
+
+          <ThemeToggle />
+
           <ProfileSelector />
 
           {user && (

@@ -6,7 +6,24 @@ const config: Config = {
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
   ],
+  // #3 Layout fluido: container extendido para pantallas grandes
+  // xl: 1400px (antes 1280px) | 2xl: 1600px (antes 1536px)
   theme: {
+    container: {
+      center: true,
+      padding: {
+        DEFAULT: "1rem",
+        md: "1.5rem",
+        xl: "2rem",
+      },
+      screens: {
+        sm: "640px",
+        md: "768px",
+        lg: "1024px",
+        xl: "1400px",
+        "2xl": "1600px",
+      },
+    },
     extend: {
       colors: {
         border: "hsl(var(--border))",

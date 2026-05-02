@@ -757,6 +757,7 @@ y sus tipos en `shared/types/`. Web y mobile nunca llaman al backend directament
 | PATCH | /clubs/{id}/positions/{pos_id} | td_or_hc | Actualizar posición |
 | DELETE | /clubs/{id}/positions/{pos_id} | td_or_hc | Archivar posición |
 | POST | /clubs/{id}/players/photo-upload-url | td_or_hc | Presigned PUT URL para subir foto de jugador a S3 |
+| POST | /clubs/{id}/players/import-csv | td_or_hc | Importar jugadores desde CSV (multipart/form-data) |
 | GET | /clubs/{id}/players | member | Listar jugadores del club |
 | POST | /clubs/{id}/players | td_or_hc | Crear jugador |
 | GET | /clubs/{id}/players/{pid} | member | Detalle de jugador |
@@ -766,6 +767,7 @@ y sus tipos en `shared/types/`. Web y mobile nunca llaman al backend directament
 | POST | /clubs/{id}/teams/{tid}/roster | td_or_hc | Añadir jugador a plantilla |
 | PATCH | /clubs/{id}/teams/{tid}/roster/{eid} | td_or_hc | Actualizar entrada plantilla |
 | DELETE | /clubs/{id}/teams/{tid}/roster/{eid} | td_or_hc | Retirar jugador de plantilla |
+| PATCH | /clubs/{id}/teams/{tid}/playbook/{entry_id} | member | Actualizar nota de coach en entrada del playbook |
 | GET | /drills/tags | user | Listar tags personales |
 | POST | /drills/tags | user | Crear tag |
 | PATCH | /drills/tags/{id} | user | Actualizar tag |

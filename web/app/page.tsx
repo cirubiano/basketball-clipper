@@ -11,6 +11,7 @@ import {
   CalendarDays,
   LayoutGrid,
   Info,
+  AlertTriangle,
   ClipboardList,
   Trophy,
   Dumbbell,
@@ -210,7 +211,23 @@ export default function DashboardPage() {
     enabled: !isTD && !!token && !!clubId && !!teamId,
   });
 
+  // #9 — Coach match query (non-TD with a team)
+  const { data: coachMatches = [] } = useQuery({
+    queryKey: ["matches", clubId, teamId],
+    queryFn: () => listMatches(token!, clubId!, teamId!),
+    enabled: !isTD && !!token && !!clubId && !!teamId,
+  });
+
   // ── TD computed values ──────────────────────────────────────────────────────
+
+  // #9 — Coach computed values
+  const nowMs = Date.now();
+  const nextCoachMatch = coachMatches
+    .filter((m) => m.status === "scheduled" && new Date(m.date).getTime() >= nowMs)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0] ?? null;
+  const nextCoachTraining = coachTrainings
+    .filter((t) => !t.archived_at && new Date(t.date).getTime() >= nowMs)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0] ?? null;
 
   const activeSeason = seasons.find((s) => s.status === "active") ?? null;
   const activePlayerCount = allPlayers.filter((p) => !p.archived_at).length;
@@ -462,7 +479,54 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {!activeProfile && profiles.length === 0 && (
+        {/* ── #8 Panel de alertas accionables ────────────────────────────── */}
+        {isTD && !tdLoading && (
+          <div className="space-y-2">
+            {/* Alerta: sin temporada activa */}
+            {activeSeason === null && (
+              <Alert className="border-amber-200 bg-amber-50">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+                <AlertDescription className="flex items-center justify-between gap-3">
+                  <span className="text-amber-800 text-sm">
+                    No hay ninguna temporada activa. Sin temporada activa no se pueden registrar partidos ni entrenamientos.
+                  </span>
+                  <a
+                    href={clubId ? `/clubs/${clubId}/seasons` : "#"}
+                    className="shrink-0 text-xs font-medium text-amber-700 underline underline-offset-2 hover:text-amber-900"
+                  >
+                    Gestionar
+                  </a>
+                </AlertDescription>
+              </Alert>
+            )}
+            {/* Alerta: partido inminente (próximos 7 días) */}
+            {nextMatch && (() => {
+              const daysUntil = Math.ceil((new Date(nextMatch.date).getTime() - Date.now()) / 86400000);
+              return daysUntil >= 0 && daysUntil <= 7 ? (
+                <Alert className="border-blue-200 bg-blue-50">
+                  <Info className="h-4 w-4 shrink-0 text-blue-600" />
+                  <AlertDescription className="flex items-center justify-between gap-3">
+                    <span className="text-blue-800 text-sm">
+                      {daysUntil === 0
+                        ? `Partido hoy vs. ${nextMatch.opponent_name} (${nextMatch.teamName})`
+                        : daysUntil === 1
+                        ? `Partido mañana vs. ${nextMatch.opponent_name} (${nextMatch.teamName})`
+                        : `Partido en ${daysUntil} días vs. ${nextMatch.opponent_name} (${nextMatch.teamName})`}
+                    </span>
+                    <a
+                      href={`/teams/${nextMatch.teamId}/matches/${nextMatch.id}`}
+                      className="shrink-0 text-xs font-medium text-blue-700 underline underline-offset-2 hover:text-blue-900"
+                    >
+                      Ver partido
+                    </a>
+                  </AlertDescription>
+                </Alert>
+              ) : null;
+            })()}
+          </div>
+        )}
+
+                {!activeProfile && profiles.length === 0 && (
           <Alert className="border-blue-200 bg-blue-50 text-blue-800">
             <Info className="h-4 w-4 shrink-0 text-blue-500" />
             <AlertDescription>
@@ -920,6 +984,82 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* ── #9 Coach overview: próximo partido + entrenamiento ─────────────── */}
+        {!isTD && role === "head_coach" && teamId && (
+          <div className="space-y-4">
+            {/* #7 — Mini-calendario semanal */}
+            <div>
+              <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                <CalendarDays className="h-3.5 w-3.5" />
+                Esta semana
+              </h2>
+              <WeekStrip
+                matches={coachMatches}
+                trainings={coachTrainings}
+                teamId={teamId}
+              />
+            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Próximo partido */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Trophy className="h-4 w-4 text-muted-foreground" />
+                  Próximo partido
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {nextCoachMatch ? (
+                  <Link
+                    href={`/teams/${teamId}/matches/${nextCoachMatch.id}`}
+                    className="block hover:opacity-80 transition-opacity"
+                  >
+                    <p className="font-semibold text-base truncate">vs. {nextCoachMatch.opponent_name}</p>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      {new Date(nextCoachMatch.date).toLocaleDateString("es-ES", { weekday: "short", month: "short", day: "numeric" })}
+                      {" · "}
+                      {new Date(nextCoachMatch.date).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {MATCH_LOCATION_LABELS[nextCoachMatch.location as keyof typeof MATCH_LOCATION_LABELS]}
+                    </p>
+                  </Link>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No hay partidos programados.</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Próximo entrenamiento */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <Dumbbell className="h-4 w-4 text-muted-foreground" />
+                  Próximo entrenamiento
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {nextCoachTraining ? (
+                  <Link
+                    href={`/teams/${teamId}/trainings/${nextCoachTraining.id}`}
+                    className="block hover:opacity-80 transition-opacity"
+                  >
+                    <p className="font-semibold text-base truncate">
+                      {nextCoachTraining.title ?? "Entrenamiento"}
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      {new Date(nextCoachTraining.date).toLocaleDateString("es-ES", { weekday: "short", month: "short", day: "numeric" })}
+                    </p>
+                  </Link>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No hay entrenamientos programados.</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+          </div>
+        )}
+
         {/* ── Vídeos recientes (non-TD) ─────────────────────────────────────── */}
         {!isTD && (
           <div>
@@ -1143,3 +1283,135 @@ function TrainingCalendar({
   );
 }
 
+
+// ── WeekStrip — #7 Mini-calendario semanal de eventos ────────────────────────
+// Shows a 7-day horizontal strip (Mon–Sun) with color-coded event dots for
+// matches (primary) and trainings (amber). Used in the HeadCoach dashboard.
+
+interface WeekEvent {
+  id: number;
+  type: "match" | "training";
+  label: string;
+  href: string;
+  time: string;
+}
+
+function WeekStrip({
+  matches,
+  trainings,
+  teamId,
+}: {
+  matches: Array<{ id: number; date: string; opponent_name: string }>;
+  trainings: Array<{ id: number; date: string; title: string }>;
+  teamId: number;
+}) {
+  // Build current week Mon–Sun
+  const today = new Date();
+  const dow = today.getDay(); // 0=Sun
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - ((dow + 6) % 7));
+
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return d;
+  });
+
+  // Build event map keyed by YYYY-MM-DD (local)
+  const eventsByDay = new Map<string, WeekEvent[]>();
+  days.forEach((d) => eventsByDay.set(d.toLocaleDateString("sv"), []));
+
+  matches.forEach((m) => {
+    const key = new Date(m.date).toLocaleDateString("sv");
+    if (eventsByDay.has(key)) {
+      eventsByDay.get(key)!.push({
+        id: m.id,
+        type: "match",
+        label: `vs. ${m.opponent_name}`,
+        href: `/teams/${teamId}/matches/${m.id}`,
+        time: new Date(m.date).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }),
+      });
+    }
+  });
+
+  trainings.forEach((t) => {
+    const key = new Date(t.date).toLocaleDateString("sv");
+    if (eventsByDay.has(key)) {
+      eventsByDay.get(key)!.push({
+        id: t.id,
+        type: "training",
+        label: t.title,
+        href: `/teams/${teamId}/trainings/${t.id}`,
+        time: new Date(t.date).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }),
+      });
+    }
+  });
+
+  const todayKey = today.toLocaleDateString("sv");
+  const DAY_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+
+  return (
+    <div className="border rounded-lg overflow-hidden">
+      <div className="grid grid-cols-7">
+        {days.map((d, i) => {
+          const key = d.toLocaleDateString("sv");
+          const events = eventsByDay.get(key) ?? [];
+          const isToday = key === todayKey;
+          const isPast = d < today && !isToday;
+
+          return (
+            <div
+              key={key}
+              className={cn(
+                "flex flex-col items-center py-2 px-1 border-r last:border-r-0 min-h-[80px]",
+                isToday && "bg-primary/5",
+                isPast && "opacity-50",
+              )}
+            >
+              {/* Day label */}
+              <span className={cn("text-[10px] font-medium mb-1 uppercase tracking-wide", isToday ? "text-primary" : "text-muted-foreground")}>
+                {DAY_LABELS[i]}
+              </span>
+              {/* Day number */}
+              <span className={cn(
+                "flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold mb-2",
+                isToday ? "bg-primary text-primary-foreground" : "text-foreground",
+              )}>
+                {d.getDate()}
+              </span>
+              {/* Events */}
+              <div className="flex flex-col gap-1 w-full px-0.5">
+                {events.map((ev) => (
+                  <Link
+                    key={`${ev.type}-${ev.id}`}
+                    href={ev.href}
+                    title={`${ev.label} · ${ev.time}`}
+                    className={cn(
+                      "block w-full rounded px-1 py-0.5 text-[9px] font-medium leading-tight truncate transition-opacity hover:opacity-80",
+                      ev.type === "match"
+                        ? "bg-primary/15 text-primary"
+                        : "bg-amber-100 text-amber-800",
+                    )}
+                  >
+                    {ev.time}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {/* Legend */}
+      <div className="flex items-center gap-4 px-3 py-1.5 border-t bg-muted/30">
+        <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+          <span className="inline-block h-2 w-2 rounded-sm bg-primary/40" />
+          Partido
+        </span>
+        <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+          <span className="inline-block h-2 w-2 rounded-sm bg-amber-400" />
+          Entrenamiento
+        </span>
+      </div>
+    </div>
+  );
+}

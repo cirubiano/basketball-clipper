@@ -21,6 +21,7 @@ export function ClipPlayer({ clip }: ClipPlayerProps) {
         controls
         src={clip.url}
         preload="metadata"
+        poster={clip.thumbnail_url ?? undefined}
       />
       <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
         {clip.team && (
@@ -30,7 +31,7 @@ export function ClipPlayer({ clip }: ClipPlayerProps) {
         )}
         <span>Inicio: {clip.start_time.toFixed(2)}s</span>
         <span>Fin: {clip.end_time.toFixed(2)}s</span>
-        <span>Duración: {formatDuration(clip.duration)}</span>
+        <span>Duraci&oacute;n: {formatDuration(clip.duration)}</span>
       </div>
     </div>
   );

@@ -54,6 +54,8 @@ export interface PlaybookEntry {
   is_frozen: boolean;
   frozen_at: string | null;
   archived_at: string | null;
+  /** Coach annotation visible to all team members. */
+  note: string | null;
   created_at: string;
 }
 

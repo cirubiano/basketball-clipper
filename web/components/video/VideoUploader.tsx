@@ -70,20 +70,30 @@ export function VideoUploader({ onFile, disabled = false }: VideoUploaderProps) 
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
         className={cn(
-          "relative flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-10 transition-colors cursor-pointer select-none",
-          dragOver && !disabled && "border-primary bg-primary/5",
-          !dragOver && "border-muted-foreground/30 hover:border-primary/60 hover:bg-accent/30",
+          "relative flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-10 transition-all duration-200 cursor-pointer select-none",
+          // #37 — enhanced drag state: animated ring + accent fill
+          dragOver && !disabled && "border-primary bg-primary/8 ring-4 ring-primary/20 scale-[1.01]",
+          !dragOver && !selected && "border-muted-foreground/30 hover:border-primary/60 hover:bg-accent/30",
           disabled && "opacity-50 cursor-not-allowed",
           selected && "border-primary/60 bg-primary/5"
         )}
       >
+        {/* #37 — drag-over overlay with clear "drop here" message */}
+        {dragOver && !disabled && (
+          <div className="absolute inset-0 rounded-xl flex flex-col items-center justify-center bg-primary/5 z-10 pointer-events-none">
+            <Upload className="h-12 w-12 text-primary mb-2 animate-bounce" />
+            <p className="text-base font-semibold text-primary">Suelta aquí para subir</p>
+            <p className="text-xs text-primary/70 mt-1">MP4 · MOV · AVI · MKV</p>
+          </div>
+        )}
+
         {selected ? (
           <>
             <Film className="h-10 w-10 text-primary" />
             <div className="text-center">
               <p className="font-medium text-sm">{selected.name}</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {(selected.size / 1024 ** 2).toFixed(1)} MB
+                {(selected.size / 1024 ** 2).toFixed(1)} MB · listo para subir
               </p>
             </div>
             {!disabled && (
@@ -103,8 +113,18 @@ export function VideoUploader({ onFile, disabled = false }: VideoUploaderProps) 
             <div className="text-center">
               <p className="font-medium text-sm">Arrastra un vídeo aquí</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                o haz clic para seleccionar · MP4, MOV, AVI, MKV · máx. {MAX_SIZE_GB} GB
+                o haz clic para seleccionar
               </p>
+            </div>
+            <div className="flex gap-2 mt-1">
+              {["MP4", "MOV", "AVI", "MKV"].map((fmt) => (
+                <span key={fmt} className="text-[10px] rounded border border-border px-1.5 py-0.5 text-muted-foreground font-mono">
+                  {fmt}
+                </span>
+              ))}
+              <span className="text-[10px] rounded border border-border px-1.5 py-0.5 text-muted-foreground">
+                máx. {MAX_SIZE_GB} GB
+              </span>
             </div>
           </>
         )}

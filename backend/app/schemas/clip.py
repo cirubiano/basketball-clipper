@@ -11,6 +11,7 @@ class ClipResponse(BaseModel):
     team: str | None
     s3_key: str
     url: str  # pre-signed S3 GET URL, valid for 1 hour
+    thumbnail_url: str | None  # pre-signed S3 GET URL for thumbnail JPEG, or None
     duration: float
     created_at: datetime
 

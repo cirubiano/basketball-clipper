@@ -4,12 +4,11 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   BookOpen,
-  Dumbbell,
   Copy,
   Trash2,
-  ChevronRight,
   Tag,
   ExternalLink,
+  Search,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -36,6 +35,8 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Breadcrumb } from "@/components/layout/Breadcrumb";
+import { Input } from "@/components/ui/input";
+import { CourtSVG } from "@/components/ui/court-svg";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,8 @@ export default function CatalogPage({
   const qc = useQueryClient();
   const isTD = activeProfile?.role === "technical_director";
 
+  const [search, setSearch] = useState("");
+  const [tagFilter, setTagFilter] = useState<string>("all");
   const [copySuccess, setCopySuccess] = useState<number | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
 
@@ -83,7 +86,18 @@ export default function CatalogPage({
     },
   });
 
-  const active = entries.filter((e) => !e.archived_at);
+  const allActive = entries.filter((e) => !e.archived_at);
+  // #38 — búsqueda y filtro por tag
+  const searchQ = search.trim().toLowerCase();
+  const active = allActive.filter((e) => {
+    if (searchQ && !e.drill.name.toLowerCase().includes(searchQ)) return false;
+    if (tagFilter !== "all" && !e.tags.some((t) => String(t.id) === tagFilter)) return false;
+    return true;
+  });
+  // collect all unique tags for the filter
+  const allTags = Array.from(
+    new Map(allActive.flatMap((e) => e.tags).map((t) => [t.id, t])).values()
+  );
 
   return (
     <PageShell>
@@ -101,6 +115,33 @@ export default function CatalogPage({
             Copia cualquiera a tu biblioteca personal para editarlo.
           </p>
         </div>
+
+        {/* #38 — búsqueda y filtro */}
+        {allActive.length > 0 && (
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar en el catálogo…"
+                className="pl-9 h-9 text-sm"
+              />
+            </div>
+            {allTags.length > 0 && (
+              <select
+                value={tagFilter}
+                onChange={(e) => setTagFilter(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-3 text-sm w-full sm:w-40 shrink-0"
+              >
+                <option value="all">Todos los tags</option>
+                {allTags.map((t) => (
+                  <option key={t.id} value={String(t.id)}>{t.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
 
         {copyError && (
           <Alert variant="destructive">
@@ -169,13 +210,9 @@ function CatalogRow({
 
   return (
     <div className="flex items-start gap-4 px-4 py-4">
-      {/* Icon */}
-      <div className="mt-0.5 shrink-0 h-9 w-9 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
-        {drill.type === "play" ? (
-          <ChevronRight className="h-4 w-4" />
-        ) : (
-          <Dumbbell className="h-4 w-4" />
-        )}
+      {/* #39 — court preview thumbnail */}
+      <div className="mt-0.5 shrink-0 h-12 w-16 rounded-md bg-muted/50 border border-border flex items-center justify-center text-muted-foreground/60 overflow-hidden p-1">
+        <CourtSVG layout={drill.court_layout} className="w-full h-full" />
       </div>
 
       {/* Info */}

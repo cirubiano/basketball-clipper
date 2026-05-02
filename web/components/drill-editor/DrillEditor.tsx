@@ -17,8 +17,8 @@ import type {
   ElementType,
   SequenceNode,
   SketchElement,
-} from "@basketball-clipper/shared";
-import { COURT_LAYOUT_LABELS } from "@basketball-clipper/shared";
+} from "@basketball-clipper/shared/types";
+import { COURT_LAYOUT_LABELS } from "@basketball-clipper/shared/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -85,6 +85,16 @@ export function DrillEditor({ drill, onSave }: Props) {
     () => findNode(tree, activeNodeId) ?? tree,
     [tree, activeNodeId],
   );
+
+  // ── #16 Guard de cambios sin guardar — avisa antes de salir ─────────────────
+  useEffect(() => {
+    if (!dirty) {
+      window.onbeforeunload = null;
+      return;
+    }
+    window.onbeforeunload = () => "Tienes cambios sin guardar.";
+    return () => { window.onbeforeunload = null; };
+  }, [dirty]);
 
   // ── Atajos de teclado ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -184,9 +194,14 @@ export function DrillEditor({ drill, onSave }: Props) {
 
       {/* ── Toolbar superior ──────────────────────────────────────────────── */}
       <header className="flex items-center gap-2 px-3 py-2 bg-zinc-900 border-b border-zinc-700 shrink-0">
+        {/* #16 — confirmar antes de salir si hay cambios sin guardar */}
         <Button
           variant="ghost"
-          onClick={() => router.push("/drills")}
+          onClick={() => {
+            if (dirty && !window.confirm("Tienes cambios sin guardar. Salir de todas formas?")) return;
+            window.onbeforeunload = null;
+            router.push("/drills");
+          }}
           className="h-8 gap-1 px-2 text-zinc-300 hover:text-zinc-100 hover:bg-zinc-700"
         >
           <ChevronLeft className="h-4 w-4" />
@@ -257,11 +272,13 @@ export function DrillEditor({ drill, onSave }: Props) {
           <span className="text-xs text-amber-400 shrink-0">Sin guardar</span>
         )}
 
+        {/* #34 — title muestra el atajo de teclado en tooltip nativo */}
         <Button
           size="sm"
           onClick={handleSave}
           disabled={saving || !dirty}
           className="h-8 gap-1.5 shrink-0"
+          title="Guardar (Ctrl+S)"
         >
           {saving ? (
             <Loader2 className="h-4 w-4 animate-spin" />

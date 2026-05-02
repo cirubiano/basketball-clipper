@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Breadcrumb } from "@/components/layout/Breadcrumb";
+import { PaginationBar } from "@/components/ui/pagination-bar";
 import {
   Dialog,
   DialogContent,
@@ -36,7 +37,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Plus, Archive, Copy, BookOpen, Pencil, BookMarked, Heart } from "lucide-react";
+import { Plus, Archive, Copy, BookOpen, Pencil, BookMarked, Heart, LayoutGrid, List } from "lucide-react";
 import {
   listDrills,
   createDrill,
@@ -50,53 +51,7 @@ import type { DrillSummary, DrillType, CourtLayoutType } from "@basketball-clipp
 import { COURT_LAYOUT_LABELS } from "@basketball-clipper/shared/types";
 import { useToast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
-
-// ── Court preview SVG ─────────────────────────────────────────────────────────
-
-function CourtSVG({ layout }: { layout: CourtLayoutType }) {
-  const isFull = layout === "full_fiba" || layout === "mini_fiba";
-
-  if (isFull) {
-    return (
-      <svg viewBox="0 0 130 70" className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-        {/* Border */}
-        <rect x="1" y="1" width="128" height="68" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5"/>
-        {/* Center line */}
-        <line x1="65" y1="1" x2="65" y2="69" stroke="currentColor" strokeWidth="1"/>
-        {/* Center circle */}
-        <circle cx="65" cy="35" r="9" fill="none" stroke="currentColor" strokeWidth="1"/>
-        {/* Left paint */}
-        <rect x="1" y="24" width="19" height="22" fill="none" stroke="currentColor" strokeWidth="1"/>
-        {/* Left arc */}
-        <path d="M 20,24 A 13,13 0 0,1 20,46" fill="none" stroke="currentColor" strokeWidth="1"/>
-        {/* Left 3pt */}
-        <path d="M 1,10 A 38,38 0 0,1 1,60" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="2,2"/>
-        {/* Right paint */}
-        <rect x="110" y="24" width="19" height="22" fill="none" stroke="currentColor" strokeWidth="1"/>
-        {/* Right arc */}
-        <path d="M 110,24 A 13,13 0 0,0 110,46" fill="none" stroke="currentColor" strokeWidth="1"/>
-        {/* Right 3pt */}
-        <path d="M 129,10 A 38,38 0 0,0 129,60" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="2,2"/>
-      </svg>
-    );
-  }
-
-  // half court (half_fiba | half_mini_fiba)
-  return (
-    <svg viewBox="0 0 120 80" className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-      {/* Border */}
-      <rect x="1" y="1" width="118" height="78" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5"/>
-      {/* Paint */}
-      <rect x="42" y="1" width="36" height="36" fill="none" stroke="currentColor" strokeWidth="1"/>
-      {/* Basket arc */}
-      <path d="M 42,37 A 18,18 0 0,0 78,37" fill="none" stroke="currentColor" strokeWidth="1"/>
-      {/* 3pt line */}
-      <path d="M 6,79 A 70,70 0 0,1 114,79" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="2,2"/>
-      {/* Basket */}
-      <circle cx="60" cy="12" r="4" fill="none" stroke="currentColor" strokeWidth="1.5"/>
-    </svg>
-  );
-}
+import { CourtSVG } from "@/components/ui/court-svg";
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
@@ -118,6 +73,9 @@ export default function DrillsPage() {
   const clubId = activeProfile?.club_id ?? null;
 
   const [tab,        setTab]        = useState<DrillType | "all" | "favorites">("all");
+  // #33 -- toggle entre vista de cuadricula (por defecto) y lista
+  const [viewMode,   setViewMode]   = useState<"grid" | "list">("grid");
+  const [page,       setPage]        = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState<{ type: DrillType; name: string; court_layout: CourtLayoutType }>({
     type: "drill", name: "", court_layout: "half_fiba",
@@ -174,8 +132,22 @@ export default function DrillsPage() {
   const favoriteMut = useMutation({
     mutationFn: ({ id, isFavorite }: { id: number; isFavorite: boolean }) =>
       setDrillFavorite(token!, id, isFavorite),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["drills"] }),
-    onError: () => toast("No se pudo actualizar el favorito.", "error"),
+    // #49 — optimistic update: flip is_favorite instantly, roll back on error
+    onMutate: async ({ id, isFavorite }) => {
+      await qc.cancelQueries({ queryKey: ["drills"] });
+      const snapshot = qc.getQueriesData<DrillSummary[]>({ queryKey: ["drills"] });
+      qc.setQueriesData<DrillSummary[]>({ queryKey: ["drills"] }, (old) =>
+        old?.map((d) => d.id === id ? { ...d, is_favorite: isFavorite } : d),
+      );
+      return { snapshot };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot) {
+        ctx.snapshot.forEach(([key, data]) => qc.setQueryData(key, data));
+      }
+      toast("No se pudo actualizar el favorito.", "error");
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: ["drills"] }),
   });
 
   const publishMut = useMutation({
@@ -193,6 +165,12 @@ export default function DrillsPage() {
     .filter((d) => !d.archived_at)
     .filter((d) => (tab === "favorites" ? d.is_favorite : true));
 
+  // #48 — paginación: 12 en grid (3×4), 20 en lista
+  const PAGE_SIZE_D = viewMode === "grid" ? 12 : 20;
+  const totalPagesD = Math.max(1, Math.ceil(active.length / PAGE_SIZE_D));
+  const safePageD = Math.min(page, totalPagesD);
+  const activePage = active.slice((safePageD - 1) * PAGE_SIZE_D, safePageD * PAGE_SIZE_D);
+
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-6 max-w-5xl">
@@ -200,10 +178,41 @@ export default function DrillsPage() {
 
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Mi biblioteca</h1>
-          <Button onClick={() => setCreateOpen(true)} className="gap-2">
-            <Plus className="h-4 w-4" />
-            Nuevo
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* #33 -- toggle vista cuadricula / lista */}
+            <div className="flex rounded-md border border-border overflow-hidden">
+              <button
+                onClick={() => setViewMode("grid")}
+                className={cn(
+                  "p-2 transition-colors",
+                  viewMode === "grid"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                )}
+                aria-label="Vista cuadricula"
+                title="Vista cuadricula"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setViewMode("list")}
+                className={cn(
+                  "p-2 transition-colors",
+                  viewMode === "list"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                )}
+                aria-label="Vista lista"
+                title="Vista lista"
+              >
+                <List className="h-4 w-4" />
+              </button>
+            </div>
+            <Button onClick={() => setCreateOpen(true)} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Nuevo
+            </Button>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -224,11 +233,14 @@ export default function DrillsPage() {
           ))}
         </div>
 
-        {/* Grid */}
+        {/* Grid / Lista */}
         {isLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className={viewMode === "grid"
+            ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+            : "flex flex-col gap-2"
+          }>
             {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-64 rounded-lg" />
+              <Skeleton key={i} className={viewMode === "grid" ? "h-64 rounded-lg" : "h-14 rounded-lg"} />
             ))}
           </div>
         ) : active.length === 0 ? (
@@ -259,9 +271,9 @@ export default function DrillsPage() {
               <Button onClick={() => setCreateOpen(true)}>Crear el primero</Button>
             )}
           </div>
-        ) : (
+        ) : viewMode === "grid" ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {active.map((drill) => (
+            {activePage.map((drill) => (
               <DrillCard
                 key={drill.id}
                 drill={drill}
@@ -278,6 +290,27 @@ export default function DrillsPage() {
               />
             ))}
           </div>
+        ) : (
+          /* #33 -- vista lista: filas compactas */
+          <div className="flex flex-col divide-y divide-border rounded-lg border border-border overflow-hidden">
+            {activePage.map((drill) => (
+              <DrillRow
+                key={drill.id}
+                drill={drill}
+                onEdit={() => router.push(`/drills/${drill.id}/edit`)}
+                onClone={() => cloneMut.mutate(drill.id)}
+                onArchive={() => archiveMut.mutate(drill.id)}
+                onFavoriteToggle={() =>
+                  favoriteMut.mutate({ id: drill.id, isFavorite: !drill.is_favorite })
+                }
+                isCloningThis={cloneMut.isPending && cloneMut.variables === drill.id}
+                isPublished={publishedDrillIds.has(drill.id)}
+              />
+            ))}
+          </div>
+        )}
+        {active.length > PAGE_SIZE_D && (
+          <PaginationBar page={safePageD} totalPages={totalPagesD} onPage={setPage} />
         )}
       </div>
 
@@ -348,6 +381,86 @@ export default function DrillsPage() {
   );
 }
 
+// ── DrillRow -- vista lista compacta ─────────────────────────────────────────
+
+function DrillRow({
+  drill,
+  onEdit,
+  onClone,
+  onArchive,
+  onFavoriteToggle,
+  isCloningThis,
+  isPublished,
+}: {
+  drill: DrillSummary;
+  onEdit: () => void;
+  onClone: () => void;
+  onArchive: () => void;
+  onFavoriteToggle: () => void;
+  isCloningThis: boolean;
+  isPublished: boolean;
+}) {
+  const isPlay = drill.type === "play";
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 bg-card hover:bg-muted/40 transition-colors">
+      <div className={cn(
+        "shrink-0 rounded-md flex items-center justify-center w-9 h-9 text-muted-foreground",
+        isPlay ? "bg-blue-50" : "bg-amber-50",
+      )}>
+        <BookOpen className="h-4 w-4" />
+      </div>
+      <button onClick={onEdit} className="flex-1 min-w-0 text-left">
+        <p className="text-sm font-medium truncate">{drill.name}</p>
+        <p className="text-xs text-muted-foreground">
+          {isPlay ? "Jugada" : "Ejercicio"} · {COURT_LAYOUT_LABELS[drill.court_layout]} · {new Date(drill.updated_at).toLocaleDateString("es-ES")}
+          {isPublished && <span className="ml-1.5 text-green-700">· En catálogo</span>}
+        </p>
+      </button>
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          onClick={(e) => { e.stopPropagation(); onFavoriteToggle(); }}
+          className={cn(
+            "p-1.5 rounded transition-colors",
+            drill.is_favorite ? "text-red-500 hover:text-red-600" : "text-muted-foreground/40 hover:text-red-400",
+          )}
+          aria-label={drill.is_favorite ? "Quitar de favoritos" : "Añadir a favoritos"}
+          title={drill.is_favorite ? "Quitar de favoritos" : "Añadir a favoritos"}
+        >
+          <Heart className={cn("h-4 w-4", drill.is_favorite && "fill-current")} />
+        </button>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClone} disabled={isCloningThis} title="Clonar">
+          <Copy className="h-3.5 w-3.5" />
+        </Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onEdit} title="Editar">
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" title="Archivar">
+              <Archive className="h-3.5 w-3.5" />
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Archivar este elemento?</AlertDialogTitle>
+              <AlertDialogDescription>
+                <strong>{drill.name}</strong> quedará archivado y no aparecerá en tu biblioteca.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={onArchive} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                Archivar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </div>
+  );
+}
+
 // ── DrillCard ─────────────────────────────────────────────────────────────────
 
 function DrillCard({
@@ -388,7 +501,7 @@ function DrillCard({
             isPlay ? "bg-blue-50" : "bg-amber-50",
             "aspect-[3/2]",
           )}>
-            <CourtSVG layout={drill.court_layout} />
+            <CourtSVG layout={drill.court_layout} className="w-full h-full" />
           </div>
         </button>
         <button
@@ -526,7 +639,6 @@ function DrillCard({
           <div className="pt-2">
             {isPublished ? (
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground justify-center py-1">
-                <BookMarked className="h-3.5 w-3.5 text-green-600" />
                 <span className="text-green-700 font-medium">En catálogo del club</span>
               </div>
             ) : (

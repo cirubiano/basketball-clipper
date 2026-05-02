@@ -34,6 +34,13 @@ import { ABSENCE_REASON_LABELS } from "@basketball-clipper/shared/types";
 import { PageShell } from "@/components/layout/PageShell";
 import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import { useAuth } from "@/lib/auth";
+import {
+  loadTemplates,
+  saveTemplate,
+  deleteTemplate,
+  makeTemplateId,
+  type TrainingTemplate,
+} from "@/lib/trainingTemplates";
 import { useToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -137,10 +144,16 @@ export default function TrainingDetailPage({
 
   const [tab, setTab] = useState<TabKey>("ejercicios");
   const [addDrillOpen, setAddDrillOpen] = useState(false);
+  // #25 — save-as-template state
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [templateName, setTemplateName] = useState("");
   const [addMode, setAddMode] = useState<AddMode>("library");
 
   // Library mode
   const [selectedDrillId, setSelectedDrillId] = useState<string>("");
+  // #32 -- busqueda en el dialogo de anadir ejercicio
+  const [drillSearchQuery,   setDrillSearchQuery]   = useState("");
+  const [catalogSearchQuery, setCatalogSearchQuery] = useState("");
   // Catalog mode
   const [selectedCatalogEntryId, setSelectedCatalogEntryId] = useState<string>("");
   // New mode
@@ -160,6 +173,9 @@ export default function TrainingDetailPage({
     new Map()
   );
   const [attendanceDirty, setAttendanceDirty] = useState(false);
+  // #23 — drag-and-drop state for reordering drills
+  const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
   const { data: training, isLoading } = useQuery({
     queryKey: ["training", trainingId],
@@ -210,6 +226,17 @@ export default function TrainingDetailPage({
   const availableCatalogEntries = catalogEntries.filter(
     (e) => !e.archived_at && !drillIdsInTraining.has(e.drill.id)
   );
+  // #32 -- listas filtradas por busqueda (sin distincion mayusc/minusc)
+  const filteredLibraryDrills = drillSearchQuery.trim()
+    ? availableLibraryDrills.filter((d) =>
+        d.name.toLowerCase().includes(drillSearchQuery.toLowerCase())
+      )
+    : availableLibraryDrills;
+  const filteredCatalogEntries = catalogSearchQuery.trim()
+    ? availableCatalogEntries.filter((e) =>
+        e.drill.name.toLowerCase().includes(catalogSearchQuery.toLowerCase())
+      )
+    : availableCatalogEntries;
 
   // Build attendance player list: recorded first, then roster defaults (present)
   const attendanceMap = new Map(
@@ -320,6 +347,26 @@ export default function TrainingDetailPage({
     },
     onError: (e: Error) => toast(e.message, "error"),
   });
+
+  // #25 — save as template handler
+  function handleSaveTemplate() {
+    if (!templateName.trim()) return;
+    const drills = training!.training_drills.map((td) => ({
+      drill_id: td.drill_id,
+      drill_title: td.drill_title ?? `Ejercicio #${td.drill_id}`,
+      duration_minutes: td.duration_minutes,
+      notes: td.notes,
+    }));
+    saveTemplate(teamId, {
+      id: makeTemplateId(),
+      name: templateName.trim(),
+      drills,
+      savedAt: new Date().toISOString(),
+    });
+    setSaveTemplateOpen(false);
+    setTemplateName("");
+    toast("Plantilla guardada.");
+  }
 
   function moveRow(drills: TrainingDrill[], idx: number, dir: -1 | 1) {
     const copy = [...drills];
@@ -437,6 +484,9 @@ export default function TrainingDetailPage({
     setSelectedCatalogEntryId("");
     setNewDrillName("");
     setNewDrillType("drill");
+    // #32 -- limpiar busqueda al abrir el dialogo
+    setDrillSearchQuery("");
+    setCatalogSearchQuery("");
     setAddDrillOpen(true);
   }
 
@@ -548,7 +598,32 @@ export default function TrainingDetailPage({
                 {training.training_drills.map((td, idx) => {
                   const drillDetail = drillDetailMap.get(td.drill_id);
                   return (
-                    <div key={td.id} className="flex items-center gap-3 px-4 py-3">
+                    <div
+                      key={td.id}
+                      className={cn(
+                        "flex items-center gap-3 px-4 py-3 transition-colors",
+                        // #23 — drag-and-drop visual cues
+                        isCoachOrTD && "cursor-grab active:cursor-grabbing",
+                        draggedIdx === idx && "opacity-40",
+                        dragOverIdx === idx && draggedIdx !== idx && "bg-accent/50 border-l-2 border-primary",
+                      )}
+                      draggable={isCoachOrTD && !reorderMut.isPending}
+                      onDragStart={() => { setDraggedIdx(idx); setDragOverIdx(null); }}
+                      onDragOver={(e) => { e.preventDefault(); if (draggedIdx !== idx) setDragOverIdx(idx); }}
+                      onDragLeave={() => setDragOverIdx(null)}
+                      onDrop={() => {
+                        if (draggedIdx !== null && draggedIdx !== idx) {
+                          // Reorder: build new array with draggedIdx moved to idx
+                          const drills = [...training.training_drills];
+                          const [moved] = drills.splice(draggedIdx, 1);
+                          drills.splice(idx, 0, moved);
+                          reorderMut.mutate(drills.map((d, i) => ({ drill_id: d.drill_id, position: i })));
+                        }
+                        setDraggedIdx(null);
+                        setDragOverIdx(null);
+                      }}
+                      onDragEnd={() => { setDraggedIdx(null); setDragOverIdx(null); }}
+                    >
                       <span className="text-xs text-muted-foreground font-mono w-5 shrink-0">
                         {idx + 1}.
                       </span>
@@ -711,10 +786,21 @@ export default function TrainingDetailPage({
             )}
 
             {isCoachOrTD && (
-              <Button variant="outline" size="sm" onClick={openDialog}>
-                <Plus className="h-4 w-4 mr-1.5" />
-                Añadir ejercicio
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={openDialog}>
+                  <Plus className="h-4 w-4 mr-1.5" />
+                  Añadir ejercicio
+                </Button>
+                {training.training_drills.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { setTemplateName(training.title); setSaveTemplateOpen(true); }}
+                  >
+                    Guardar plantilla
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -998,10 +1084,16 @@ export default function TrainingDetailPage({
             {addMode === "library" && (
               <div className="space-y-1.5">
                 <Label>Ejercicio de mi biblioteca</Label>
+                {/* #32 -- busqueda para filtrar la lista de ejercicios */}
+                <Input
+                  placeholder="Buscar ejercicio..."
+                  value={drillSearchQuery}
+                  onChange={(e) => { setDrillSearchQuery(e.target.value); setSelectedDrillId(""); }}
+                />
                 <Select value={selectedDrillId} onValueChange={setSelectedDrillId}>
                   <SelectTrigger><SelectValue placeholder="Selecciona un ejercicio" /></SelectTrigger>
                   <SelectContent>
-                    {availableLibraryDrills.map((d) => (
+                    {filteredLibraryDrills.map((d) => (
                       <SelectItem key={d.id} value={String(d.id)}>
                         {d.name}
                         <span className="ml-1 text-xs text-muted-foreground">
@@ -1011,8 +1103,12 @@ export default function TrainingDetailPage({
                     ))}
                   </SelectContent>
                 </Select>
-                {availableLibraryDrills.length === 0 && (
-                  <p className="text-xs text-muted-foreground">No hay ejercicios disponibles en tu biblioteca.</p>
+                {filteredLibraryDrills.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {drillSearchQuery.trim()
+                      ? "No hay resultados para esa busqueda."
+                      : "No hay ejercicios disponibles en tu biblioteca."}
+                  </p>
                 )}
               </div>
             )}
@@ -1020,10 +1116,16 @@ export default function TrainingDetailPage({
             {addMode === "catalog" && (
               <div className="space-y-1.5">
                 <Label>Ejercicio del catálogo del club</Label>
+                {/* #32 -- búsqueda para filtrar el catálogo */}
+                <Input
+                  placeholder="Buscar en el catálogo..."
+                  value={catalogSearchQuery}
+                  onChange={(e) => { setCatalogSearchQuery(e.target.value); setSelectedCatalogEntryId(""); }}
+                />
                 <Select value={selectedCatalogEntryId} onValueChange={setSelectedCatalogEntryId}>
                   <SelectTrigger><SelectValue placeholder="Selecciona del catálogo" /></SelectTrigger>
                   <SelectContent>
-                    {availableCatalogEntries.map((e) => (
+                    {filteredCatalogEntries.map((e) => (
                       <SelectItem key={e.id} value={String(e.id)}>
                         {e.drill.name}
                         <span className="ml-1 text-xs text-muted-foreground">
@@ -1033,8 +1135,12 @@ export default function TrainingDetailPage({
                     ))}
                   </SelectContent>
                 </Select>
-                {availableCatalogEntries.length === 0 && (
-                  <p className="text-xs text-muted-foreground">No hay entradas disponibles en el catálogo del club.</p>
+                {filteredCatalogEntries.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {catalogSearchQuery.trim()
+                      ? "No hay resultados para esa búsqueda."
+                      : "No hay entradas disponibles en el catálogo del club."}
+                  </p>
                 )}
               </div>
             )}
@@ -1076,6 +1182,37 @@ export default function TrainingDetailPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* #25 — Save-as-template dialog */}
+      <Dialog open={saveTemplateOpen} onOpenChange={(open) => { setSaveTemplateOpen(open); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Guardar como plantilla</DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Se guardarán {training?.training_drills.length ?? 0} ejercicios como plantilla reutilizable.
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="template-name">Nombre de la plantilla</Label>
+              <Input
+                id="template-name"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                placeholder="Ej. Sesión de tiro"
+                onKeyDown={(e) => e.key === "Enter" && handleSaveTemplate()}
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveTemplateOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSaveTemplate} disabled={!templateName.trim()}>
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </PageShell>
   );
 }

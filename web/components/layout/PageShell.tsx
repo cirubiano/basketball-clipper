@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Info } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { Navbar } from "./Navbar";
+import { Sidebar } from "./Sidebar";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -57,7 +58,9 @@ export function PageShell({
   return (
     <div className="min-h-screen flex flex-col">
       {!hideNav && <Navbar />}
-      <main className="flex-1 container mx-auto px-4 py-8">
+      <div className="flex flex-1">
+        {!hideNav && <Sidebar />}
+        <main id="main-content" className="flex-1 min-w-0 container mx-auto px-4 py-8">
         {showProfileBanner ? (
           <Alert className="border-amber-200 bg-amber-50">
             <Info className="h-4 w-4 shrink-0 text-amber-600" />
@@ -69,7 +72,8 @@ export function PageShell({
         ) : (
           children
         )}
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

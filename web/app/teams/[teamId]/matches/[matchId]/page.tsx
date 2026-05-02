@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { UserPlus, Trash2, Film, Play, CheckCircle, XCircle, Upload, RotateCcw } from "lucide-react";
+import { UserPlus, Trash2, Film, Play, CheckCircle, XCircle, Upload, RotateCcw, Printer } from "lucide-react";
 import Link from "next/link";
 import {
   getMatch,
@@ -396,10 +396,28 @@ export default function MatchDetailPage({
   if (isLoading) {
     return (
       <PageShell>
-        <div className="container mx-auto px-4 py-8 max-w-3xl space-y-4">
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-4 w-48" />
-          <Skeleton className="h-64 w-full rounded-lg" />
+        <div className="max-w-4xl mx-auto space-y-4">
+          <Skeleton className="h-4 w-72" />
+          {/* Skeleton del scoreboard prominente */}
+          <div className="rounded-xl border bg-muted/30 px-6 py-5 space-y-4">
+            <div className="flex justify-between">
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-6 w-20 rounded-full" />
+            </div>
+            <div className="flex items-center justify-center gap-12">
+              <div className="flex-1 flex flex-col items-center gap-2">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-14 w-16" />
+              </div>
+              <Skeleton className="h-8 w-4" />
+              <div className="flex-1 flex flex-col items-center gap-2">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-14 w-16" />
+              </div>
+            </div>
+          </div>
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-48 w-full rounded-lg" />
         </div>
       </PageShell>
     );
@@ -432,109 +450,182 @@ export default function MatchDetailPage({
   const isTransitioning = startMut.isPending || finishMut.isPending || cancelMut.isPending;
   const showScore = match.status === "in_progress" || match.status === "finished";
 
+
+  // ── #22 Imprimir convocatoria ─────────────────────────────────────────────────
+
+  function handlePrintConvocatoria() {
+    if (!match) return;
+    const teamName = activeProfile?.team_name ?? "Equipo";
+    const rows = match.match_players.map((mp) =>
+      `<tr>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600;color:#111">
+          ${mp.player_first_name} ${mp.player_last_name}
+        </td>
+      </tr>`
+    ).join("");
+
+    const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <title>Convocatoria — ${teamName} vs. ${match.opponent_name}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; padding: 40px; color: #111; }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+    .meta { font-size: 13px; color: #555; margin-bottom: 24px; }
+    .badge { display: inline-block; font-size: 11px; font-weight: 600;
+             text-transform: uppercase; letter-spacing: .05em;
+             background: #f3f4f6; border: 1px solid #d1d5db;
+             border-radius: 4px; padding: 2px 8px; margin-left: 8px; vertical-align: middle; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th { text-align: left; padding: 8px 12px; font-size: 11px;
+               text-transform: uppercase; letter-spacing: .05em; color: #6b7280;
+               border-bottom: 2px solid #e5e7eb; }
+    tbody tr:last-child td { border-bottom: none; }
+    .count { font-size: 13px; color: #6b7280; margin-bottom: 8px; }
+    @media print {
+      body { padding: 20px; }
+      @page { margin: 1.5cm; }
+    }
+  </style>
+</head>
+<body>
+  <h1>${teamName} <span style="font-weight:400;color:#555">vs.</span> ${match.opponent_name}</h1>
+  <p class="meta">
+    ${new Date(match.date).toLocaleDateString("es-ES", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+    &nbsp;·&nbsp; ${new Date(match.date).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+  </p>
+  <p class="count">Convocados: <strong>${match.match_players.length}</strong></p>
+  <table>
+    <thead><tr><th>Jugador</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+</body>
+</html>`;
+
+    const win = window.open("", "_blank", "width=700,height=900");
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 400);
+  }
+
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-8 max-w-4xl">
-        {/* Header */}
-        <div className="mb-6">
-          <Breadcrumb
-            className="mb-4"
-            items={[
-              { label: activeProfile?.club_name ?? "Club", href: clubId ? `/clubs/${clubId}/teams` : "/" },
-              { label: activeProfile?.team_name ?? "Equipo", href: `/teams/${teamId}/matches` },
-              { label: "Partidos", href: `/teams/${teamId}/matches` },
-              { label: `vs. ${match.opponent_name}` },
-            ]}
-          />
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold">vs. {match.opponent_name}</h1>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                {dateStr} · {timeStr} · {MATCH_LOCATION_LABELS[match.location]}
+        {/* Breadcrumb */}
+        <Breadcrumb
+          className="mb-4"
+          items={[
+            { label: activeProfile?.club_name ?? "Club", href: clubId ? `/clubs/${clubId}/teams` : "/" },
+            { label: activeProfile?.team_name ?? "Equipo", href: `/teams/${teamId}/matches` },
+            { label: "Partidos", href: `/teams/${teamId}/matches` },
+            { label: `vs. ${match.opponent_name}` },
+          ]}
+        />
+
+        {/* ── #20 Marcador prominente — siempre visible como elemento principal ── */}
+        <div className="rounded-xl border bg-muted/30 px-6 py-5 mb-6">
+          {/* Info del partido */}
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-muted-foreground">
+              {dateStr} · {timeStr} · {MATCH_LOCATION_LABELS[match.location]}
+            </p>
+            <Badge className={statusBadgeClass(match.status)}>
+              {MATCH_STATUS_LABELS[match.status]}
+            </Badge>
+          </div>
+
+          {/* Scoreboard */}
+          <div className="flex items-center justify-center gap-6 sm:gap-12">
+            {/* Equipo local */}
+            <div className="flex-1 text-center">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1 truncate">
+                {activeProfile?.team_name ?? "Local"}
               </p>
+              <span className="text-5xl sm:text-6xl font-bold tabular-nums">
+                {match.our_score ?? "—"}
+              </span>
             </div>
 
-            <div className="flex flex-col items-end gap-2 shrink-0">
-              <Badge className={statusBadgeClass(match.status)}>
-                {MATCH_STATUS_LABELS[match.status]}
-              </Badge>
+            {/* Separador */}
+            <span className="text-3xl font-light text-muted-foreground">:</span>
 
-              {isCoachOrTD && match.status === "scheduled" && (
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    className="h-7 text-xs gap-1"
-                    disabled={isTransitioning}
-                    onClick={() => startMut.mutate()}
-                  >
-                    <Play className="h-3 w-3" />
-                    Iniciar partido
-                  </Button>
-                  <CancelMatchDialog
-                    opponentName={match.opponent_name}
-                    disabled={isTransitioning}
-                    onConfirm={() => cancelMut.mutate()}
-                  />
-                </div>
-              )}
-
-              {isCoachOrTD && match.status === "in_progress" && (
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    className="h-7 text-xs gap-1"
-                    disabled={isTransitioning}
-                    onClick={() => finishMut.mutate()}
-                  >
-                    <CheckCircle className="h-3 w-3" />
-                    Finalizar partido
-                  </Button>
-                  <CancelMatchDialog
-                    opponentName={match.opponent_name}
-                    disabled={isTransitioning}
-                    onConfirm={() => cancelMut.mutate()}
-                  />
-                </div>
-              )}
+            {/* Rival */}
+            <div className="flex-1 text-center">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1 truncate">
+                {match.opponent_name}
+              </p>
+              <span className="text-5xl sm:text-6xl font-bold tabular-nums">
+                {match.their_score ?? "—"}
+              </span>
             </div>
           </div>
 
-          {showScore && (
-            <div className="mt-3 flex items-center gap-3">
-              <span className="text-3xl font-bold tabular-nums">
-                {match.our_score ?? "—"}
-                <span className="text-muted-foreground mx-2">—</span>
-                {match.their_score ?? "—"}
-              </span>
-              {isCoachOrTD && match.status === "in_progress" && (
+          {/* Acciones de transición y edición de marcador */}
+          <div className="flex items-center justify-center gap-2 mt-4 flex-wrap">
+            {isCoachOrTD && match.status === "scheduled" && (
+              <>
+                <Button
+                  size="sm"
+                  disabled={isTransitioning}
+                  onClick={() => startMut.mutate()}
+                  className="gap-1.5"
+                >
+                  <Play className="h-3.5 w-3.5" />
+                  Iniciar partido
+                </Button>
+                <CancelMatchDialog
+                  opponentName={match.opponent_name}
+                  disabled={isTransitioning}
+                  onConfirm={() => cancelMut.mutate()}
+                />
+              </>
+            )}
+            {isCoachOrTD && match.status === "in_progress" && (
+              <>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="text-xs h-7"
                   onClick={() => {
                     setRivalScoreForm(match.their_score != null ? String(match.their_score) : "");
                     setRivalScoreDialogOpen(true);
                   }}
                 >
-                  Resultado rival
+                  Editar marcador rival
                 </Button>
-              )}
-              {isCoachOrTD && match.status === "finished" && (
                 <Button
-                  variant="outline"
                   size="sm"
-                  className="text-xs h-7"
-                  onClick={() => setScoreDialogOpen(true)}
+                  disabled={isTransitioning}
+                  onClick={() => finishMut.mutate()}
+                  className="gap-1.5"
                 >
-                  Editar resultado
+                  <CheckCircle className="h-3.5 w-3.5" />
+                  Finalizar partido
                 </Button>
-              )}
-            </div>
-          )}
+                <CancelMatchDialog
+                  opponentName={match.opponent_name}
+                  disabled={isTransitioning}
+                  onConfirm={() => cancelMut.mutate()}
+                />
+              </>
+            )}
+            {isCoachOrTD && match.status === "finished" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setScoreDialogOpen(true)}
+              >
+                Editar resultado final
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 border-b mb-6">
+        <div className="flex items-center gap-1 border-b mb-6">
           {(["convocatoria", "videos", "estadisticas"] as TabKey[]).map((t) => (
             <button
               key={t}
@@ -551,6 +642,17 @@ export default function MatchDetailPage({
               {t === "estadisticas" && "Estadísticas"}
             </button>
           ))}
+          {/* #22 Print button — visible only on convocatoria tab */}
+          {tab === "convocatoria" && match.match_players.length > 0 && (
+            <button
+              onClick={handlePrintConvocatoria}
+              className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors shrink-0"
+              title="Imprimir convocatoria"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              Imprimir
+            </button>
+          )}
         </div>
 
         {/* Tab: Convocatoria */}
@@ -1083,6 +1185,11 @@ export default function MatchDetailPage({
                     matchPlayers={match.match_players}
                     stats={match.match_stats}
                   />
+                  {/* #21 — bar chart for finished match */}
+                  <StatsBarChart
+                    matchPlayers={match.match_players}
+                    stats={match.match_stats}
+                  />
                   <p className="text-xs text-muted-foreground text-center py-2 mt-1">
                     Partido finalizado — estadísticas en modo lectura.
                   </p>
@@ -1290,5 +1397,98 @@ function ActionButton({
       <span className="text-base leading-none">{label}</span>
       <span className="text-[10px] mt-1 opacity-75 font-normal leading-none">{sublabel}</span>
     </button>
+  );
+}
+
+
+// ── StatsBarChart — #21 horizontal bar chart for finished match stats ─────────
+
+type ChartStat = "points" | "rebounds" | "assists";
+
+const CHART_TABS: { key: ChartStat; label: string }[] = [
+  { key: "points",   label: "Puntos" },
+  { key: "rebounds", label: "Rebotes" },
+  { key: "assists",  label: "Asistencias" },
+];
+
+function StatsBarChart({
+  matchPlayers,
+  stats,
+}: {
+  matchPlayers: MatchPlayer[];
+  stats: MatchStat[];
+}) {
+  const [activeStat, setActiveStat] = useState<ChartStat>("points");
+
+  const rows = matchPlayers
+    .map((mp) => {
+      const stat = stats.find((s) => s.player_id === mp.player_id);
+      const rebounds = (stat?.defensive_rebounds ?? 0) + (stat?.offensive_rebounds ?? 0);
+      return {
+        name: `${mp.player_first_name} ${mp.player_last_name}`,
+        points:   stat?.points   ?? 0,
+        rebounds,
+        assists:  stat?.assists  ?? 0,
+      };
+    })
+    .sort((a, b) => b[activeStat] - a[activeStat]);
+
+  const maxVal = Math.max(...rows.map((r) => r[activeStat]), 1);
+
+  return (
+    <div className="mt-4 border rounded-lg p-4">
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm font-semibold text-foreground">Gráfica de estadísticas</p>
+        <div className="flex gap-1">
+          {CHART_TABS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setActiveStat(key)}
+              className={cn(
+                "px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
+                activeStat === key
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-2.5">
+        {rows.map((row) => {
+          const val   = row[activeStat];
+          const pct   = maxVal > 0 ? (val / maxVal) * 100 : 0;
+          const isTop = val === maxVal && val > 0;
+          return (
+            <div key={row.name} className="flex items-center gap-3">
+              <span className="w-28 shrink-0 truncate text-xs text-muted-foreground text-right">
+                {row.name.split(" ")[0]}
+              </span>
+              <div className="flex-1 h-6 bg-muted rounded-sm overflow-hidden">
+                <div
+                  className={cn(
+                    "h-full rounded-sm transition-all duration-500",
+                    isTop ? "bg-primary" : "bg-primary/40",
+                  )}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <span className={cn("w-7 shrink-0 text-xs font-semibold tabular-nums", isTop ? "text-primary" : "text-muted-foreground")}>
+                {val}
+              </span>
+            </div>
+          );
+        })}
+
+        {rows.every((r) => r[activeStat] === 0) && (
+          <p className="text-xs text-muted-foreground text-center py-2">
+            Sin datos registrados para esta estadística.
+          </p>
+        )}
+      </div>
+    </div>
   );
 }

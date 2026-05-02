@@ -110,3 +110,16 @@ export interface RosterEntryUpdate {
   assists_per_game?: number | null;
   minutes_per_game?: number | null;
 }
+
+// ── CSV Import ────────────────────────────────────────────────────────────────
+
+export interface CsvImportError {
+  row: number;
+  message: string;
+}
+
+export interface CsvImportResult {
+  created: number;
+  skipped: number;
+  errors: CsvImportError[];
+}

@@ -2,11 +2,18 @@
 
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import dynamic from "next/dynamic";
 import { useAuth } from "@/lib/auth";
-import { getDrill, updateDrill } from "@basketball-clipper/shared";
-import type { CourtLayoutType, SequenceNode } from "@basketball-clipper/shared";
-import { DrillEditor } from "@/components/drill-editor/DrillEditor";
+import { getDrill, updateDrill } from "@basketball-clipper/shared/api";
+import type { CourtLayoutType, SequenceNode } from "@basketball-clipper/shared/types";
 import { Loader2 } from "lucide-react";
+
+// #51 — lazy-load the canvas editor so it is code-split into its own chunk
+// and never downloaded unless the user navigates to this route.
+const DrillEditor = dynamic(
+  () => import("@/components/drill-editor/DrillEditor").then((m) => ({ default: m.DrillEditor })),
+  { ssr: false },
+);
 
 export default function DrillEditPage() {
   const { id }    = useParams<{ id: string }>();

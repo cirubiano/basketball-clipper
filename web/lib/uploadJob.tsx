@@ -48,6 +48,9 @@ export interface UploadJob {
   uploadPercent: number;
   uploadedBytes: number;
   totalBytes: number;
+  /** Partes completadas (multipart). Solo relevante en stage "uploading". */
+  uploadedParts: number;
+  totalParts: number;
   /** Progreso del worker (0–100). Solo relevante en stage "processing". */
   processingPercent: number;
   /** Estado fino reportado por Redis: "processing", "completed", etc. */
@@ -70,6 +73,8 @@ const EMPTY_JOB: Omit<UploadJob, "filename"> = {
   uploadPercent: 0,
   uploadedBytes: 0,
   totalBytes: 0,
+  uploadedParts: 0,
+  totalParts: 0,
   processingPercent: 0,
   processingStatus: null,
   errorMessage: null,
@@ -111,6 +116,8 @@ export function UploadJobProvider({ children }: { children: ReactNode }) {
             uploadPercent: p.percent,
             uploadedBytes: p.uploadedBytes,
             totalBytes: p.totalBytes,
+            uploadedParts: p.uploadedParts,
+            totalParts: p.totalParts,
           });
         },
       });

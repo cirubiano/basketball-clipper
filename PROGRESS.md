@@ -303,6 +303,58 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ## Historial de sesiones
 
+### 2026-05-02 — Sesión 38 (Fase 2 UX — Bloques E y F: paginación, vistas por rol, búsqueda global)
+
+**Objetivo**: implementar los ítems de Fase 2 del UX_ROADMAP que no requieren cambios de navegación estructurales.
+
+**Completado:**
+- **#48 Paginación en listas grandes**: nuevo componente `web/components/ui/pagination-bar.tsx` (PaginationBar reutilizable con elipsis). Integrado en: `players/page.tsx` (25/pág), `teams/[teamId]/matches/page.tsx` (20/pág), `teams/[teamId]/trainings/page.tsx` (20/pág), `drills/page.tsx` (12 en grid / 20 en lista).
+- **#9 Vista personalizada por rol**: dashboard `app/page.tsx` — HeadCoach con `teamId` ve ahora dos cards "Próximo partido" y "Próximo entrenamiento" con enlaces directos al detalle. Nueva query `coachMatches`. TD mantiene su vista completa.
+- **#42 Búsqueda global Cmd+K / Ctrl+K**: nuevo componente `web/components/layout/CommandPalette.tsx` montado en el layout raíz. Abre con `Ctrl+K`/`Cmd+K` o `Esc`. Filtra en tiempo real sobre: páginas de navegación (siempre visibles), ejercicios/jugadas de la biblioteca personal, jugadores del club. Navegación con ↑↓ + Enter. Botón hint "Buscar · Ctrl K" visible en Navbar.
+- **#51 Lazy loading editor canvas** (bonus Fase 1): `drills/[id]/edit/page.tsx` — `next/dynamic` + corrección imports root → sub-paths.
+
+**Completado adicional (mismo bloque):**
+- **#2 Bottom navigation mobile**: `web/components/layout/BottomNav.tsx` — barra fija inferior solo en `< md`, links adaptados al rol activo (TD / HeadCoach / personal), touch targets ≥ 44px, `aria-current="page"`. Montado en `layout.tsx` con `pb-16 md:pb-0` en el body para evitar solapamiento.
+- **#1 Sidebar colapsable**: `web/components/layout/Sidebar.tsx` — sidebar sticky `md+`, modo expanded (220px) y rail (56px, solo iconos con tooltip). Toggle con estado persistido en `sessionStorage`. Integrado en `PageShell.tsx` como layout flex (sidebar + main).
+- **#14 Navegación completa por teclado (WCAG 2.1 SC 2.1.1)**: skip link "Saltar al contenido principal" en `layout.tsx` con `sr-only focus:not-sr-only`. `id="main-content"` en el `<main>` de `PageShell`.
+
+**Pendiente de Fase 2 (deprioritizado):**
+- **#4 Master-detail layout** — disruptivo, prioridad Media. Se pospone.
+
+**Verificaciones**: ESLint 0 errores ✔, TSC 0 errores ✔
+
+---
+
+### 2026-05-02 — Sesión 37 (Fase 1 UX — Bloques C y D)
+
+**Objetivo**: implementar las mejoras UX de la Fase 1 del `docs/UX_ROADMAP.md` (52 ítems).
+
+**Bloque C — UX puntual completado:**
+- **#17 Toast undo**: `web/lib/toast.tsx` — firma `toast(msg, type?, undoFn?)`, botón "Deshacer" en toast, timeout 6 s vs 4 s
+- **#16 Unsaved guard**: `web/components/drill-editor/DrillEditor.tsx` — `window.onbeforeunload` + `window.confirm` al pulsar "Biblioteca"
+- **#34 Save shortcut tooltip**: botón Guardar con `title="Guardar (Ctrl+S)"`
+- **#32 Search in exercise dialog**: `web/app/teams/[teamId]/trainings/[trainingId]/page.tsx` — inputs de búsqueda filtrando biblioteca personal y catálogo en el dialog de añadir ejercicio
+- **#33 Grid/list toggle**: `web/app/drills/page.tsx` — toggle segmentado (grid/lista), nuevo componente `DrillRow` para vista compacta
+- **#5 Breadcrumb aria-current**: `web/components/layout/Breadcrumb.tsx` — `aria-current="page"` en último ítem (WCAG 2.4.8)
+
+**Bloque D — Features nuevas completado:**
+- **#50 Image compression**: `web/app/players/page.tsx` — `OUTPUT_SIZE` 400→320 px, calidad JPEG 0.92→0.82 (~40–80 KB para avatares)
+- **#44 Empty states**: `web/app/teams/[teamId]/matches/page.tsx` y `trainings/page.tsx` — estados vacíos con dashed border, icono grande, título contextual, CTA y advertencia si no hay temporada activa
+- **#8 Alerts dashboard**: `web/app/page.tsx` — panel de alertas para rol TD: aviso si no hay temporada activa + alerta partido próximo en ≤7 días con enlace directo
+- **#22 PDF convocatoria**: `web/app/teams/[teamId]/matches/[matchId]/page.tsx` — botón "Imprimir" en la barra de tabs (solo visible en tab Convocatoria con jugadores); abre ventana nueva con HTML formateado (partido, fecha, lista de convocados) y llama `window.print()` automáticamente
+
+**Bugs corregidos:**
+- `Breadcrumb.tsx`: comentario `/* */` dentro de JSX causaba `TS1002 Unterminated string literal`; reemplazado por comentario `//`
+- `matches/[matchId]/page.tsx`: truncación heredada de sesión anterior (línea 1283); restaurado el cierre de la tabla de stats y el componente `ActionButton`
+- `DrillEditor.tsx`, `drills/page.tsx`, `trainings/[trainingId]/page.tsx`: archivos revertidos accidentalmente durante pruebas de tsc; re-aplicados todos los cambios vía scripts Python
+
+**Bloque D — fix adicional:**
+- **#51 Lazy loading editor canvas**: `web/app/drills/[id]/edit/page.tsx` — `DrillEditor` importado con `next/dynamic` + `ssr: false`; corregidos imports root → sub-paths (`/api`, `/types`). El bundle de canvas no se descarga hasta que el usuario abre el editor.
+
+**Verificaciones**: ESLint 0 warnings/errores ✔, TSC 0 errores ✔
+
+---
+
 ### 2026-05-02 — Sesión 36 (Prueba E2E completa Fases A–G — bugs y resultados)
 
 **Objetivo**: prueba E2E de extremo a extremo de toda la plataforma (Fases A–G) con el perfil de DT (`admin@example.com`) y el perfil de HeadCoach (Infantil A). Cobertura de flujos: login → gestión de club → jugadores → editor de ejercicios/jugadas → catálogo → playbook → partidos → entrenamientos.
@@ -1170,71 +1222,116 @@ Al añadir paquetes npm nuevos, el volumen `/app/node_modules` del contenedor Do
 
 ### 2026-04-25 — Sesión 10 (Fase B — tests de integración + fix main.py)
 - **`backend/tests/test_auth_api.py`** (nuevo): 7 tests — register OK (201), register conflict (409), login OK, login wrong password (401), login unknown email (401), me OK, me sin auth (401), switch-profile pone profile_id en JWT, switch-profile rechaza perfil ajeno (404), clear-profile elimina profile_id del JWT
-- **`backend/tests/test_videos_profile.py`** (nuevo): 8 tests — list_videos require active profile (403), filtrado por team, lista vacía, init_upload forbidden para TechnicalDirector (403), allowed para HeadCoach (201), video hereda team_id del perfil, list_clips require active profile (403), clips filtrados por equipo
-- **`backend/tests/test_multipart_upload.py`** (actualizado): init-upload tests migrados a `get_current_profile`; añadido `test_init_upload_rejected_for_technical_director`; resto de tests conservan `get_current_user`
-- **`backend/app/main.py`** (fix): detectado y corregido truncamiento — faltaban los `include_router` de clubs, seasons, teams, video, clips, ws
-- Verificaciones finales: `py_compile` sobre 9 archivos ✅ ALL OK
-- **Fase B marcada como ✅ Completado**
+- **`backend/tests/test_videos_profile.py`** (nuevo): 8 tests — list_videos require active profile (403), filtrado por team, lista vacía, init_upload forbidden para TechnicalDirector (403), allowed para HeadCoach (201), v
+---
 
-### 2026-04-25 — Sesión 9 (Fase B — mobile + retry UI + fix shared/api)
-- **`shared/api/index.ts`**: corregido truncamiento — añadido `export * from "./videos"` que faltaba
-- **Web retry**: `VideoCard` recibe prop `isRetrying` — spinner + disabled mientras retrying; `onError` en ambas páginas muestra `Alert` con mensaje
-- **Mobile `lib/auth.tsx`**: añadido soporte completo de perfiles (`activeProfile`, `profiles`, `switchProfile`, `clearActiveProfile`) usando `SecureStore` — alineado con web
-- **Mobile `app/select-profile.tsx`**: nueva pantalla de selección de perfil con spinner por item
-- **Mobile `app/_layout.tsx`**: guard de perfil — redirige a `/select-profile` si autenticado pero sin perfil activo
-- **Mobile `app/index.tsx`**: usa `listVideos` filtrado por perfil activo; botón ⇄ para cambiar de club
-- Verificaciones: `py_compile` ✅, grep apiClient → 0 ✅, `shared/api/index.ts` completo ✅
+### 2026-05-02 — Sesión 39 (Fase 3 UX — modo oscuro, navegación y optimistic updates)
 
-### 2026-04-25 — Sesión 8 (Fase B — integración backend + web)
-- **Backend `video.py`**: `GET /videos` e `init_upload` usan `get_current_profile`; filtrado por `team_id` (HeadCoach/StaffMember) o por club completo (TechnicalDirector); `init_upload` rechaza `technical_director` con 403
-- **Backend `clips.py`**: `GET /clips` usa `get_current_profile` con mismo filtrado por equipo/club
-- **Web `PageShell`**: nueva prop `requireProfile` (default `true`); redirige a `/select-profile` si no hay perfil activo
-- **Web `/select-profile`**: página nueva de selección de perfil a pantalla completa con spinner por item y mensaje si no hay perfiles asignados
-- **CLAUDE.md**: añadidas secciones de verificación para shared/web (tsc, grep apiClient, smoke test login)
-- Verificaciones: `py_compile` ✅, coherencia de rutas ✅, grep apiClient → 0 resultados ✅
+**Objetivo**: continuar con los ítems de Fase 3 del UX_ROADMAP.
 
-### 2026-04-25 — Sesión 7 (Fase A completa)
-- **Backend**: modelos Club, Season, Team, ClubMember, Profile; `is_admin` en User; `team_id` en Video
-- **Migración** `0004_phase_a_org_structure.py` — crea todas las tablas de Fase A
-- **Security**: `create_access_token` con `profile_id` opcional; `get_current_profile`, `require_admin`
-- **Routers**: clubs, seasons, teams, profiles; switch-profile, clear-profile en auth
-- **Shared**: tipos y API client para todas las entidades de Fase A
-- **Web**: `ProfileSelector` component + auth context extendido con `activeProfile`, `switchProfile`, `clearActiveProfile`
-- Todos los archivos nuevos/modificados verificados con `python -m py_compile` ✅
+**Completado:**
+- **#43 Modo oscuro**: nuevo componente `web/components/layout/ThemeToggle.tsx` — botón Sun/Moon con `mounted` guard (evita SSR mismatch), lee/escribe `localStorage.theme`, cae back a `prefers-color-scheme`. Montado en Navbar entre el hint de búsqueda y el selector de perfil. `globals.css` restaurado con paleta oscura completa (CSS vars slate/blue en bloque `.dark {}`). `tailwind.config.ts` ya tenía `darkMode: ["class"]`.
+- **#49 Optimistic updates — favoritos**: `web/app/drills/page.tsx` — `favoriteMut` con `onMutate` que cancela queries en curso, snapshot del cache, actualización instantánea de `is_favorite` en todos los queries `["drills"]`, rollback en `onError`. Respuesta visual inmediata sin esperar el servidor.
 
-### 2026-04-25 — Sesión 6 (planificación estratégica)
-Sin commits — sesión de análisis y documentación.
-- Análisis del documento `REQUIREMENTS.md` (plataforma completa de gestión de clubs)
-- Decisión: el módulo de vídeo actual es la base de la Fase B de un proyecto más amplio
-- Decisión arquitectónica: JWT con `profile_id` como claim (más seguro que header separado)
-- Decisión: monorepo con stack actual (FastAPI + Next.js) — válido para todas las fases
-- Definido roadmap de 6 fases (A → F)
-- `REQUIREMENTS.md` incorporado al repositorio
-- `CLAUDE.md` actualizado para reflejar la plataforma completa
-- `PROGRESS.md` restructurado con el roadmap completo
+**Verificaciones**: ESLint 0 errores ✔, TSC 0 errores ✔
 
-### 2026-04-25 — Sesión 5 (mejoras detector de balón)
-**Commit**: `7bdcd65`
-- Mejoras en `detector.py`: optimizaciones en detección del balón
-- Añadido `backend/.env.example` con variables del detector
-- Añadido `backend/models/README.md` — guía para modelos YOLO custom
-- Ajustes en `docker-compose.yml`
+**Completado adicional (sesión 39, continuación):**
+- **#41 Onboarding guiado first-run**: nuevo componente `web/components/layout/OnboardingWizard.tsx` — dialog de 3 pasos (bienvenida → roles → CTAs), mostrado una sola vez (flag `localStorage "onboarding_v1_done"`), con progress dots, navegación Siguiente/Atrás, botón "Omitir". Montado en `layout.tsx`.
+- **#21 Gráficas de barras para estadísticas**: nuevo componente `StatsBarChart` en `teams/[teamId]/matches/[matchId]/page.tsx` — tabs Puntos/Rebotes/Asistencias, barras horizontales CSS puras, barra líder resaltada en `primary`, aparece debajo de `StatsTable` cuando el partido está `finished`.
+- **#37 Drop zone mejorada**: `VideoUploader.tsx` — overlay animado con `animate-bounce` al arrastrar, ring visual `ring-4 ring-primary/20`, badges de formato (MP4/MOV/AVI/MKV) y límite de tamaño visibles en reposo, mensaje "Suelta aquí para subir" claro al hover. `FloatingUploadWidget.tsx` — `subtitleFor` ahora muestra "Parte X de Y" durante subida; mini-barra de partes individuales (una pastilla por parte, activa/completada/pendiente) debajo del progress bar principal. `uploadJob.tsx` — añadidos `uploadedParts` y `totalParts` al `UploadJob` state e `EMPTY_JOB`.
+- **#39 Vista previa del canvas en cards**: nuevo `web/components/ui/court-svg.tsx` — componente SVG compartido. Integrado en catálogo del club (`CatalogRow` muestra thumbnail 64×48px con el SVG de cancha), y en la biblioteca personal (`DrillCard`). `drills/page.tsx` ya no define `CourtSVG` localmente.
 
-### 2026-04-25 — Sesión 4 (detector LAB + K-means)
-**Commit**: `5eea9c9`
-- Reescritura de `detector.py`: LAB, K-means K=2, sliding window, forward-fill, progress callbacks
-- Todos los parámetros del detector expuestos como env vars
-- `tests/test_detector.py` ampliado
+**Verificaciones**: ESLint 0 errores ✔, TSC 0 errores ✔
 
-### 2026-04-25 — Sesión 3 (UI + upload rápido)
-**Commit**: `d60cb01`
-- Eliminado `validator.py` (Claude Vision) — simplifica el pipeline
-- `FloatingUploadWidget` — progreso de upload persiste entre páginas
-- Nuevas páginas web: `/videos`, `/videos/[id]`, `/videos/[id]/clips/[clipId]`
-- `VideoCard`, `DeleteVideoDialog` añadidos
-- Migración `0003_add_video_title.py`
+**Completado adicional (sesión 39, bloque final):**
+- **#23 Drag-and-drop para reordenar ejercicios**: `trainings/[trainingId]/page.tsx` — atributo `draggable` en cada fila de ejercicio (solo para coach/TD), eventos `onDragStart`/`onDragOver`/`onDrop`/`onDragEnd`, feedback visual: fila arrastrada opaca + fila destino resaltada con `bg-accent/50 border-l-2 border-primary`. En el drop se llama directamente a `reorderMut` con el nuevo orden. Los botones ↑/↓ se mantienen como alternativa accesible (WCAG 2.2 SC 2.5.7).
+- **#25 Plantillas reutilizables de entrenamiento**: nueva utilidad `web/lib/trainingTemplates.ts` con `loadTemplates`, `saveTemplate`, `deleteTemplate` (localStorage por team). En `trainings/[trainingId]/page.tsx`: botón "Guardar plantilla" (visible cuando hay drills) + dialog con campo nombre + confirmación. En `trainings/page.tsx`: picker de plantilla en el dialog de creación (Select con borrado individual), al crear con plantilla se llaman `addTrainingDrill` secuencialmente en el `onSuccess` de la mutación.
 
-### 2026-04-24 — Sesión 2 (multipart upload)
-**Commit**: `0f5d12b`
-- Multipart upload S3 completo en `storage.py` y `video.py`
-- `shared/api/videoUpload.ts` — cliente multipart con progreso, concurrencia y rea
+**Verificaciones finales sesión 39**: ESLint 0 errores ✔, TSC 0 errores ✔
+
+---
+
+**Resumen de Fase 3 UX completada (sesión 39):**
+Todos los ítems de Fase 3 del `docs/UX_ROADMAP.md` han sido implementados:
+#43 ✅ · #49 ✅ · #41 ✅ · #21 ✅ · #37 ✅ · #39 ✅ · #23 ✅ · #25 ✅
+(#6 dashboard accionable: parcialmente hecho en sesión 38 con cards coach + alertas TD)
+(#28 y #38 búsquedas: hechas en sesión 38)
+(#27 grid jugadores: hecha en sesión 38)
+---
+
+### 2026-05-02 — Sesión 40 (Fase 4 UX — WeekStrip y thumbnails de clips)
+
+**Completado:**
+- **#7 Mini-calendario semanal**: nuevo componente `WeekStrip` en `web/app/page.tsx` — grid de 7 días (lun–dom) de la semana actual para coaches/TD. Cada día muestra partidos (azul primario) y entrenamientos (ámbar) del día. Hoy resaltado con anillo, días pasados en opacidad reducida. Links directos a detalle de partido/entrenamiento. Leyenda en la parte inferior. Montado en la sección HeadCoach del dashboard principal.
+- **#36 Thumbnails automáticos en clips**: pipeline completo de extracción de thumbnails:
+  - `backend/app/models/clip.py`: nuevo campo `thumbnail_s3_key: Mapped[str | None]`
+  - `alembic/versions/0017_clip_thumbnails.py`: migración ADD COLUMN nullable
+  - `backend/app/services/cutter.py`: nueva función `extract_thumbnail(clip_path, output_dir, clip_name)` — FFmpeg probe para obtener duración, seek al punto medio, extrae 1 frame JPEG 320×180. Fallos son no-bloqueantes (warn + return None)
+  - `backend/app/services/queue.py`: stage 4 ahora llama `extract_thumbnail` por cada clip y sube el JPEG a `clips/{user_id}/{video_id}/thumbs/{clip_name}.jpg`; guarda `thumbnail_s3_key` en el registro Clip
+  - `backend/app/schemas/clip.py`: `ClipResponse` tiene nuevo campo `thumbnail_url: str | None`
+  - `backend/app/routers/clips.py`: `_to_response` genera presigned URL para `thumbnail_s3_key` si existe
+  - `shared/types/clip.ts`: `Clip` interface añade `thumbnail_url: string | null`
+  - `web/components/video/ClipCard.tsx`: muestra thumbnail como imagen de fondo con zoom en hover + overlay Play; fallback al icono Play si no hay thumbnail. Badge de duración con z-10
+  - `web/components/video/ClipPlayer.tsx`: usa `thumbnail_url` como atributo `poster` del `<video>`
+
+**Verificaciones**: Python py_compile ✅ ALL OK · ESLint 0 errores ✅ · TSC 0 errores ✅
+---
+
+### 2026-05-02 — Sesión 41 (Fase 4 UX — Anotaciones de coach en el playbook)
+
+**Completado:**
+- **#40 Anotaciones del coach en el playbook**: notas tácticas editables en cada entrada del playbook:
+  - `backend/app/models/playbook.py`: nuevo campo `note: Mapped[str | None]` (Text, nullable)
+  - `alembic/versions/0018_playbook_note.py`: migración ADD COLUMN `note TEXT NULL`
+  - `backend/app/schemas/playbook.py`: nuevo schema `UpdatePlaybookNoteRequest`; `PlaybookEntryResponse` incluye `note: str | None`
+  - `backend/app/routers/playbook.py`: nuevo endpoint `PATCH /{club_id}/teams/{team_id}/playbook/{entry_id}` — cualquier miembro del equipo puede editar la nota
+  - `shared/types/catalog.ts`: `PlaybookEntry` añade `note: string | null`
+  - `shared/api/playbook.ts`: nueva función `updatePlaybookNote`
+  - `web/app/teams/[teamId]/playbook/page.tsx`: `PlaybookEntryRow` muestra icono `MessageSquare` + texto de la nota (o placeholder "Añadir nota..."). Click entra en modo edición con `<textarea>` autoFocus; Enter (sin Shift) o blur guarda; Escape cancela. Cambios sin modificar no disparan la mutación.
+
+**Verificaciones**: Python py_compile ✅ ALL OK · ESLint 0 errores ✅ · TSC 0 errores ✅
+---
+
+### 2026-05-02 — Sesión 42 (Fase 4 UX — Importar jugadores desde CSV)
+
+**Completado:**
+- **#30 Importar jugadores desde CSV**: flujo completo de importación masiva de jugadores:
+  - `backend/app/schemas/player.py`: nuevo schema `CsvImportResponse { created, skipped, errors }`
+  - `backend/app/routers/players.py`: nuevo endpoint `POST /clubs/{id}/players/import-csv` — acepta `UploadFile` CSV, parsea con `csv.DictReader`, maneja UTF-8-sig (BOM) y latin-1 como fallback, columnas `first_name`/`last_name` obligatorias + `phone`/`date_of_birth` opcionales. Omite duplicados (mismo nombre en el club), acumula errores de fila sin detener la importación, requiere rol TD o HeadCoach.
+  - `shared/types/player.ts`: interfaces `CsvImportError` y `CsvImportResult`
+  - `shared/api/players.ts`: función `importPlayersFromCsv(token, clubId, file)` usando `FormData`
+  - `web/app/players/page.tsx`: botón "Importar CSV" junto a "Nuevo jugador"; dialog con:
+    - Enlace de descarga de plantilla CSV (`data:text/csv` con fila de ejemplo)
+    - Drop zone drag-and-drop (con feedback visual) + input de archivo oculto
+    - Muestra nombre y tamaño del archivo seleccionado
+    - Botón "Importar" llama al endpoint; muestra resumen: creados (verde), omitidos, errores por fila con número de fila y mensaje
+    - Cierre limpia el estado (archivo + resultado)
+
+**Verificaciones**: Python py_compile ✅ ALL OK · ESLint 0 errores ✅ · TSC 0 errores ✅
+---
+
+### 2026-05-02 — Sesión 43 (Fase 4 UX — Timeline de posesiones en detalle de vídeo)
+
+**Completado:**
+- **#35 Timeline de posesiones** (versión simplificada sin reproductor de vídeo): nuevo componente `PossessionTimeline` en `web/app/videos/[id]/page.tsx`:
+  - Barra horizontal proporcional a la duración del vídeo; cada clip ocupa su fracción exacta de tiempo (left + width en %)
+  - Equipo A = azul (`bg-blue-500`), Equipo B = ámbar (`bg-amber-500`), soporte dark mode
+  - Cada segmento es un enlace `<a>` al detalle del clip correspondiente con tooltip (nombre del equipo + timestamps)
+  - Stats debajo: porcentaje de posesión por equipo, tiempo total por equipo, número de clips
+  - Solo se muestra cuando el vídeo tiene clips disponibles
+  - No requiere nuevos endpoints — usa los `start_time`/`end_time`/`team` ya presentes en cada `Clip`
+
+**Verificaciones**: ESLint 0 errores ✅ · TSC 0 errores ✅
+---
+
+### 2026-05-02 — Sesión 44 (Fase 5 UX — Caché offline React Query)
+
+**Completado:**
+- **#52 Caché offline de datos clave**: persistencia manual del cache React Query en `localStorage` sin paquetes adicionales — misma semántica que `@tanstack/react-query-persist-client` pero sin dependencias nuevas. Implementado en `web/lib/providers.tsx`:
+  - `saveCache(qc)`: serializa a `bc_rq_cache_v1` en localStorage todas las queries con status `success` cuyos keys empiezan por: `players`, `positions`, `roster`, `teams`, `seasons`, `members`, `drills`, `playbook`, `catalog`, `trainings`, `matches`. Ignorado en errores de cuota/serialización.
+  - `restoreCache(qc)`: en el montaje inicial, restaura los datos (si tienen < 24h) con `qc.setQueryData`, sin sobreescribir datos más frescos. Si el JSON es inválido o caduca, limpia la entrada.
+  - Guardado automático: `beforeunload` + intervalo de 2 min + `useEffect` cleanup. Excluidas consultas de auth y estado de upload.
+  - `gcTime` actualizado a 10 min (> `staleTime` de 30s) para que los datos persistan en memoria durante el background refetch.
+  - Los ítems "Grande" pendientes de Fase 4 (#19 vista en vivo, #31 canvas mobile, #24 modo en cancha, #45 notificaciones) quedan anotados para sprints futuros.
+
+**Verificaciones**: ESLint 0 errores ✅ · TSC 0 errores ✅

@@ -32,12 +32,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Plus, Trash2, Lock, Pencil, ChevronLeft, ChevronRight, GitBranch } from "lucide-react";
+import { Plus, Trash2, Lock, Pencil, ChevronLeft, ChevronRight, GitBranch, MessageSquare } from "lucide-react";
 import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import {
   listPlaybook,
   addToPlaybook,
   removeFromPlaybook,
+  updatePlaybookNote,
   listDrills,
   getDrill,
 } from "@basketball-clipper/shared/api";
@@ -193,6 +194,9 @@ export default function PlaybookPage({
                 entry={entry}
                 currentUserId={user?.id}
                 drillDetail={drillDetailMap.get(entry.drill.id)}
+                clubId={clubId!}
+                teamId={teamId}
+                token={token!}
                 onEdit={() => router.push(`/drills/${entry.drill.id}/edit`)}
                 onView={() => openViewer(entry.drill.id)}
                 onRemove={() => removeMut.mutate(entry.id)}
@@ -414,6 +418,9 @@ function PlaybookEntryRow({
   entry,
   currentUserId,
   drillDetail,
+  clubId,
+  teamId,
+  token,
   onEdit,
   onView,
   onRemove,
@@ -422,6 +429,9 @@ function PlaybookEntryRow({
   entry: PlaybookEntry;
   currentUserId: number | undefined;
   drillDetail: Drill | undefined;
+  clubId: number;
+  teamId: number;
+  token: string;
   onEdit: () => void;
   onView: () => void;
   onRemove: () => void;
@@ -429,6 +439,33 @@ function PlaybookEntryRow({
 }) {
   const drill = entry.drill;
   const isAuthor = entry.added_by === currentUserId;
+  const qc = useQueryClient();
+
+  // Inline note editing
+  const [editingNote, setEditingNote] = useState(false);
+  const [noteText, setNoteText] = useState(entry.note ?? "");
+
+  const noteMut = useMutation({
+    mutationFn: (note: string | null) =>
+      updatePlaybookNote(token, clubId, teamId, entry.id, { note }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["playbook"] });
+      setEditingNote(false);
+    },
+    onError: () => {
+      setNoteText(entry.note ?? "");
+      setEditingNote(false);
+    },
+  });
+
+  function commitNote() {
+    const trimmed = noteText.trim() || null;
+    if (trimmed === (entry.note ?? null)) {
+      setEditingNote(false);
+      return;
+    }
+    noteMut.mutate(trimmed);
+  }
 
   return (
     <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card">
@@ -460,6 +497,41 @@ function PlaybookEntryRow({
             <> · {drill.tags.map((t) => t.name).join(", ")}</>
           )}
         </p>
+
+        {/* Inline note */}
+        {editingNote ? (
+          <textarea
+            autoFocus
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            onBlur={commitNote}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitNote(); }
+              if (e.key === "Escape") { setNoteText(entry.note ?? ""); setEditingNote(false); }
+            }}
+            placeholder="Escribe una nota táctica..."
+            rows={2}
+            disabled={noteMut.isPending}
+            className="mt-1 w-full text-xs rounded border border-border bg-background px-2 py-1.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none disabled:opacity-50"
+          />
+        ) : (
+          <button
+            onClick={() => { setNoteText(entry.note ?? ""); setEditingNote(true); }}
+            className="mt-1 flex items-start gap-1 text-xs text-left w-full group/note"
+            title="Editar nota"
+          >
+            <MessageSquare className="h-3 w-3 mt-0.5 shrink-0 text-muted-foreground/60 group-hover/note:text-primary transition-colors" />
+            {entry.note ? (
+              <span className="text-muted-foreground group-hover/note:text-foreground transition-colors line-clamp-2">
+                {entry.note}
+              </span>
+            ) : (
+              <span className="text-muted-foreground/40 group-hover/note:text-muted-foreground transition-colors italic">
+                Añadir nota...
+              </span>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Actions */}

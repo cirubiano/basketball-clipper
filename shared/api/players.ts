@@ -1,4 +1,4 @@
-import type {
+import type { CsvImportResult,
   PhotoUploadUrls,
   Player,
   PlayerCreate,
@@ -167,4 +167,19 @@ export function removeFromRoster(
     `/clubs/${clubId}/teams/${teamId}/roster/${entryId}`,
     { token, method: "DELETE" },
   );
+}
+
+export function importPlayersFromCsv(
+  token: string,
+  clubId: number,
+  file: File,
+): Promise<CsvImportResult> {
+  const form = new FormData();
+  form.append("file", file);
+  return apiRequest<CsvImportResult>(`/clubs/${clubId}/players/import-csv`, {
+    token,
+    method: "POST",
+    body: form,
+    // No Content-Type header — apiRequest omits it automatically for FormData
+  });
 }

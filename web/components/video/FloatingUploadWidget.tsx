@@ -85,6 +85,24 @@ export function FloatingUploadWidget() {
               </span>
             </div>
             <Progress value={percentFor(job)} className="h-1.5" />
+            {/* #37 — part-level indicator during upload */}
+            {job.stage === "uploading" && job.totalParts > 1 && (
+              <div className="flex gap-1 mt-1.5 flex-wrap">
+                {Array.from({ length: job.totalParts }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={cn(
+                      "h-1 flex-1 min-w-[8px] rounded-full transition-colors duration-300",
+                      i < job.uploadedParts
+                        ? "bg-primary"
+                        : i === job.uploadedParts
+                        ? "bg-primary/50 animate-pulse"
+                        : "bg-muted",
+                    )}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           {job.stage === "error" && job.errorMessage && (
@@ -168,7 +186,13 @@ function titleFor(job: UploadJob): string {
 }
 
 function subtitleFor(job: UploadJob): string {
-  if (job.stage === "uploading") return "Subida multipart";
+  if (job.stage === "uploading") {
+    // #37 — show per-part progress for better visibility of system status
+    if (job.totalParts > 0) {
+      return `Parte ${Math.min(job.uploadedParts + 1, job.totalParts)} de ${job.totalParts}`;
+    }
+    return "Preparando subida…";
+  }
   if (job.stage === "processing") {
     const s = job.processingStatus;
     if (s === "processing") return "Detectando posesiones";

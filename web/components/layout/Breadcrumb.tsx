@@ -28,7 +28,8 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
               {item.label}
             </Link>
           ) : (
-            <span className="text-foreground font-medium truncate max-w-[200px]">{item.label}</span>
+            // #5 WCAG 2.4.8 -- aria-current="page" en el ultimo item (sin href = pagina actual)
+            <span aria-current="page" className="text-foreground font-medium truncate max-w-[200px]">{item.label}</span>
           )}
         </span>
       ))}

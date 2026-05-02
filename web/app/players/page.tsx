@@ -2,18 +2,19 @@
 
 import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
-import { UserPlus, Archive, Pencil, Search, Eye, EyeOff, Phone, Upload, X, Loader2, ZoomIn, ZoomOut, Check } from "lucide-react";
+import { UserPlus, Archive, Pencil, Search, Eye, EyeOff, Phone, Upload, X, Loader2, ZoomIn, ZoomOut, Check, LayoutGrid, List, FileDown, FileUp } from "lucide-react";
 import {
   listPlayers,
   createPlayer,
   updatePlayer,
   archivePlayer,
+  importPlayersFromCsv,
   listRoster,
   getTeams,
   getPlayerPhotoUploadUrl,
   listPositions,
 } from "@basketball-clipper/shared/api";
-import type { Player, PlayerCreate } from "@basketball-clipper/shared/types";
+import type { Player, PlayerCreate, CsvImportResult } from "@basketball-clipper/shared/types";
 import { PageShell } from "@/components/layout/PageShell";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/layout/Breadcrumb";
+import { PaginationBar } from "@/components/ui/pagination-bar";
 import { cn } from "@/lib/utils";
 
 const EMPTY_FORM: PlayerCreate = {
@@ -61,7 +63,8 @@ const EMPTY_FORM: PlayerCreate = {
 // ── Avatar ────────────────────────────────────────────────────────────────────
 
 const PREVIEW_SIZE = 200; // px — tamaño del círculo en el editor de recorte
-const OUTPUT_SIZE  = 400; // px — resolución de salida del canvas recortado
+// #50 — reducida a 320px (≈60 KB vs ≈140 KB a 400px) para minimizar uploads
+const OUTPUT_SIZE  = 320; // px — resolución de salida del canvas recortado
 
 function PlayerAvatar({ player, size = "md" }: { player: Player; size?: "sm" | "md" | "lg" }) {
   const initials = `${player.first_name[0] ?? ""}${player.last_name[0] ?? ""}`.toUpperCase();
@@ -100,9 +103,16 @@ export default function PlayersPage() {
   const queryClient = useQueryClient();
 
   const [showArchived, setShowArchived] = useState(false);
+  const [page, setPage] = useState(1);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [search, setSearch] = useState("");
   const [teamFilter, setTeamFilter] = useState<string>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [csvOpen, setCsvOpen] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvResult, setCsvResult] = useState<CsvImportResult | null>(null);
+  const [csvDragOver, setCsvDragOver] = useState(false);
+  const csvInputRef = useRef<HTMLInputElement>(null);
   const [editPlayer, setEditPlayer] = useState<Player | null>(null);
   const [form, setForm] = useState<PlayerCreate>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
@@ -187,11 +197,30 @@ export default function PlayersPage() {
     });
   }, [players, search, teamFilter, rosterQueries, activeTeams]);
 
+  // Reset page when filters change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useMemo(() => { setPage(1); }, [search, teamFilter, showArchived]);
+
   const active = filtered.filter((p) => !p.archived_at);
   const archived = filtered.filter((p) => !!p.archived_at);
   const displayed = showArchived ? filtered : active;
 
+  // #48 — Paginación cliente: 25 jugadores por página
+  const PAGE_SIZE = 25;
+  const totalPages = Math.max(1, Math.ceil(displayed.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageSlice = displayed.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
   // ── Mutations ──────────────────────────────────────────────────────────────
+
+  const csvMut = useMutation({
+    mutationFn: (file: File) => importPlayersFromCsv(token!, clubId!, file),
+    onSuccess: (result) => {
+      setCsvResult(result);
+      setCsvFile(null);
+      void queryClient.invalidateQueries({ queryKey: ["players"] });
+    },
+  });
 
   const saveMutation = useMutation({
     mutationFn: async (data: PlayerCreate) => {
@@ -298,7 +327,8 @@ export default function PlayersPage() {
       ctx.drawImage(img, cx - rw / 2, cy - rh / 2, rw, rh);
 
       const blob = await new Promise<Blob>((res, rej) =>
-        canvas.toBlob((b) => (b ? res(b) : rej()), "image/jpeg", 0.92),
+        // #50 — calidad 0.82: equilibrio nitidez/tamaño (~40-80 KB para avatares 320px)
+        canvas.toBlob((b) => (b ? res(b) : rej()), "image/jpeg", 0.82),
       );
 
       const { upload_url, photo_url } = await getPlayerPhotoUploadUrl(
@@ -348,10 +378,16 @@ export default function PlayersPage() {
               {archived.length > 0 && ` · ${archived.length} archivado${archived.length !== 1 ? "s" : ""}`}
             </p>
           </div>
-          <Button onClick={openCreate}>
-            <UserPlus className="h-4 w-4 mr-2" />
-            Nuevo jugador
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => { setCsvOpen(true); setCsvResult(null); setCsvFile(null); }}>
+              <FileUp className="h-4 w-4 mr-2" />
+              Importar CSV
+            </Button>
+            <Button onClick={openCreate}>
+              <UserPlus className="h-4 w-4 mr-2" />
+              Nuevo jugador
+            </Button>
+          </div>
         </div>
 
         {/* Search + team filter + archive toggle */}
@@ -381,6 +417,19 @@ export default function PlayersPage() {
               </SelectContent>
             </Select>
           )}
+          {/* #27 toggle grid/lista */}
+          <div className="flex rounded-md border border-border overflow-hidden shrink-0">
+            <button
+              onClick={() => setViewMode("list")}
+              className={cn("p-2 transition-colors", viewMode === "list" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted")}
+              title="Vista lista"
+            ><List className="h-4 w-4" /></button>
+            <button
+              onClick={() => setViewMode("grid")}
+              className={cn("p-2 transition-colors", viewMode === "grid" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted")}
+              title="Vista cuadrícula"
+            ><LayoutGrid className="h-4 w-4" /></button>
+          </div>
           <Button
             variant={showArchived ? "secondary" : "outline"}
             size="sm"
@@ -416,9 +465,10 @@ export default function PlayersPage() {
               </>
             )}
           </div>
-        ) : (
+        ) : viewMode === "list" ? (
+          <>
           <div className="border rounded-lg divide-y">
-            {displayed.map((p) => {
+            {pageSlice.map((p) => {
               const teamNames = playerTeamsMap.get(p.id) ?? [];
               const isArchived = !!p.archived_at;
               return (
@@ -535,6 +585,61 @@ export default function PlayersPage() {
               );
             })}
           </div>
+          <PaginationBar page={safePage} totalPages={totalPages} onPage={setPage} className="pb-2" />
+          </>
+        ) : (
+          <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {pageSlice.map((p) => {
+              const teamNames = playerTeamsMap.get(p.id) ?? [];
+              const isArchived = !!p.archived_at;
+              return (
+                <div
+                  key={p.id}
+                  className={cn(
+                    "border rounded-lg p-4 flex flex-col items-center gap-2 text-center",
+                    isArchived && "opacity-60",
+                  )}
+                >
+                  <PlayerAvatar player={p} />
+                  <div className="w-full min-w-0">
+                    <p className="text-sm font-medium truncate">
+                      {p.first_name} {p.last_name}
+                    </p>
+                    {p.positions.length > 0 && (
+                      <div className="flex flex-wrap justify-center gap-1 mt-1">
+                        {p.positions.slice(0, 2).map((pos) => (
+                          <span
+                            key={pos.id}
+                            className="inline-flex items-center rounded px-1.5 py-0 text-[10px] font-medium text-white"
+                            style={{ backgroundColor: pos.color }}
+                          >
+                            {pos.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {teamNames.length > 0 && (
+                      <p className="text-[10px] text-muted-foreground mt-1 truncate">
+                        {teamNames[0]}{teamNames.length > 1 ? ` +${teamNames.length - 1}` : ""}
+                      </p>
+                    )}
+                  </div>
+                  {!isArchived && (
+                    <div className="flex gap-1 mt-auto">
+                      <button
+                        onClick={() => openEdit(p)}
+                        className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                        title="Editar"
+                      ><Pencil className="h-3.5 w-3.5" /></button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <PaginationBar page={safePage} totalPages={totalPages} onPage={setPage} className="pb-2" />
+          </>
         )}
       </div>
 
@@ -778,6 +883,106 @@ export default function PlayersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* CSV Import dialog */}
+      <Dialog open={csvOpen} onOpenChange={(o) => { setCsvOpen(o); if (!o) { setCsvResult(null); setCsvFile(null); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Importar jugadores desde CSV</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            {/* Template download */}
+            <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 px-3 py-2">
+              <span className="text-xs text-muted-foreground">
+                Descarga la plantilla CSV para rellenar
+              </span>
+              <a
+                href={"data:text/csv;charset=utf-8," + encodeURIComponent("first_name,last_name,phone,date_of_birth\nJordan,Smith,+34600000001,1990-03-17\n")}
+                download="plantilla_jugadores.csv"
+                className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+              >
+                <FileDown className="h-3.5 w-3.5" />
+                Plantilla CSV
+              </a>
+            </div>
+
+            {/* Results */}
+            {csvResult && (
+              <div className="rounded-lg border border-border bg-card p-3 space-y-1.5">
+                <p className="text-sm font-medium">Importación completada</p>
+                <div className="flex gap-4 text-xs text-muted-foreground">
+                  <span className="text-green-600 dark:text-green-400 font-medium">✓ {csvResult.created} creado{csvResult.created !== 1 ? "s" : ""}</span>
+                  {csvResult.skipped > 0 && <span>{csvResult.skipped} omitido{csvResult.skipped !== 1 ? "s" : ""} (ya existían)</span>}
+                </div>
+                {csvResult.errors.length > 0 && (
+                  <div className="mt-1.5 space-y-0.5">
+                    <p className="text-xs font-medium text-destructive">Errores ({csvResult.errors.length}):</p>
+                    <ul className="text-xs text-muted-foreground space-y-0.5 max-h-28 overflow-y-auto">
+                      {csvResult.errors.map((e) => (
+                        <li key={e.row} className="flex gap-1.5">
+                          <span className="shrink-0 text-destructive font-mono">Fila {e.row}:</span>
+                          <span>{e.message}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Drop zone */}
+            {!csvResult && (
+              <div
+                className={cn(
+                  "relative flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed p-8 cursor-pointer transition-colors",
+                  csvDragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-muted/30"
+                )}
+                onClick={() => csvInputRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); setCsvDragOver(true); }}
+                onDragLeave={() => setCsvDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setCsvDragOver(false);
+                  const f = e.dataTransfer.files[0];
+                  if (f) setCsvFile(f);
+                }}
+              >
+                <input
+                  ref={csvInputRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="sr-only"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) setCsvFile(f); }}
+                />
+                <FileUp className={cn("h-8 w-8 transition-colors", csvDragOver ? "text-primary" : "text-muted-foreground")} />
+                {csvFile ? (
+                  <div className="text-center">
+                    <p className="text-sm font-medium">{csvFile.name}</p>
+                    <p className="text-xs text-muted-foreground">{(csvFile.size / 1024).toFixed(1)} KB</p>
+                  </div>
+                ) : (
+                  <div className="text-center">
+                    <p className="text-sm font-medium">Arrastra tu CSV aquí</p>
+                    <p className="text-xs text-muted-foreground">o haz clic para seleccionar</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCsvOpen(false)}>Cerrar</Button>
+            {!csvResult && (
+              <Button
+                onClick={() => { if (csvFile) csvMut.mutate(csvFile); }}
+                disabled={!csvFile || csvMut.isPending}
+              >
+                {csvMut.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Importando...</> : "Importar"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </PageShell>
   );
 }

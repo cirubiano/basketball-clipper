@@ -12,7 +12,10 @@ import asyncio
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+import csv
+import io
+
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -26,6 +29,7 @@ from app.models.profile import Profile, UserRole
 from app.models.team import Team
 from app.models.user import User
 from app.schemas.player import (
+    CsvImportResponse,
     PhotoUploadRequest,
     PhotoUploadResponse,
     PlayerCreate,
@@ -445,3 +449,121 @@ async def remove_from_roster(
     entry.archived_at = datetime.now(timezone.utc)
     await db.commit()
     return Response(status_code=204)
+
+# ── POST /clubs/{club_id}/players/import-csv ──────────────────────────────────
+
+@router.post("/{club_id}/players/import-csv", response_model=CsvImportResponse, status_code=200)
+async def import_players_from_csv(
+    club_id: int,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CsvImportResponse:
+    """
+    Importa jugadores desde un CSV.
+
+    Columnas esperadas (cabecera obligatoria):
+      first_name, last_name, phone (opcional), date_of_birth (opcional, YYYY-MM-DD)
+
+    - Si ya existe un jugador con el mismo first_name+last_name en el club, se omite.
+    - Los errores de fila no detienen la importacion; se acumulan en `errors`.
+    - Requiere rol TechnicalDirector o HeadCoach del club.
+    """
+    from datetime import date as _date  # noqa: PLC0415
+
+    await _get_club_or_404(club_id, db)
+    await _require_td_or_hc_any_team(club_id, current_user, db)
+
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Solo se aceptan archivos CSV (.csv)")
+
+    raw = await file.read()
+    try:
+        text = raw.decode("utf-8-sig")  # utf-8-sig strips BOM if present
+    except UnicodeDecodeError:
+        text = raw.decode("latin-1", errors="replace")
+
+    reader = csv.DictReader(io.StringIO(text))
+    if reader.fieldnames is None:
+        raise HTTPException(status_code=400, detail="El CSV esta vacio o no tiene cabecera")
+
+    # Normalize field names: strip whitespace and lower-case
+    fieldnames_norm = [f.strip().lower() for f in reader.fieldnames]
+    if "first_name" not in fieldnames_norm or "last_name" not in fieldnames_norm:
+        raise HTTPException(
+            status_code=400,
+            detail="El CSV debe tener columnas 'first_name' y 'last_name'",
+        )
+
+    created = 0
+    skipped = 0
+    errors: list[dict] = []
+
+    for row_num, raw_row in enumerate(reader, start=2):
+        # Normalize keys
+        row = {k.strip().lower(): (v.strip() if v else "") for k, v in raw_row.items()}
+
+        first_name = row.get("first_name", "").strip()
+        last_name = row.get("last_name", "").strip()
+
+        if not first_name or not last_name:
+            errors.append({"row": row_num, "message": "first_name y last_name son obligatorios"})
+            continue
+
+        # Skip duplicates within this club (active players only)
+        existing = await db.scalar(
+            select(Player).where(
+                Player.club_id == club_id,
+                Player.first_name == first_name,
+                Player.last_name == last_name,
+                Player.archived_at.is_(None),
+            )
+        )
+        if existing is not None:
+            skipped += 1
+            continue
+
+        # Parse optional fields
+        phone = row.get("phone", "").strip() or None
+        dob: _date | None = None
+        dob_str = row.get("date_of_birth", "").strip()
+        if dob_str:
+            try:
+                dob = _date.fromisoformat(dob_str)
+            except ValueError:
+                errors.append({
+                    "row": row_num,
+                    "message": f"date_of_birth '{dob_str}' no es una fecha valida (use YYYY-MM-DD)",
+                })
+                continue
+
+        db.add(
+            Player(
+                club_id=club_id,
+                first_name=first_name,
+                last_name=last_name,
+                phone=phone,
+                date_of_birth=dob,
+            )
+        )
+        created += 1
+
+    await db.commit()
+    return CsvImportResponse(created=created, skipped=skipped, errors=errors)
+
+
+async def _require_td_or_hc_any_team(club_id: int, user: User, db: AsyncSession) -> None:
+    """El usuario es admin, TechnicalDirector del club, o HeadCoach de cualquier equipo del club."""
+    if user.is_admin:
+        return
+    from app.models.profile import UserRole as _URole  # noqa: PLC0415
+    profile = await db.scalar(
+        select(Profile).where(
+            Profile.user_id == user.id,
+            Profile.club_id == club_id,
+            Profile.role.in_([_URole.technical_director, _URole.head_coach]),
+            Profile.archived_at.is_(None),
+        )
+    )
+    if profile is None:
+        raise HTTPException(status_code=403, detail="TechnicalDirector or HeadCoach access required")

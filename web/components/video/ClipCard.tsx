@@ -23,9 +23,23 @@ export function ClipCard({ clip, videoId }: ClipCardProps) {
   return (
     <Link href={href} className="group block">
       <Card className="overflow-hidden transition-shadow group-hover:shadow-md">
-        <div className="relative aspect-video bg-muted flex items-center justify-center">
-          <Play className="h-10 w-10 text-muted-foreground group-hover:text-primary transition-colors" />
-          <span className="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-xs text-white font-mono">
+        <div className="relative aspect-video bg-muted flex items-center justify-center overflow-hidden">
+          {clip.thumbnail_url ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={clip.thumbnail_url}
+                alt={`Thumbnail del clip #${clip.id}`}
+                className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                <Play className="h-10 w-10 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
+              </div>
+            </>
+          ) : (
+            <Play className="h-10 w-10 text-muted-foreground group-hover:text-primary transition-colors" />
+          )}
+          <span className="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-xs text-white font-mono z-10">
             {formatDuration(clip.duration)}
           </span>
         </div>
@@ -39,7 +53,7 @@ export function ClipCard({ clip, videoId }: ClipCardProps) {
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            {clip.start_time.toFixed(1)}s – {clip.end_time.toFixed(1)}s
+            {clip.start_time.toFixed(1)}s &ndash; {clip.end_time.toFixed(1)}s
           </p>
         </CardContent>
       </Card>

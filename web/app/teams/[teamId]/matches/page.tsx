@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Swords, Plus, Archive, ChevronRight } from "lucide-react";
+import { Swords, Plus, Archive, ChevronRight, Search } from "lucide-react";
 import Link from "next/link";
 import {
   listMatches,
@@ -56,6 +56,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Breadcrumb } from "@/components/layout/Breadcrumb";
+import { PaginationBar } from "@/components/ui/pagination-bar";
 
 const LOCATIONS: MatchLocation[] = ["home", "away", "neutral"];
 
@@ -83,7 +84,9 @@ export default function MatchesPage({
     activeProfile?.role === "technical_director";
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [page, setPage] = useState(1);
   const [filterSeasonId, setFilterSeasonId] = useState<string>("all");
+  const [search, setSearch] = useState("");
   const [form, setForm] = useState<MatchCreate>({
     opponent_name: "",
     date: "",
@@ -157,6 +160,17 @@ export default function MatchesPage({
     return seasons.find((s) => s.id === id)?.name ?? `Temporada ${id}`;
   }
 
+  // #48 — paginación partidos
+  // #28 — búsqueda por rival
+  const searchQ = search.trim().toLowerCase();
+  const PAGE_SIZE_M = 20;
+  const allSorted = [...matches]
+    .filter((m) => !searchQ || m.opponent_name.toLowerCase().includes(searchQ))
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const totalPagesM = Math.max(1, Math.ceil(allSorted.length / PAGE_SIZE_M));
+  const safePageM = Math.min(page, totalPagesM);
+  const sortedMatches = allSorted.slice((safePageM - 1) * PAGE_SIZE_M, safePageM * PAGE_SIZE_M);
+
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-8 max-w-3xl">
@@ -182,7 +196,33 @@ export default function MatchesPage({
           )}
         </div>
 
-        {seasons.length > 1 && (
+        {/* #28 — búsqueda por rival */}
+        <div className="mb-4 flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              placeholder="Buscar por rival…"
+              className="pl-9 h-9 text-sm"
+            />
+          </div>
+          {seasons.length > 1 && (
+            <Select value={filterSeasonId} onValueChange={(v) => { setFilterSeasonId(v); setPage(1); }}>
+              <SelectTrigger className="w-full sm:w-44 h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas las temporadas</SelectItem>
+                {seasons.map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+
+        {seasons.length > 1 && false && (
           <div className="mb-4 flex items-center gap-2">
             <Label className="text-sm shrink-0">Temporada</Label>
             <Select value={filterSeasonId} onValueChange={setFilterSeasonId}>
@@ -206,16 +246,30 @@ export default function MatchesPage({
             {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}
           </div>
         ) : matches.length === 0 ? (
-          <div className="border rounded-lg p-12 text-center text-muted-foreground">
-            <Swords className="h-8 w-8 mx-auto mb-3 opacity-40" />
-            <p>No hay partidos todavía.</p>
+          <div className="border rounded-lg border-dashed p-14 text-center">
+            <Swords className="h-9 w-9 mx-auto mb-3 text-muted-foreground/40" />
+            <p className="text-sm font-medium mb-1">
+              {filterSeasonId !== "all" ? "Sin partidos esta temporada" : "Sin partidos todavía"}
+            </p>
+            <p className="text-xs text-muted-foreground mb-4">
+              {isCoachOrTD
+                ? "Registra los partidos del equipo para hacer seguimiento de resultados y estadísticas."
+                : "El cuerpo técnico aún no ha registrado ningún partido."}
+            </p>
             {isCoachOrTD && seasons.length > 0 && (
-              <Button variant="link" onClick={openCreate}>Crea el primero</Button>
+              <Button size="sm" onClick={openCreate}>
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
+                Crear partido
+              </Button>
+            )}
+            {isCoachOrTD && seasons.length === 0 && (
+              <p className="text-xs text-destructive">Crea una temporada antes de añadir partidos.</p>
             )}
           </div>
         ) : (
+          <>
           <div className="border rounded-lg divide-y">
-            {[...matches].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map((m) => (
+            {sortedMatches.map((m) => (
               <MatchRow
                 key={m.id}
                 match={m}
@@ -228,6 +282,8 @@ export default function MatchesPage({
               />
             ))}
           </div>
+          <PaginationBar page={safePageM} totalPages={totalPagesM} onPage={setPage} className="pb-2" />
+          </>
         )}
       </div>
 

@@ -66,7 +66,10 @@ async def get_clip(
 
 
 def _to_response(clip: Clip) -> ClipResponse:
-    """Enriquece un Clip ORM con una URL pre-firmada S3 fresca."""
+    """Enriquece un Clip ORM con URLs pre-firmadas S3 frescas."""
+    thumbnail_url: str | None = None
+    if clip.thumbnail_s3_key:
+        thumbnail_url = storage.get_presigned_url(clip.thumbnail_s3_key)
     return ClipResponse(
         id=clip.id,
         video_id=clip.video_id,
@@ -75,6 +78,7 @@ def _to_response(clip: Clip) -> ClipResponse:
         team=clip.team,
         s3_key=clip.s3_key,
         url=storage.get_presigned_url(clip.s3_key),
+        thumbnail_url=thumbnail_url,
         duration=clip.duration,
         created_at=clip.created_at,
     )

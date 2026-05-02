@@ -9,11 +9,11 @@ export interface ClipMetadata {
   start_time: number;
   /** Seconds from the start of the source video. */
   end_time: number;
-  /** end_time − start_time, stored for fast sorting. */
+  /** end_time minus start_time, stored for fast sorting. */
   duration: number;
   /**
    * Colour-cluster label assigned by the detector.
-   * Either "team_a" or "team_b" — specific colours are resolved
+   * Either "team_a" or "team_b" -- specific colours are resolved
    * per-video during detection.
    */
   team: string | null;
@@ -29,5 +29,10 @@ export interface Clip extends ClipMetadata {
   s3_key: string;
   /** Pre-signed S3 GET URL. Valid for 1 hour from the time of the request. */
   url: string;
+  /**
+   * Pre-signed S3 GET URL for the auto-generated thumbnail JPEG.
+   * Null for clips created before thumbnail extraction was added.
+   */
+  thumbnail_url: string | null;
   created_at: string; // ISO 8601
 }

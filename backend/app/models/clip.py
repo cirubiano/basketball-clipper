@@ -21,6 +21,8 @@ class Clip(Base):
     s3_key: Mapped[str] = mapped_column(String(512), nullable=False)
     # end_time - start_time, stored for fast sorting/filtering without recomputing
     duration: Mapped[float] = mapped_column(Float, nullable=False)
+    # S3 key for the auto-generated thumbnail JPEG (extracted at clip midpoint)
+    thumbnail_s3_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

@@ -2,16 +2,18 @@
 
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Dumbbell, Plus, Archive, ChevronRight, BarChart2, Wand2 } from "lucide-react";
+import { Dumbbell, Plus, Archive, ChevronRight, BarChart2, Wand2, Search, Trash2 } from "lucide-react";
 import Link from "next/link";
 import {
   listTrainings,
   createTraining,
+  addTrainingDrill,
   archiveTraining,
   getSeasons,
 } from "@basketball-clipper/shared/api";
 import type { Training, TrainingCreate } from "@basketball-clipper/shared/types";
 import { PageShell } from "@/components/layout/PageShell";
+import { loadTemplates, deleteTemplate, type TrainingTemplate } from "@/lib/trainingTemplates";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
@@ -45,6 +47,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Breadcrumb } from "@/components/layout/Breadcrumb";
+import { PaginationBar } from "@/components/ui/pagination-bar";
 import { cn } from "@/lib/utils";
 
 type PageTab = "entrenamientos" | "historial";
@@ -74,7 +77,12 @@ export default function TrainingsPage({
 
   const [pageTab, setPageTab] = useState<PageTab>("entrenamientos");
   const [dialogOpen, setDialogOpen] = useState(false);
+  // #25 — template picker state
+  const [templates, setTemplates] = useState<TrainingTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [page, setPage] = useState(1);
   const [filterSeasonId, setFilterSeasonId] = useState<string>("all");
+  const [search, setSearch] = useState("");
   const [form, setForm] = useState<TrainingCreate>({ title: "", date: "", season_id: 0 });
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -164,12 +172,45 @@ export default function TrainingsPage({
     if (!form.title.trim()) { setFormError("El título es obligatorio"); return; }
     if (!form.date) { setFormError("La fecha es obligatoria"); return; }
     if (!form.season_id) { setFormError("Selecciona una temporada"); return; }
-    createMut.mutate(form);
+    // If a template was selected, apply its drills after creation
+    if (selectedTemplateId) {
+      const tpl = templates.find((t) => t.id === selectedTemplateId);
+      createMut.mutate(form, {
+        onSuccess: async (training) => {
+          if (tpl) {
+            for (const d of tpl.drills) {
+              try {
+                await addTrainingDrill(token!, clubId!, teamId, training.id, {
+                  drill_id: d.drill_id,
+                  duration_minutes: d.duration_minutes,
+                  notes: d.notes,
+                });
+              } catch { /* ignore individual failures */ }
+            }
+          }
+          void qc.invalidateQueries({ queryKey: ["trainings", teamId] });
+          setDialogOpen(false);
+          setSelectedTemplateId("");
+        },
+      });
+    } else {
+      createMut.mutate(form);
+    }
   }
 
   function seasonName(id: number) {
     return seasons.find((s) => s.id === id)?.name ?? `Temporada ${id}`;
   }
+
+  // #28 + #48 — búsqueda + paginación entrenamientos
+  const searchQ = search.trim().toLowerCase();
+  const filteredTrainings = searchQ
+    ? trainings.filter((t) => (t.title ?? "").toLowerCase().includes(searchQ))
+    : trainings;
+  const PAGE_SIZE_T = 20;
+  const totalPagesT = Math.max(1, Math.ceil(filteredTrainings.length / PAGE_SIZE_T));
+  const safePageT = Math.min(page, totalPagesT);
+  const trainingsPage = filteredTrainings.slice((safePageT - 1) * PAGE_SIZE_T, safePageT * PAGE_SIZE_T);
 
   return (
     <PageShell>
@@ -212,21 +253,29 @@ export default function TrainingsPage({
           </div>
         </div>
 
-        {/* Season filter */}
-        {seasons.length > 1 && (
-          <div className="mb-4 flex items-center gap-2">
-            <Label className="text-sm shrink-0">Temporada</Label>
-            <Select value={filterSeasonId} onValueChange={setFilterSeasonId}>
-              <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+        {/* #28 — búsqueda y filtro de temporada */}
+        <div className="mb-4 flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              placeholder="Buscar entrenamiento…"
+              className="pl-9 h-9 text-sm"
+            />
+          </div>
+          {seasons.length > 1 && (
+            <Select value={filterSeasonId} onValueChange={(v) => { setFilterSeasonId(v); setPage(1); }}>
+              <SelectTrigger className="w-full sm:w-44 h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todas</SelectItem>
+                <SelectItem value="all">Todas las temporadas</SelectItem>
                 {seasons.map((s) => (
                   <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Page tabs */}
         <div className="flex gap-1 border-b mb-6">
@@ -253,16 +302,31 @@ export default function TrainingsPage({
               {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}
             </div>
           ) : trainings.length === 0 ? (
-            <div className="border rounded-lg p-12 text-center text-muted-foreground">
-              <Dumbbell className="h-8 w-8 mx-auto mb-3 opacity-40" />
-              <p>No hay entrenamientos todavía.</p>
+            <div className="border rounded-lg border-dashed p-14 text-center">
+              <Dumbbell className="h-9 w-9 mx-auto mb-3 text-muted-foreground/40" />
+              <p className="text-sm font-medium mb-1">
+                {filterSeasonId !== "all" ? "Sin entrenamientos esta temporada" : "Sin entrenamientos todavía"}
+              </p>
+              <p className="text-xs text-muted-foreground mb-4">
+                {isCoachOrTD
+                  ? "Planifica sesiones de entrenamiento y registra la asistencia de los jugadores."
+                  : "El cuerpo técnico aún no ha registrado ningún entrenamiento."}
+              </p>
               {isCoachOrTD && seasons.length > 0 && (
-                <Button variant="link" onClick={openCreate}>Crea el primero</Button>
+                <Button size="sm" onClick={openCreate}>
+                  <Plus className="h-3.5 w-3.5 mr-1.5" />
+                  Crear entrenamiento
+                </Button>
+              )}
+              {isCoachOrTD && seasons.length === 0 && (
+                <p className="text-xs text-destructive">
+                  Crea una temporada antes de añadir entrenamientos.
+                </p>
               )}
             </div>
           ) : (
             <div className="border rounded-lg divide-y">
-              {trainings.map((t) => (
+              {trainingsPage.map((t) => (
                 <TrainingRow
                   key={t.id}
                   training={t}
@@ -275,6 +339,9 @@ export default function TrainingsPage({
               ))}
             </div>
           )
+        )}
+        {pageTab === "entrenamientos" && trainings.length > PAGE_SIZE_T && (
+          <PaginationBar page={safePageT} totalPages={totalPagesT} onPage={setPage} />
         )}
 
         {/* Tab: Historial de asistencia */}
@@ -340,7 +407,11 @@ export default function TrainingsPage({
       {/* Create dialog */}
       <Dialog
         open={dialogOpen}
-        onOpenChange={(open) => { setDialogOpen(open); if (!open) setFormError(null); }}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) { setFormError(null); setSelectedTemplateId(""); }
+          if (open) setTemplates(loadTemplates(teamId));
+        }}
       >
         <DialogContent>
           <DialogHeader>
@@ -381,6 +452,49 @@ export default function TrainingsPage({
                 </SelectContent>
               </Select>
             </div>
+            {templates.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Plantilla (opcional)</Label>
+                <div className="flex gap-2">
+                  <Select
+                    value={selectedTemplateId}
+                    onValueChange={setSelectedTemplateId}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Sin plantilla" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Sin plantilla</SelectItem>
+                      {templates.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.name} ({t.drills.length} ejercicios)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedTemplateId && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      title="Eliminar plantilla"
+                      onClick={() => {
+                        deleteTemplate(teamId, selectedTemplateId);
+                        setTemplates(loadTemplates(teamId));
+                        setSelectedTemplateId("");
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+                {selectedTemplateId && (
+                  <p className="text-xs text-muted-foreground">
+                    Se añadirán {templates.find((t) => t.id === selectedTemplateId)?.drills.length ?? 0} ejercicios al crear el entrenamiento.
+                  </p>
+                )}
+              </div>
+            )}
             {formError && (
               <Alert variant="destructive">
                 <AlertDescription>{formError}</AlertDescription>

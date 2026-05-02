@@ -11,7 +11,8 @@ import {
   listVideos,
   retryVideo,
 } from "@basketball-clipper/shared/api";
-import type { VideoListItem } from "@basketball-clipper/shared/types";
+import type { VideoListItem, Clip } from "@basketball-clipper/shared/types";
+import { cn } from "@/lib/utils";
 import { PageShell } from "@/components/layout/PageShell";
 import { ClipCard } from "@/components/video/ClipCard";
 import { DeleteVideoDialog } from "@/components/video/DeleteVideoDialog";
@@ -124,11 +125,16 @@ export default function VideoDetailPage({ params }: PageProps) {
               : "No hay clips disponibles para este vídeo."}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {clips.map((clip) => (
-              <ClipCard key={clip.id} clip={clip} videoId={videoId} />
-            ))}
-          </div>
+          <>
+            {clips && clips.length > 0 && (
+              <PossessionTimeline clips={clips} videoId={videoId} />
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {clips.map((clip) => (
+                <ClipCard key={clip.id} clip={clip} videoId={videoId} />
+              ))}
+            </div>
+          </>
         )}
       </div>
 
@@ -141,5 +147,76 @@ export default function VideoDetailPage({ params }: PageProps) {
         />
       )}
     </PageShell>
+  );
+}
+
+// ── PossessionTimeline ────────────────────────────────────────────────────────
+
+function PossessionTimeline({ clips, videoId }: { clips: Clip[]; videoId: number }) {
+  const totalDuration = Math.max(...clips.map((c) => c.end_time), 0);
+  if (totalDuration === 0) return null;
+
+  const teamAClips = clips.filter((c) => c.team === "team_a");
+  const teamBClips = clips.filter((c) => c.team === "team_b");
+  const teamATime = teamAClips.reduce((s, c) => s + c.duration, 0);
+  const teamBTime = teamBClips.reduce((s, c) => s + c.duration, 0);
+  const coveredTime = teamATime + teamBTime;
+  const teamAPct = coveredTime > 0 ? Math.round((teamATime / coveredTime) * 100) : 0;
+  const teamBPct = coveredTime > 0 ? 100 - teamAPct : 0;
+
+  function formatTime(s: number): string {
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium">Línea de posesiones</h3>
+        <span className="text-xs text-muted-foreground">{formatTime(totalDuration)} total</span>
+      </div>
+
+      {/* Possession bar */}
+      <div className="relative h-8 rounded-md overflow-hidden bg-muted flex">
+        {clips
+          .slice()
+          .sort((a, b) => a.start_time - b.start_time)
+          .map((clip) => {
+            const left = (clip.start_time / totalDuration) * 100;
+            const width = (clip.duration / totalDuration) * 100;
+            const isTeamA = clip.team === "team_a";
+            return (
+              <a
+                key={clip.id}
+                href={`/videos/${videoId}/clips/${clip.id}`}
+                title={`Clip #${clip.id} — ${clip.team ?? "desconocido"} · ${formatTime(clip.start_time)}–${formatTime(clip.end_time)}`}
+                className={cn(
+                  "absolute top-0 h-full transition-opacity hover:opacity-80 cursor-pointer border-r border-background/30",
+                  isTeamA
+                    ? "bg-blue-500 dark:bg-blue-400"
+                    : "bg-amber-500 dark:bg-amber-400",
+                )}
+                style={{ left: `${left}%`, width: `${Math.max(width, 0.3)}%` }}
+              />
+            );
+          })}
+      </div>
+
+      {/* Possession stats */}
+      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+        <div className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-blue-500 dark:bg-blue-400 inline-block shrink-0" />
+          <span className="font-medium text-foreground">{teamAPct}%</span>
+          <span>Equipo A · {formatTime(teamATime)}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-amber-500 dark:bg-amber-400 inline-block shrink-0" />
+          <span className="font-medium text-foreground">{teamBPct}%</span>
+          <span>Equipo B · {formatTime(teamBTime)}</span>
+        </div>
+        <span className="ml-auto">{clips.length} clip{clips.length !== 1 ? "s" : ""}</span>
+      </div>
+    </div>
   );
 }

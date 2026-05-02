@@ -12,6 +12,10 @@ class AddToPlaybookRequest(BaseModel):
     drill_id: int
 
 
+class UpdatePlaybookNoteRequest(BaseModel):
+    note: str | None = None
+
+
 class PlaybookEntryResponse(BaseModel):
     id: int
     team_id: int
@@ -20,6 +24,7 @@ class PlaybookEntryResponse(BaseModel):
     is_frozen: bool
     frozen_at: datetime | None
     archived_at: datetime | None
+    note: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

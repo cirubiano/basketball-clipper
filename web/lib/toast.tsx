@@ -10,7 +10,7 @@ import {
 import { X, CheckCircle2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// -- Types ------------------------------------------------------------------
 
 type ToastType = "success" | "error";
 
@@ -18,13 +18,15 @@ interface Toast {
   id: number;
   message: string;
   type: ToastType;
+  // #17 -- accion de deshacer opcional (muestra boton "Deshacer" y extiende timeout a 6 s)
+  undoFn?: () => void;
 }
 
 interface ToastContextValue {
-  toast: (message: string, type?: ToastType) => void;
+  toast: (message: string, type?: ToastType, undoFn?: () => void) => void;
 }
 
-// ── Context ───────────────────────────────────────────────────────────────────
+// -- Context ----------------------------------------------------------------
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
@@ -37,16 +39,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const toast = useCallback((message: string, type: ToastType = "success") => {
+  const toast = useCallback((message: string, type: ToastType = "success", undoFn?: () => void) => {
     const id = ++_counter;
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => dismiss(id), 4000);
+    setToasts((prev) => [...prev, { id, message, type, undoFn }]);
+    // #17 -- undo toasts duran 6 s para dar tiempo a reaccionar; el resto 4 s
+    setTimeout(() => dismiss(id), undoFn ? 6000 : 4000);
   }, [dismiss]);
 
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      {/* Overlay de toasts — esquina inferior derecha */}
+      {/* Overlay de toasts -- esquina inferior derecha */}
       <div
         aria-live="polite"
         className="fixed bottom-4 right-4 z-[200] flex flex-col gap-2 w-80 max-w-[calc(100vw-2rem)]"
@@ -67,9 +70,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-destructive" />
             )}
             <span className="flex-1">{t.message}</span>
+            {/* #17 -- boton Deshacer, solo cuando hay undoFn */}
+            {t.undoFn && (
+              <button
+                onClick={() => { t.undoFn!(); dismiss(t.id); }}
+                className="shrink-0 text-xs font-semibold underline underline-offset-2 opacity-80 hover:opacity-100 transition-opacity ml-1"
+              >
+                Deshacer
+              </button>
+            )}
             <button
               onClick={() => dismiss(t.id)}
-              className="shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+              className="shrink-0 opacity-60 hover:opacity-100 transition-opacity ml-1"
               aria-label="Cerrar"
             >
               <X className="h-3.5 w-3.5" />

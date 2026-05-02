@@ -160,8 +160,21 @@ async def _run_pipeline(video_id: int) -> None:
                 zip(clip_paths, segments), 1
             ):
                 clip_filename = Path(clip_path).name
+                clip_stem = Path(clip_path).stem  # e.g. "clip_0001_team_a"
                 clip_s3_key = f"clips/{video.user_id}/{video_id}/{clip_filename}"
                 await asyncio.to_thread(storage.upload_file, clip_path, clip_s3_key)
+
+                # Extract and upload thumbnail (non-blocking: failures are logged but ignored)
+                thumbnail_s3_key: str | None = None
+                thumb_path = await asyncio.to_thread(
+                    cutter.extract_thumbnail, clip_path, clips_dir, clip_stem
+                )
+                if thumb_path:
+                    thumb_filename = Path(thumb_path).name
+                    thumbnail_s3_key = (
+                        f"clips/{video.user_id}/{video_id}/thumbs/{thumb_filename}"
+                    )
+                    await asyncio.to_thread(storage.upload_file, thumb_path, thumbnail_s3_key)
 
                 session.add(
                     Clip(
@@ -170,6 +183,7 @@ async def _run_pipeline(video_id: int) -> None:
                         end_time=end_t,
                         team=team,
                         s3_key=clip_s3_key,
+                        thumbnail_s3_key=thumbnail_s3_key,
                         duration=round(end_t - start_t, 3),
                     )
                 )
