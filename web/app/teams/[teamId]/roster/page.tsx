@@ -434,13 +434,15 @@ export default function RosterPage({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="jersey">Dorsal</Label>
+                <Label htmlFor="jersey">
+                  Dorsal <span className="text-destructive">*</span>
+                </Label>
                 <Input
                   id="jersey"
                   type="number"
                   min={0}
                   max={99}
-                  placeholder="4"
+                  placeholder="0–99"
                   value={addForm.jersey}
                   onChange={(e) => setAddForm((f) => ({ ...f, jersey: e.target.value }))}
                 />
@@ -463,10 +465,10 @@ export default function RosterPage({
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddOpen(false)}>Cancelar</Button>
             <Button
-              disabled={addMutation.isPending || !addForm.playerId}
+              disabled={addMutation.isPending || !addForm.playerId || !addForm.jersey}
               onClick={() => addMutation.mutate({
                 player_id: Number(addForm.playerId),
-                jersey_number: addForm.jersey ? Number(addForm.jersey) : null,
+                jersey_number: Number(addForm.jersey),
                 position: (addForm.position === "none" ? null : addForm.position) as RosterPosition | null,
               })}
             >

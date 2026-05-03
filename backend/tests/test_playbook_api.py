@@ -80,6 +80,7 @@ def _fake_playbook_entry(entry_id: int = 7, team_id: int = 10) -> MagicMock:
     e.created_at = now
     e.is_frozen = False
     e.frozen_at = None
+    e.note = None
     # Drill nested object for schema serialization
     drill = MagicMock()
     drill.id = 99

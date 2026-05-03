@@ -69,6 +69,17 @@ export const archiveMatch = (
     method: "DELETE",
   });
 
+export const deleteMatchPermanently = (
+  token: string,
+  clubId: number,
+  teamId: number,
+  matchId: number,
+): Promise<void> =>
+  apiRequest<void>(`${base(clubId, teamId)}/${matchId}/permanent`, {
+    token,
+    method: "DELETE",
+  });
+
 // ── Transiciones de estado ────────────────────────────────────────────────────
 
 export const startMatch = (

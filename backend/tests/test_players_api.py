@@ -382,7 +382,7 @@ def test_add_to_roster_duplicate_returns_409():
 
     r = TestClient(app).post(
         "/clubs/1/teams/10/roster",
-        json={"player_id": 42},
+        json={"player_id": 42, "jersey_number": 7},
         headers=_auth_headers(),
     )
     assert r.status_code == 409
@@ -400,7 +400,7 @@ def test_add_to_roster_archived_player_returns_404():
 
     r = TestClient(app).post(
         "/clubs/1/teams/10/roster",
-        json={"player_id": 42},
+        json={"player_id": 42, "jersey_number": 7},
         headers=_auth_headers(),
     )
     assert r.status_code == 404

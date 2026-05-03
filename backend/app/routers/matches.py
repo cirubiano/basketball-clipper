@@ -26,7 +26,9 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.models.competition import Competition
 from app.models.match import Match, MatchPlayer, MatchStat, MatchVideo
+from app.models.opponent import OpponentMatchStat as OppStat, OpponentPlayer
 from app.models.player import Player, RosterEntry
 from app.models.profile import Profile, UserRole
 from app.models.team import Team
@@ -43,6 +45,7 @@ from app.schemas.match import (
     MatchVideoAdd,
     MatchVideoResponse,
 )
+from app.schemas.opponent import OpponentMatchStatResponse, OpponentPlayerResponse
 
 router = APIRouter()
 
@@ -92,6 +95,7 @@ async def _get_match_or_404(match_id: int, team_id: int, db: AsyncSession) -> Ma
             selectinload(Match.match_videos).selectinload(MatchVideo.video),
             selectinload(Match.match_players).selectinload(MatchPlayer.player),
             selectinload(Match.match_stats).selectinload(MatchStat.player),
+            selectinload(Match.opponent_stats).selectinload(OppStat.opponent_player),
         )
         .where(
             Match.id == match_id,
@@ -143,6 +147,31 @@ def _serialize_match(match: Match) -> MatchResponse:
         )
         for ms in match.match_stats
     ]
+    opp_stats = [
+        OpponentMatchStatResponse(
+            id=os.id,
+            match_id=os.match_id,
+            opponent_player_id=os.opponent_player_id,
+            opponent_player=OpponentPlayerResponse(
+                id=os.opponent_player.id,
+                opponent_team_id=os.opponent_player.opponent_team_id,
+                name=os.opponent_player.name,
+                jersey_number=os.opponent_player.jersey_number,
+                position=os.opponent_player.position,
+                archived_at=os.opponent_player.archived_at,
+            ),
+            points=os.points,
+            minutes=os.minutes,
+            assists=os.assists,
+            defensive_rebounds=os.defensive_rebounds,
+            offensive_rebounds=os.offensive_rebounds,
+            steals=os.steals,
+            turnovers=os.turnovers,
+            fouls=os.fouls,
+            blocks=os.blocks,
+        )
+        for os in match.opponent_stats
+    ]
     return MatchResponse(
         id=match.id,
         team_id=match.team_id,
@@ -154,12 +183,15 @@ def _serialize_match(match: Match) -> MatchResponse:
         notes=match.notes,
         our_score=match.our_score,
         their_score=match.their_score,
+        competition_id=match.competition_id,
+        opponent_id=match.opponent_id,
         created_by=match.created_by,
         created_at=match.created_at,
         archived_at=match.archived_at,
         match_videos=videos,
         match_players=players,
         match_stats=stats,
+        opponent_stats=opp_stats,
     )
 
 
@@ -183,6 +215,7 @@ async def list_matches(
             selectinload(Match.match_videos).selectinload(MatchVideo.video),
             selectinload(Match.match_players).selectinload(MatchPlayer.player),
             selectinload(Match.match_stats).selectinload(MatchStat.player),
+            selectinload(Match.opponent_stats).selectinload(OppStat.opponent_player),
         )
         .where(Match.team_id == team_id, Match.archived_at.is_(None))
     )
@@ -207,6 +240,17 @@ async def create_match(
     profile = await _require_team_member(club_id, team_id, current_user, db)
     _require_coach_or_td(profile, current_user)
 
+    # Validate competition belongs to this team and is not archived
+    comp = await db.scalar(
+        select(Competition).where(
+            Competition.id == body.competition_id,
+            Competition.team_id == team_id,
+            Competition.archived_at.is_(None),
+        )
+    )
+    if not comp:
+        raise HTTPException(422, "La competición no existe o no pertenece a este equipo")
+
     match = Match(
         team_id=team_id,
         season_id=body.season_id,
@@ -215,6 +259,8 @@ async def create_match(
         location=body.location,
         status=body.status,
         notes=body.notes,
+        competition_id=body.competition_id,
+        opponent_id=body.opponent_id,
         created_by=current_user.id,
     )
     db.add(match)
@@ -357,6 +403,34 @@ async def archive_match(
 
     match = await _get_match_or_404(match_id, team_id, db)
     match.archived_at = datetime.now(timezone.utc)
+    await db.commit()
+    return Response(status_code=204)
+
+
+@router.delete("/{club_id}/teams/{team_id}/matches/{match_id}/permanent", status_code=204)
+async def delete_match_permanent(
+    club_id: int,
+    team_id: int,
+    match_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Hard delete — only for matches without a competition (legacy cleanup)."""
+    await _get_club_or_404(club_id, db)
+    await _get_team_or_404(club_id, team_id, db)
+    profile = await _require_team_member(club_id, team_id, current_user, db)
+    _require_coach_or_td(profile, current_user)
+
+    # Fetch without filtering archived_at so we can delete in any state
+    match = await db.scalar(
+        select(Match).where(Match.id == match_id, Match.team_id == team_id)
+    )
+    if not match:
+        raise HTTPException(404, "Partido no encontrado")
+    if match.competition_id is not None:
+        raise HTTPException(409, "Solo se pueden eliminar permanentemente partidos sin competición asignada")
+
+    await db.delete(match)
     await db.commit()
     return Response(status_code=204)
 

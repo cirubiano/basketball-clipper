@@ -17,6 +17,7 @@
 | **E** | Catálogo del club + TeamPlaybook | ✅ Completado | Backend + shared + web |
 | **F** | Partidos, estadísticas, entrenamientos | ✅ Completado | Backend + shared + web; state machine de partido (sesión 28) |
 | **G** | Experiencia del entrenador (mejoras) | ✅ Completado | Favoritos, duration+auto-scheduling, calendario home, informes, grupos, generador |
+| **H** | Competiciones y Equipos Rivales | ✅ Completado | Ligas/torneos por equipo, directorio de rivales del club, scouting de jugadores rivales |
 
 ---
 
@@ -303,6 +304,150 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ## Historial de sesiones
 
+### 2026-05-03 — Sesión 46 (Fase H — pulido UX: validaciones, renombres, hard delete, dorsal duplicado)
+
+**Objetivo**: 5 mejoras UX solicitadas sobre el hub de Competiciones/Rivales/Partidos.
+
+**Backend:**
+- `app/routers/matches.py`: nuevo endpoint `DELETE /{club_id}/teams/{team_id}/matches/{match_id}/permanent` — hard delete de partido; solo permitido si `competition_id IS NULL`; falla 409 si el partido tiene competición asignada.
+
+**Shared:**
+- `shared/api/matches.ts`: nueva función `deleteMatchPermanently`.
+
+**Web — hub `/teams/[teamId]/matches`:**
+
+`page.tsx`:
+- Tab "Ligas y copas" renombrada a "Ligas".
+
+`CompeticionesTab.tsx`:
+- Descripción actualizada: "Ligas y torneos del equipo..." (antes solo "Ligas y copas").
+
+`RivalesTab.tsx`:
+- Botón "Añadir dorsales" renombrado a "Añadir jugadores"; título del diálogo de masa igual.
+- Validación de dorsal duplicado en diálogo individual: si el `jersey_number` ya existe en `expandedTeam.players`, muestra aviso y deshabilita submit.
+- Validación en diálogo de masa: separa los dorsales ingresados en "Nuevos" (chips normales) y "Ya existen – se omitirán" (chips tachados en rojo); el submit solo envía los nuevos.
+- `bulkAddMut` actualizado para recibir `{ oppId, jerseys }` en lugar de leer `bulkJerseys` directamente.
+
+`PartidosTab.tsx`:
+- Opción "Otro rival (escribir nombre)" → "+ Nuevo rival".
+- Campo Competición ahora obligatorio (`*`): label actualizado, eliminada opción "Sin asignar", validación en `handleSubmit`, submit deshabilitado si no hay `competition_id`.
+- Sección de aviso para partidos sin competición: visible solo para HeadCoach/TechnicalDirector; muestra lista de partidos afectados con botón "Eliminar" (AlertDialog de confirmación) que llama `deleteMatchPermanently`.
+- Nueva mutación `deletePermanentMut`.
+
+**Verificaciones**: ESLint 0 errores ✔, TSC 0 errores ✔, py_compile matches.py + competitions.py ✔
+
+---
+
+### 2026-05-03 — Sesión 45 (Fase H — mejoras UX: color rival, formato competición, scouting tab)
+
+**Objetivo**: pulir la UX de Fase H con un conjunto de mejoras solicitadas: color de rivales, formato de partido en competición, dorsal obligatorio en plantilla, campo rival unificado en partidos, y tab de scouting con convocatoria del rival.
+
+**Backend (migración 0020):**
+- `backend/alembic/versions/0020_rival_color_competition_format.py`: añade `color` (varchar nullable) a `opponent_teams`; añade `quarters`, `minutes_per_quarter`, `players_on_court`, `bench_size`, `clock_type` a `competitions`; hace `jersey_number` NOT NULL en `roster_entries`.
+- `app/models/competition.py`: campos de formato añadidos (`quarters`, `minutes_per_quarter`, `players_on_court`, `bench_size`, `clock_type`).
+- `app/models/opponent.py`: campo `color` añadido a `OpponentTeam`.
+- `app/models/player.py`: `jersey_number` cambiado a NOT NULL en `RosterEntry`.
+- `app/schemas/competition.py`: `CompetitionCreate`/`Update`/`Response` actualizados con campos de formato + defaults FIBA. `CompetitionResponse` incluye `match_count`.
+- `app/schemas/opponent.py`: `OpponentTeamCreate`/`Update`/`Response` con campo `color`.
+- `app/routers/opponents.py`: `bulk_add_players` endpoint (POST `.../players/bulk`) — acepta lista de jerseys y crea jugadores que no existan; retorna `{created: N, skipped: N}`.
+
+**Shared:**
+- `shared/types/competition.ts`: `ClockType` union + campos de formato en `Competition`/`CompetitionCreate`/`CompetitionUpdate`.
+- `shared/types/opponent.ts`: `color` en `OpponentTeam`/`OpponentTeamSummary`/`OpponentTeamCreate`/`OpponentTeamUpdate`.
+- `shared/api/competitions.ts`: `createCompetition`/`updateCompetition` envían campos de formato.
+- `shared/api/opponents.ts`: `createOpponent`/`updateOpponent` envían `color`; nueva función `bulkAddOpponentPlayers`.
+
+**Web:**
+
+`web/app/teams/[teamId]/matches/_tabs/RivalesTab.tsx` (reescrito):
+- Selector de color nativo (`<input type="color">`) en diálogos crear/editar rival; swatch de color en la lista.
+- Añadir jugadores en masa: botón "Añadir dorsales" abre diálogo — input de números separados por coma/espacio → chips de previsualización → llama `bulkAddOpponentPlayers`.
+- Crear jugador individual: dorsal requerido antes de habilitar submit; nombre/posición opcionales.
+
+`web/app/teams/[teamId]/roster/page.tsx`:
+- Dorsal marcado como requerido (`*`) en el formulario de asignación.
+- Submit deshabilitado si no hay dorsal.
+
+`web/app/teams/[teamId]/matches/_tabs/PartidosTab.tsx` (reescrito):
+- Prop `initialCompetitionId?: number` + `useEffect` para sincronizar con URL `?comp=`.
+- Filtro de competición client-side (dropdown visible cuando hay >1 competición activa).
+- Campo rival unificado: `<Select>` con todos los rivales registrados + opción "Otro rival (escribir nombre)"; al elegir "Otro" aparece `<Input>` libre debajo.
+- Swatches de color de rival en el `<Select>`.
+- Nombre de competición mostrado en la fila de cada partido.
+
+`web/app/teams/[teamId]/matches/_tabs/CompeticionesTab.tsx`:
+- Campos de formato en los diálogos de crear/editar competición (`FormatFields` component): cuartos, min/cuarto, jugadores en pista, banquillo, tipo de reloj.
+- Click en competición redirige a tab Partidos filtrada por esa competición.
+
+`web/app/teams/[teamId]/matches/[matchId]/page.tsx`:
+- Nueva tab `"scouting"` en `TabKey`.
+- Queries: `opponentTeam` (getOpponent), `competitions` (listCompetitions), `competitionName` derivado.
+- Estado: `oppStatDraft: Map<number, Partial<OpponentMatchStatUpsert>>`, `showAddOppPlayer` + campos del form.
+- `useEffect` para inicializar `oppStatDraft` desde `match.opponent_stats` existentes.
+- Mutaciones: `saveOppStatMut` (upsert on blur), `deleteOppStatMut` (deconvocar con confirm), `convocarOppMut` (upsert con solo `opponent_player_id`), `addOppPlayerInlineMut`.
+- Tab Scouting: estado vacío si no hay rival; skeleton mientras carga; cabecera con swatch de color + "Nuevo jugador rival"; tabla de convocados con inputs de stats (save on blur); lista de no-convocados con botón "Convocar".
+- Diálogo inline "Nuevo jugador rival": dorsal requerido, nombre/posición opcionales.
+- `web/app/page.tsx`: eliminadas funciones muertas `tdLinks`/`coachLinks`/`soloLinks` + imports no usados tras la refactorización del hub.
+
+**Verificaciones**: ESLint 0 errores ✔, TSC 0 errores ✔
+
+---
+
+### 2026-05-03 — Sesión 40 (Hub unificado Competiciones/Partidos/Rivales)
+
+**Objetivo**: crear un hub único `/teams/[teamId]/matches` con tres pestañas (Partidos · Competiciones · Rivales) que reemplaza la dispersión de páginas de la Fase H.
+
+**Problema resuelto**: tras implementar la Fase H, la navegación a Competiciones solo era accesible desde el dashboard y Rivales desde el menú de club — sin coherencia contextual.
+
+**Migración Alembic (fix previo):**
+- `backend/alembic/versions/0017_phase_h_competitions_rivals.py` conflicto con `0017_clip_thumbnails.py` (mismo revision ID).
+- Creado `0019_phase_h_competitions_rivals.py` con `revision="0019"`, `down_revision="0018"`. Encadena correctamente.
+- El archivo `0017_phase_h_competitions_rivals.py` debe eliminarse manualmente: `rm backend/alembic/versions/0017_phase_h_competitions_rivals.py` antes de `docker compose exec backend alembic upgrade head`.
+
+**Navegación (UX, completado en sesión anterior):**
+- `web/app/page.tsx` — añadida card "Rivales" en tdLinks + cards "Competiciones" y "Partidos" en coachLinks (con teamId).
+- `web/app/clubs/[clubId]/teams/page.tsx` — botón "Rivales" en header + quick links Partidos/Competiciones bajo cada equipo en TeamRow.
+
+**Hub unificado (completado esta sesión):**
+- `web/app/teams/[teamId]/matches/_tabs/PartidosTab.tsx` — extrae matches/page.tsx a componente con `{ teamId: number }` prop.
+- `web/app/teams/[teamId]/matches/_tabs/CompeticionesTab.tsx` — extrae competitions/page.tsx a componente.
+- `web/app/teams/[teamId]/matches/_tabs/RivalesTab.tsx` — extrae opponents/page.tsx a componente; usa `activeProfile?.club_id` internamente.
+- `web/app/teams/[teamId]/matches/page.tsx` — reescrito como hub: `Suspense` + `useSearchParams`, tab bar con `?tab=` URL param, delega en los tres componentes.
+- `web/app/teams/[teamId]/competitions/page.tsx` — reemplazado por redirect a `?tab=competiciones`.
+- `web/app/clubs/[clubId]/opponents/page.tsx` — reemplazado por redirect a `?tab=rivales` (vía `activeProfile.team_id`).
+
+**Verificaciones**: ESLint 0 errores ✔, TSC 0 errores ✔
+
+---
+
+### 2026-05-03 — Sesión 40 (Group D fixes: match detail refactor, RivalesTab, PartidosTab hydration)
+
+**Objetivo**: completar un grupo de mejoras y correcciones en el hub de partidos.
+
+**RivalesTab.tsx — ordenar jugadores por dorsal:**
+- Línea 337: `.map((p) =>` → `[...detail.players].sort((a, b) => (a.jersey_number ?? 999) - (b.jersey_number ?? 999)).map((p) =>` — los jugadores del rival expandido se muestran ordenados por número de dorsal (nulls al final).
+- Fix adicional: cierre del return era `</>` pero el componente abre `<div className="space-y-4">` — corregido a `</div>`.
+
+**match detail page.tsx — refactor completo:**
+- **Eliminado**: botón "Editar marcador rival" (estado `in_progress`), ambas instancias de `CancelMatchDialog` (estados `scheduled` e `in_progress`), mutación `cancelMut`, mutación `saveRivalScoreMut`, estado `rivalScoreDialogOpen`/`rivalScoreForm`, imports `XCircle`/`cancelMatch`.
+- **Nuevo tab "Rival"**: gestión de convocatoria rival — lista de convocados con botón deconvocar, lista de no-convocados ordenada por dorsal, botón "Nuevo jugador rival". Sin inputs de estadísticas inline.
+- **Tab "Estadísticas" (in_progress + coach)**: dos secciones — equipo propio (cards + ActionButtons → `handleAction`) + sección rival (cards de jugadores rivales + ActionButtons → `handleOppAction`). El marcador rival se auto-calcula sumando puntos registrados.
+- **Tab "Estadísticas" (finished)**: `StatsTable` para el equipo propio + nueva `OppStatsTable` para el rival (tabla read-only con dorsal, nombre, y stats).
+- **Tab "Vídeo"**: renombrado de "Videos" a "Vídeo".
+- **Orden de tabs**: `convocatoria | rival | estadisticas | videos` (antes: convocatoria | videos | estadisticas | scouting).
+- **"Quitar todos" en tab Convocatoria**: botón con AlertDialog destructivo que lanza `Promise.all` sobre todos los `player_id` de `match_players`.
+- **Nueva función `handleOppAction`**: misma lógica que `handleAction` pero sobre `oppStatDraft` y `saveOppStatMut`; auto-recalcula `their_score` al registrar puntos.
+- **`isTransitioning`**: `startMut.isPending || finishMut.isPending` (eliminado `cancelMut`).
+
+**PartidosTab.tsx — fix hydration error:**
+- `<p className="font-medium text-sm">` contenía un `<Badge>` (que renderiza como `<div>`) → error de hidratación `<div> cannot be a descendant of <p>`.
+- Cambiado a `<div className="flex items-center gap-2 font-medium text-sm">`, eliminado `ml-2` del Badge.
+- Post-edición: archivo truncado (Edit tool) + null bytes (Windows artifact). Corregido con `tr -d '\0'` y eliminación del `</AlertDialog>` duplicado que introdujo el restore del sistema.
+
+**Verificaciones**: ESLint 0 errores ✔, TSC 0 errores ✔
+
+---
+
 ### 2026-05-02 — Sesión 39 (UX Roadmap — #44 Empty states, #49 Optimistic updates)
 
 **Objetivo**: completar los últimos ítems pendientes del UX_ROADMAP no-"Grande": empty states mejorados y optimistic updates ampliados.
@@ -548,6 +693,46 @@ Fases 1–3 completas (no-"Grande"), Fase 4 no-"Grande" (#36 thumbnails, #30 CSV
 - GET training detail: refleja is_late, absence_reason, notes en training_attendances
 - Validaciones 422: attended=True + absence_reason; attended=False sin absence_reason; absent + is_late=True; enum inválido
 - Resumen: conteos correctos de presentes/retrasos/ausentes en una lista de 3 asistencias
+
+---
+
+### 2026-05-03 — Sesión 31 (Fase H — Competiciones y Equipos Rivales)
+
+**Objetivo**: añadir soporte para múltiples ligas/torneos por equipo en una temporada, y un directorio de equipos rivales del club con gestión de plantilla y estadísticas de scouting por partido.
+
+**REQUIREMENTS.md:**
+- Nueva sección §14 con modelo de dominio de `Competition`, `OpponentTeam`, `OpponentPlayer`, `OpponentMatchStat`
+- RF-600 a RF-630: requisitos funcionales de competiciones y rivales
+
+**Backend:**
+- `app/models/competition.py`: modelo `Competition` (team_id, season_id, name, is_default)
+- `app/models/opponent.py`: modelos `OpponentTeam`, `OpponentPlayer`, `OpponentMatchStat`
+- `app/models/match.py`: añadidos `competition_id` (FK nullable) y `opponent_id` (FK nullable) + relaciones
+- `app/models/__init__.py`: exports de los nuevos modelos
+- `alembic/versions/0017_phase_h_competitions_rivals.py`: tablas competitions, opponent_teams, opponent_players, opponent_match_stats + columnas FK en matches
+- `app/schemas/competition.py`: CompetitionCreate, CompetitionUpdate, CompetitionResponse (con match_count)
+- `app/schemas/opponent.py`: schemas para OpponentTeam, OpponentPlayer, OpponentMatchStat
+- `app/schemas/match.py`: competition_id + opponent_id en MatchResponse/MatchCreate/MatchUpdate; opponent_stats en MatchResponse
+- `app/routers/competitions.py`: CRUD + set-default endpoint
+- `app/routers/opponents.py`: CRUD rivales + jugadores + upsert/delete OpponentMatchStat
+- `app/routers/matches.py`: selectinload de opponent_stats; competition_id + opponent_id en create_match + _serialize_match
+- `app/main.py`: registrados competitions y opponents routers bajo prefix /clubs
+
+**Shared:**
+- `shared/types/competition.ts`: Competition, CompetitionCreate, CompetitionUpdate
+- `shared/types/opponent.ts`: OpponentTeam, OpponentTeamSummary, OpponentPlayer, OpponentMatchStat + Upsert types
+- `shared/types/match.ts`: competition_id + opponent_id en Match/MatchCreate/MatchUpdate; opponent_stats: OpponentMatchStat[]
+- `shared/api/competitions.ts`: listCompetitions, createCompetition, updateCompetition, archiveCompetition, setDefaultCompetition
+- `shared/api/opponents.ts`: CRUD OpponentTeam + OpponentPlayer + upsertOpponentStat + deleteOpponentStat
+- `shared/types/index.ts` + `shared/api/index.ts`: exports actualizados
+
+**Web:**
+- `web/app/teams/[teamId]/competitions/page.tsx`: lista de competiciones del equipo, crear/editar/archivar, marcar como predeterminada, contador de partidos
+- `web/app/clubs/[clubId]/opponents/page.tsx`: directorio de rivales del club con plantilla expandible, gestión CRUD de jugadores rivales
+- `web/app/teams/[teamId]/matches/page.tsx`: selectores de competición y rival en el diálogo de creación de partido; autoselección de competición predeterminada
+- `web/app/teams/[teamId]/matches/[matchId]/page.tsx`: nueva tab "Scouting rival" con estadísticas editables por jugador rival; queries de opponentTeam y competitions; competitionName calculado para display
+
+**Verificaciones**: py_compile ✔, ESLint 0 errores ✔, TSC 0 errores ✔
 
 ---
 

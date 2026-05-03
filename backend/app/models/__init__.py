@@ -10,9 +10,11 @@ from app.models.club import Club
 from app.models.club_member import ClubMember
 from app.models.club_position import ClubPosition, player_positions
 from app.models.club_tag import ClubTag
+from app.models.competition import Competition
 from app.models.drill import CourtLayoutType, Drill, DrillType, Tag, drill_tags
 from app.models.exercise import Exercise
 from app.models.match import Match, MatchLocation, MatchPlayer, MatchStat, MatchStatus, MatchVideo, MatchVideoLabel
+from app.models.opponent import OpponentMatchStat, OpponentPlayer, OpponentTeam
 from app.models.player import Player, PlayerPosition, RosterEntry
 from app.models.playbook import TeamPlaybookEntry
 from app.models.profile import Profile, UserRole
@@ -31,6 +33,7 @@ __all__ = [
     "ClubPosition",
     "player_positions",
     "ClubTag",
+    "Competition",
     "CourtLayoutType",
     "Drill",
     "DrillType",
@@ -43,6 +46,9 @@ __all__ = [
     "MatchStatus",
     "MatchVideo",
     "MatchVideoLabel",
+    "OpponentMatchStat",
+    "OpponentPlayer",
+    "OpponentTeam",
     "Player",
     "PlayerPosition",
     "RosterEntry",

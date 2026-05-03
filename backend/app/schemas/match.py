@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.models.match import MatchLocation, MatchStatus, MatchVideoLabel
+from app.schemas.opponent import OpponentMatchStatResponse
 
 
 class MatchVideoResponse(BaseModel):
@@ -52,12 +53,15 @@ class MatchResponse(BaseModel):
     notes: str | None
     our_score: int | None = None
     their_score: int | None = None
+    competition_id: int | None = None
+    opponent_id: int | None = None
     created_by: int | None
     created_at: datetime
     archived_at: datetime | None
     match_videos: list[MatchVideoResponse] = []
     match_players: list[MatchPlayerResponse] = []
     match_stats: list[MatchStatResponse] = []
+    opponent_stats: list[OpponentMatchStatResponse] = []
 
 
 class MatchCreate(BaseModel):
@@ -65,8 +69,10 @@ class MatchCreate(BaseModel):
     date: datetime
     location: MatchLocation
     season_id: int
+    competition_id: int          # required — every match must belong to a competition
     status: MatchStatus = MatchStatus.scheduled
     notes: str | None = None
+    opponent_id: int | None = None
 
 
 class MatchUpdate(BaseModel):
@@ -76,7 +82,9 @@ class MatchUpdate(BaseModel):
     notes: str | None = None
     our_score: int | None = None
     their_score: int | None = None
-    # status is intentionally excluded — use /start, /finish, /cancel endpoints
+    competition_id: int | None = None
+    opponent_id: int | None = None
+    # status is intentionally excluded -- use /start, /finish, /cancel endpoints
 
 
 class MatchVideoAdd(BaseModel):

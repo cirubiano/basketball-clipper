@@ -479,6 +479,8 @@ backend/
 │   │   └── security.py       # JWT, get_current_user dependency
 │   ├── routers/
 │   │   ├── auth.py           # Login, registro, switch-profile, clear-profile, me
+│   │   ├── competitions.py   # Competiciones del equipo (Fase H)
+│   │   ├── opponents.py      # Rivales del club + stats de scouting (Fase H)
 │   │   ├── profiles.py       # Perfiles del usuario (listar, asignar, archivar)
 │   │   ├── clubs.py          # CRUD clubs + gestión de miembros
 │   │   ├── seasons.py        # CRUD temporadas (valida una activa por club)
@@ -503,6 +505,8 @@ backend/
 │   ├── models/
 │   │   ├── __init__.py
 │   │   ├── user.py           # User (+ is_admin)
+│   │   ├── competition.py    # Competition (Fase H)
+│   │   ├── opponent.py       # OpponentTeam, OpponentPlayer, OpponentMatchStat (Fase H)
 │   │   ├── club.py           # Club
 │   │   ├── season.py         # Season + SeasonStatus enum
 │   │   ├── team.py           # Team
@@ -547,7 +551,8 @@ backend/
 │   ├── 0013_match_stat_blocks.py
 │   ├── 0014_phase_g_favorites.py
 │   ├── 0015_phase_g_training_duration.py
-│   └── 0016_phase_g_drill_groups.py
+│   ├── 0016_phase_g_drill_groups.py
+│   └── 0019_phase_h_competitions_rivals.py
 ├── models/
 │   └── README.md             # Cómo usar modelos custom de YOLO
 ├── scripts/
@@ -589,12 +594,14 @@ web/
 │   │   ├── page.tsx          # Biblioteca personal — tabs drill/play (Fase D)
 │   │   └── [id]/edit/page.tsx  # Editor canvas + árbol de secuencias (Fase D)
 │   ├── clubs/[clubId]/
+│   │   ├── opponents/page.tsx  # Directorio de rivales del club + plantilla (Fase H)
 │   │   ├── catalog/page.tsx  # Catálogo del club (Fase E)
 │   │   ├── members/page.tsx  # Gestión de miembros del club
 │   │   ├── positions/page.tsx  # Posiciones dinámicas del club (Fase C)
 │   │   ├── seasons/page.tsx  # Temporadas del club
 │   │   └── teams/page.tsx    # Equipos del club
 │   ├── teams/[teamId]/
+│   │   ├── competitions/page.tsx  # Competiciones/ligas del equipo (Fase H)
 │   │   ├── roster/page.tsx   # Plantilla del equipo (Fase C)
 │   │   ├── playbook/page.tsx # Playbook del equipo (Fase E)
 │   │   ├── matches/
@@ -660,7 +667,9 @@ shared/
 │   ├── player.ts         # Player, RosterEntry, PlayerPosition, POSITION_LABELS (Fase C)
 │   ├── drill.ts          # DrillType, CourtLayoutType, SketchElement, SequenceNode, Tag, Drill (Fase D)
 │   ├── catalog.ts        # ClubTag, CatalogEntry, PlaybookEntry (Fases E)
+│   ├── competition.ts    # Competition, CompetitionCreate/Update (Fase H)
 │   ├── match.ts          # Match, MatchStatus, MatchPlayer, MatchStat, MatchVideo (Fase F)
+│   ├── opponent.ts       # OpponentTeam, OpponentPlayer, OpponentMatchStat (Fase H)
 │   ├── training.ts       # Training, TrainingDrill, TrainingAttendance, AbsenceReason (Fase F)
 │   └── index.ts
 └── api/
@@ -670,7 +679,9 @@ shared/
     ├── drills.ts         # Tags CRUD + drills CRUD + clone + variants (Fase D)
     ├── catalog.ts        # Tags del club + catálogo CRUD (Fase E)
     ├── playbook.ts       # listPlaybook, addToPlaybook, removeFromPlaybook (Fase E)
+    ├── competitions.ts   # listCompetitions, createCompetition, updateCompetition, archiveCompetition, setDefault (Fase H)
     ├── matches.ts        # CRUD + convocatoria + vídeos + stats + startMatch/finishMatch/cancelMatch (Fase F)
+    ├── opponents.ts      # CRUD OpponentTeam + OpponentPlayer + upsertOpponentStat + deleteOpponentStat (Fase H)
     ├── trainings.ts      # CRUD + ejercicios + asistencia (Fase F)
     └── index.ts
 ```
@@ -768,6 +779,21 @@ y sus tipos en `shared/types/`. Web y mobile nunca llaman al backend directament
 | PATCH | /clubs/{id}/teams/{tid}/roster/{eid} | td_or_hc | Actualizar entrada plantilla |
 | DELETE | /clubs/{id}/teams/{tid}/roster/{eid} | td_or_hc | Retirar jugador de plantilla |
 | PATCH | /clubs/{id}/teams/{tid}/playbook/{entry_id} | member | Actualizar nota de coach en entrada del playbook |
+| GET | /clubs/{id}/teams/{tid}/competitions | member | Listar competiciones del equipo (filtrable por season_id) |
+| POST | /clubs/{id}/teams/{tid}/competitions | td_or_hc | Crear competición |
+| PATCH | /clubs/{id}/teams/{tid}/competitions/{comp_id} | td_or_hc | Actualizar competición |
+| DELETE | /clubs/{id}/teams/{tid}/competitions/{comp_id} | td_or_hc | Archivar competición |
+| POST | /clubs/{id}/teams/{tid}/competitions/{comp_id}/set-default | td_or_hc | Marcar como competición predeterminada |
+| GET | /clubs/{id}/opponents | member | Listar rivales del club |
+| GET | /clubs/{id}/opponents/{opp_id} | member | Detalle de rival (con plantilla de jugadores) |
+| POST | /clubs/{id}/opponents | td_or_hc | Crear rival |
+| PATCH | /clubs/{id}/opponents/{opp_id} | td_or_hc | Actualizar rival |
+| DELETE | /clubs/{id}/opponents/{opp_id} | td_or_hc | Archivar rival |
+| POST | /clubs/{id}/opponents/{opp_id}/players | td_or_hc | Añadir jugador rival |
+| PATCH | /clubs/{id}/opponents/{opp_id}/players/{pid} | td_or_hc | Actualizar jugador rival |
+| DELETE | /clubs/{id}/opponents/{opp_id}/players/{pid} | td_or_hc | Archivar jugador rival |
+| POST | /clubs/{id}/teams/{tid}/matches/{match_id}/opponent-stats | td_or_hc | Upsert estadística de scouting (jugador rival) |
+| DELETE | /clubs/{id}/teams/{tid}/matches/{match_id}/opponent-stats/{stat_id} | td_or_hc | Eliminar estadística de scouting |
 | GET | /drills/tags | user | Listar tags personales |
 | POST | /drills/tags | user | Crear tag |
 | PATCH | /drills/tags/{id} | user | Actualizar tag |

@@ -611,6 +611,109 @@ Un `Training` representa una sesión de entrenamiento de un equipo en una tempor
 
 ---
 
+## 14. Competiciones y Equipos Rivales (Fase H)
+
+> Funcionalidades añadidas en mayo 2026 a partir de la necesidad de gestionar múltiples ligas/torneos en una misma temporada y de registrar información de los equipos rivales para scouting.
+
+### 14.1 Glosario ampliado
+
+| Término (ES) | Término canónico (EN) | Definición |
+|---|---|---|
+| Competición | `Competition` | Agrupación de partidos de un equipo dentro de una temporada bajo un nombre de liga o torneo (p.ej. "Liga regular", "Copa Navidad"). |
+| Rival | `OpponentTeam` | Equipo rival registrado a nivel de club. Persiste entre temporadas. |
+| Jugador rival | `OpponentPlayer` | Jugador perteneciente a un `OpponentTeam`. Permite registrar estadísticas de scouting. |
+
+### 14.2 Modelo de dominio — Competición (`Competition`)
+
+Un `Competition` agrupa los partidos de un equipo bajo un nombre de liga o torneo.
+
+**Entidad `Competition`:**
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `id` | Integer PK | |
+| `team_id` | FK → Team | Equipo al que pertenece esta competición |
+| `season_id` | FK → Season | Temporada a la que pertenece |
+| `name` | String(255) | Nombre libre (ej. "Liga regular", "Copa Navidad") |
+| `is_default` | Boolean | Solo una competición por equipo/temporada puede ser la default |
+| `created_by` | FK → User | |
+| `created_at` | DateTime | |
+| `archived_at` | DateTime nullable | Soft-delete |
+
+**Relación con `Match`:**
+El modelo `Match` añade un campo `competition_id` (FK → Competition, nullable) para asignar el partido a una competición. Si es null, el partido no está asignado a ninguna competición.
+
+### 14.3 Modelo de dominio — Equipo rival (`OpponentTeam`)
+
+Un `OpponentTeam` es un equipo rival registrado en el club, con su plantilla de jugadores.
+
+**Entidad `OpponentTeam`:**
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `id` | Integer PK | |
+| `club_id` | FK → Club | Club que lo registra (no el equipo — es transversal) |
+| `name` | String(255) | Nombre del equipo rival |
+| `notes` | Text nullable | Notas de scouting |
+| `created_by` | FK → User | |
+| `created_at` | DateTime | |
+| `archived_at` | DateTime nullable | Soft-delete |
+
+**Entidad `OpponentPlayer`:**
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `id` | Integer PK | |
+| `opponent_team_id` | FK → OpponentTeam | Equipo al que pertenece |
+| `name` | String(255) | Nombre completo |
+| `jersey_number` | Integer nullable | Dorsal |
+| `position` | String(50) nullable | Posición (texto libre) |
+| `archived_at` | DateTime nullable | Soft-delete |
+
+**Entidad `OpponentMatchStat` (estadísticas de scouting por partido):**
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `id` | Integer PK | |
+| `match_id` | FK → Match | Partido |
+| `opponent_player_id` | FK → OpponentPlayer | Jugador rival |
+| `points` | Integer nullable | Puntos |
+| `minutes` | Integer nullable | Minutos jugados |
+| `assists` | Integer nullable | Asistencias |
+| `defensive_rebounds` | Integer nullable | Rebotes defensivos |
+| `offensive_rebounds` | Integer nullable | Rebotes ofensivos |
+| `steals` | Integer nullable | Robos |
+| `turnovers` | Integer nullable | Pérdidas |
+| `fouls` | Integer nullable | Faltas |
+| `blocks` | Integer nullable | Tapones |
+
+**Relación con `Match`:**
+El modelo `Match` añade un campo `opponent_id` (FK → OpponentTeam, nullable). Si está informado, el rival registrado sustituye al texto libre `opponent_name`; si es null, se usa `opponent_name` como hasta ahora.
+
+### 14.4 Requisitos funcionales — Competiciones (RF-600 a RF-620)
+
+- **RF-600.** Un equipo puede tener cero o más competiciones por temporada.
+- **RF-601.** Solo `HeadCoach` y `TechnicalDirector` pueden crear, editar y archivar competiciones.
+- **RF-602.** El nombre de la competición es obligatorio. Dos competiciones del mismo equipo/temporada pueden tener el mismo nombre (no hay restricción de unicidad).
+- **RF-603.** Exactamente una competición por equipo y temporada puede ser la `is_default`. Si se marca otra como default, la anterior pierde ese flag automáticamente.
+- **RF-604.** Un partido puede asignarse a una competición del mismo equipo/temporada. La asignación es opcional.
+- **RF-605.** Al crear un partido, si el equipo tiene una competición default, el partido se asigna a ella automáticamente. El usuario puede cambiarlo.
+- **RF-606.** Las estadísticas de jugadores (`MatchStat`) son filtrables por competición: "dame los puntos totales de este jugador en la Liga regular".
+- **RF-607.** Archivar una competición no afecta a los partidos ya asignados — siguen vinculados y sus datos son accesibles.
+- **RF-608.** `StaffMember` puede ver las competiciones pero no crearlas ni editarlas.
+
+### 14.5 Requisitos funcionales — Equipos rivales (RF-620 a RF-650)
+
+- **RF-620.** El club gestiona un directorio de `OpponentTeam`. Es transversal a temporadas y equipos.
+- **RF-621.** Solo `HeadCoach` y `TechnicalDirector` del club pueden crear, editar y archivar rivales.
+- **RF-622.** Un `OpponentTeam` puede tener cero o más `OpponentPlayer` en su plantilla. La plantilla se mantiene entre temporadas — se espera que cambie poco.
+- **RF-623.** Solo `HeadCoach` y `TechnicalDirector` pueden añadir, editar y archivar `OpponentPlayer`.
+- **RF-624.** Un `Match` puede vincular un `OpponentTeam` registrado mediante el campo `opponent_id`. Esto es compatible con el campo `opponent_name` (texto libre) que sigue existiendo para partidos sin rival registrado.
+- **RF-625.** Si un partido tiene `opponent_id` informado, la interfaz muestra el nombre del rival desde `OpponentTeam.name` en lugar de `opponent_name`.
+- **RF-626.** Las estadísticas de scouting (`OpponentMatchStat`) solo pueden registrarse si el partido tiene un `opponent_id` vinculado.
+- **RF-627.** Solo `HeadCoach` y `TechnicalDirector` pueden crear o actualizar `OpponentMatchStat`.
+- **RF-628.** Los `StaffMember` pueden ver los rivales y sus estadísticas pero no editarlos.
+- **RF-629.** Archivar un `OpponentTeam` no borra sus estadísticas históricas.
+- **RF-630.** Archivar un `OpponentPlayer` no borra sus estadísticas históricas en partidos ya jugados.
+
+---
+
 ## 12. Bloques pendientes de definir
 
 Las siguientes áreas están identificadas pero no detalladas todavía. Cuando se aborden, se añadirán como nuevas secciones a este documento.

@@ -44,7 +44,7 @@ function buildItems(
   if (teamId) {
     return [
       { href: "/",                           label: "Inicio",         icon: <Home         className="h-4 w-4 shrink-0" /> },
-      { href: `/teams/${teamId}/matches`,    label: "Partidos",       icon: <Trophy       className="h-4 w-4 shrink-0" /> },
+      { href: `/teams/${teamId}/matches`,    label: "Competiciones",  icon: <Trophy       className="h-4 w-4 shrink-0" /> },
       { href: `/teams/${teamId}/trainings`,  label: "Entrenamientos", icon: <Dumbbell     className="h-4 w-4 shrink-0" /> },
       { href: `/teams/${teamId}/roster`,     label: "Plantilla",      icon: <CalendarDays className="h-4 w-4 shrink-0" /> },
       { href: `/teams/${teamId}/playbook`,   label: "Playbook",       icon: <BookMarked   className="h-4 w-4 shrink-0" /> },

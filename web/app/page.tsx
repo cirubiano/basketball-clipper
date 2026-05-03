@@ -5,14 +5,10 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient, useQueries } from "@tanstack/react-query";
 import {
   Upload,
-  Users,
-  BookOpen,
   Video,
   CalendarDays,
-  LayoutGrid,
   Info,
   AlertTriangle,
-  ClipboardList,
   Trophy,
   Dumbbell,
   BarChart2,
@@ -39,114 +35,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getStoredToken, useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
-
-interface QuickLink {
-  href: string;
-  icon: React.ElementType;
-  label: string;
-  description: string;
-  color: string;
-  bg: string;
-}
-
-function tdLinks(clubId: number): QuickLink[] {
-  return [
-    {
-      href: `/clubs/${clubId}/teams`,
-      icon: Users,
-      label: "Equipos",
-      description: "Gestiona los equipos de tu club",
-      color: "text-blue-600 dark:text-blue-400",
-      bg: "bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50",
-    },
-    {
-      href: `/clubs/${clubId}/seasons`,
-      icon: CalendarDays,
-      label: "Temporadas",
-      description: "Administra las temporadas activas",
-      color: "text-amber-600 dark:text-amber-400",
-      bg: "bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50",
-    },
-    {
-      href: `/players`,
-      icon: ClipboardList,
-      label: "Jugadores",
-      description: "Plantilla de jugadores del club",
-      color: "text-green-600 dark:text-green-400",
-      bg: "bg-green-50 dark:bg-green-950/40 hover:bg-green-100 dark:hover:bg-green-900/50",
-    },
-    {
-      href: `/clubs/${clubId}/catalog`,
-      icon: LayoutGrid,
-      label: "Catálogo",
-      description: "Jugadas y ejercicios compartidos",
-      color: "text-purple-600 dark:text-purple-400",
-      bg: "bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/50",
-    },
-  ];
-}
-
-function coachLinks(clubId: number, teamId: number | null): QuickLink[] {
-  return [
-    ...(teamId
-      ? [
-          {
-            href: `/teams/${teamId}/roster`,
-            icon: Users,
-            label: "Mi Equipo",
-            description: "Plantilla y gestión del equipo",
-            color: "text-blue-600 dark:text-blue-400",
-            bg: "bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50",
-          },
-        ]
-      : []),
-    {
-      href: `/clubs/${clubId}/catalog`,
-      icon: LayoutGrid,
-      label: "Catálogo del club",
-      description: "Jugadas y ejercicios compartidos",
-      color: "text-purple-600 dark:text-purple-400",
-      bg: "bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/50",
-    },
-    {
-      href: "/drills",
-      icon: BookOpen,
-      label: "Mi Biblioteca",
-      description: "Tus jugadas y ejercicios personales",
-      color: "text-indigo-600 dark:text-indigo-400",
-      bg: "bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50",
-    },
-    {
-      href: "/upload",
-      icon: Upload,
-      label: "Subir vídeo",
-      description: "Analiza un partido automáticamente",
-      color: "text-rose-600 dark:text-rose-400",
-      bg: "bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/50",
-    },
-  ];
-}
-
-function soloLinks(): QuickLink[] {
-  return [
-    {
-      href: "/drills",
-      icon: BookOpen,
-      label: "Mi Biblioteca",
-      description: "Crea y organiza jugadas y ejercicios",
-      color: "text-purple-600 dark:text-purple-400",
-      bg: "bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/50",
-    },
-    {
-      href: "/upload",
-      icon: Upload,
-      label: "Subir vídeo",
-      description: "Analiza un partido y genera clips",
-      color: "text-blue-600 dark:text-blue-400",
-      bg: "bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50",
-    },
-  ];
-}
 
 export default function DashboardPage() {
   const { user, activeProfile, profiles, token, switchProfile } = useAuth();
@@ -443,30 +331,19 @@ export default function DashboardPage() {
 
   let heading: string;
   let subheading: string;
-  let quickLinks: QuickLink[];
 
   if (!activeProfile) {
     const firstName = user?.email?.split("@")[0] ?? "entrenador";
     heading = "Tu espacio personal";
     subheading = `Hola, ${firstName}`;
-    quickLinks = soloLinks();
   } else if (isTD) {
     heading = `Bienvenido a ${activeProfile.club_name ?? "tu club"}`;
     subheading = activeProfile.season_name ?? "";
-    quickLinks = tdLinks(clubId!);
   } else {
     const parts = [activeProfile.team_name, activeProfile.club_name].filter(Boolean);
     heading = parts.length > 0 ? parts.join(" · ") : "Bienvenido";
     subheading = activeProfile.season_name ?? "";
-    quickLinks = coachLinks(clubId!, teamId);
   }
-
-  const gridCols =
-    quickLinks.length === 2
-      ? "grid-cols-1 sm:grid-cols-2"
-      : quickLinks.length === 3
-      ? "grid-cols-1 sm:grid-cols-3"
-      : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4";
 
   return (
     <PageShell requireProfile={false}>
@@ -565,32 +442,6 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
-
-        <div>
-          <h2 className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wide">
-            Accesos rápidos
-          </h2>
-          <div className={cn("grid gap-3", gridCols)}>
-            {quickLinks.map(({ href, icon: Icon, label, description, color, bg }) => (
-              <Link
-                key={href}
-                href={href}
-                className={cn(
-                  "flex items-start gap-3 rounded-lg border p-4 transition-colors",
-                  bg,
-                )}
-              >
-                <div className={cn("mt-0.5 shrink-0", color)}>
-                  <Icon className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium">{label}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
 
         {/* ── Training calendar (RF-500–503) ──────────────────────────────── */}
         {!!activeProfile && (

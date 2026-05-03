@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Users, Plus, Archive, ChevronRight } from "lucide-react";
+import { Users, Plus, Archive, ChevronRight, Trophy, Swords } from "lucide-react";
 import {
   getTeams,
   getSeasons,
@@ -137,12 +137,21 @@ export default function TeamsPage({
               {filterSeasonId !== "all" && <> · {seasonName(Number(filterSeasonId))}</>}
             </p>
           </div>
-          {isTD && (
-            <Button onClick={openCreate} disabled={activeSeasons.length === 0}>
-              <Plus className="h-4 w-4 mr-2" />
-              Nuevo equipo
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/clubs/${clubId}/opponents`}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            >
+              <Swords className="h-3.5 w-3.5" />
+              Rivales
+            </Link>
+            {isTD && (
+              <Button onClick={openCreate} disabled={activeSeasons.length === 0}>
+                <Plus className="h-4 w-4 mr-2" />
+                Nuevo equipo
+              </Button>
+            )}
+          </div>
         </div>
 
         {seasons.length > 0 && (
@@ -290,21 +299,38 @@ function TeamRow({
         {team.name.charAt(0).toUpperCase()}
       </div>
 
-      {/* Nombre + temporada — clicable al roster */}
-      <Link
-        href={`/teams/${team.id}/roster`}
-        className="flex-1 min-w-0 hover:underline"
-      >
-        <p className="font-medium text-sm">
-          {team.name}
-          {team.archived_at && (
-            <Badge variant="secondary" className="ml-2 text-xs">Archivado</Badge>
-          )}
-        </p>
-        <p className="text-xs text-muted-foreground">{seasonLabel}</p>
-      </Link>
+      {/* Nombre + temporada + quick links */}
+      <div className="flex-1 min-w-0">
+        <Link href={`/teams/${team.id}/roster`} className="hover:underline">
+          <p className="font-medium text-sm">
+            {team.name}
+            {team.archived_at && (
+              <Badge variant="secondary" className="ml-2 text-xs">Archivado</Badge>
+            )}
+          </p>
+        </Link>
+        <div className="flex items-center gap-2 mt-0.5">
+          <span className="text-xs text-muted-foreground">{seasonLabel}</span>
+          <span className="text-muted-foreground/40 text-xs">·</span>
+          <Link
+            href={`/teams/${team.id}/matches`}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Swords className="h-3 w-3" />
+            Partidos
+          </Link>
+          <span className="text-muted-foreground/40 text-xs">·</span>
+          <Link
+            href={`/teams/${team.id}/competitions`}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Trophy className="h-3 w-3" />
+            Competiciones
+          </Link>
+        </div>
+      </div>
 
-      {/* Flecha de navegación — siempre visible */}
+      {/* Flecha de navegación → roster */}
       <Link
         href={`/teams/${team.id}/roster`}
         className="text-muted-foreground hover:text-foreground transition-colors shrink-0"

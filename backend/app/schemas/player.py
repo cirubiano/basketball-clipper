@@ -91,7 +91,7 @@ class PlayerResponse(BaseModel):
 
 class RosterEntryCreate(BaseModel):
     player_id: int
-    jersey_number: Optional[int] = Field(None, ge=0, le=99)
+    jersey_number: int = Field(..., ge=0, le=99)
     position: Optional[PlayerPosition] = None
 
 

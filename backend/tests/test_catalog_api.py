@@ -76,6 +76,7 @@ def _fake_drill(drill_id: int = 99, user_id: int = 1, catalog_copy: bool = False
     d = MagicMock()
     d.id = drill_id
     d.user_id = user_id
+    d.name = "Pick and Roll"
     d.title = "Pick and Roll"
     d.type = "drill"
     d.court_layout = "half_fiba"
@@ -102,6 +103,7 @@ def _fake_entry(entry_id: int = 7, club_id: int = 1, published_by: int = 1) -> M
     e.archived_at = None
     e.created_at = _now()
     e.updated_at = _now()
+    e.note = None
     e.tags = []
     e.drill = _fake_drill()
     return e

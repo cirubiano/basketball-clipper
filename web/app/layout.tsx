@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es">
+    <html lang="es" suppressHydrationWarning>
       <body className={`${inter.className} pb-16 md:pb-0`}>
         {/* #14 — Skip to main content (WCAG 2.1 SC 2.1.1) */}
         <a

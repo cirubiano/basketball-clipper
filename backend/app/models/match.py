@@ -18,7 +18,7 @@ class MatchStatus(str, enum.Enum):
     in_progress = "in_progress"
     finished = "finished"
     cancelled = "cancelled"
-    # played is DEPRECATED in PostgreSQL enum — all records migrated to finished
+    # played is DEPRECATED in PostgreSQL enum -- all records migrated to finished
 
 
 class MatchVideoLabel(str, enum.Enum):
@@ -50,6 +50,12 @@ class Match(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     our_score: Mapped[int | None] = mapped_column(Integer)
     their_score: Mapped[int | None] = mapped_column(Integer)
+    competition_id: Mapped[int | None] = mapped_column(
+        ForeignKey("competitions.id", ondelete="SET NULL"), nullable=True
+    )
+    opponent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("opponent_teams.id", ondelete="SET NULL"), nullable=True
+    )
     created_by: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -61,6 +67,16 @@ class Match(Base):
     # Relationships
     team: Mapped["Team"] = relationship("Team", lazy="select")  # noqa: F821
     season: Mapped["Season"] = relationship("Season", lazy="select")  # noqa: F821
+    competition: Mapped["Competition | None"] = relationship(  # noqa: F821
+        "Competition", back_populates="matches", lazy="select"
+    )
+    opponent_team: Mapped["OpponentTeam | None"] = relationship(  # noqa: F821
+        "OpponentTeam", back_populates="matches", lazy="select"
+    )
+    opponent_stats: Mapped[list["OpponentMatchStat"]] = relationship(  # noqa: F821
+        "OpponentMatchStat", back_populates="match",
+        cascade="all, delete-orphan", lazy="select"
+    )
     match_videos: Mapped[list["MatchVideo"]] = relationship(
         "MatchVideo", back_populates="match", cascade="all, delete-orphan", lazy="select"
     )

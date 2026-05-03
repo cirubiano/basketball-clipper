@@ -6,6 +6,7 @@ from app.routers import auth, clips, video, ws
 from app.routers import clubs, seasons, teams, profiles, players, positions
 from app.routers import drills, catalog, playbook
 from app.routers import matches, trainings
+from app.routers import competitions, opponents
 
 app = FastAPI(
     title="Basketball Club Management API",
@@ -22,7 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Auth & Profiles ───────────────────────────────────────────────────────────
+
 @app.get("/health", tags=["health"])
 async def health_check() -> dict:
     return {"status": "ok"}
@@ -31,25 +32,24 @@ async def health_check() -> dict:
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(profiles.router, prefix="/profiles", tags=["profiles"])
 
-# ── Org structure ─────────────────────────────────────────────────────────────
 app.include_router(clubs.router, prefix="/clubs", tags=["clubs"])
 app.include_router(seasons.router, prefix="/clubs", tags=["seasons"])
 app.include_router(teams.router, prefix="/clubs", tags=["teams"])
 app.include_router(players.router, prefix="/clubs", tags=["players"])
 app.include_router(positions.router, prefix="/clubs", tags=["positions"])
 
-# ── Video & Clips ─────────────────────────────────────────────────────────────
 app.include_router(video.router, prefix="/videos", tags=["videos"])
 app.include_router(clips.router, prefix="/clips", tags=["clips"])
 app.include_router(ws.router, tags=["websocket"])
 
-# ── Personal Library — Drills & Plays ─────────────────────────────────────────
 app.include_router(drills.router, prefix="/drills", tags=["drills"])
 
-# ── Club Catalog + Team Playbook ──────────────────────────────────────────────
 app.include_router(catalog.router, prefix="/clubs", tags=["catalog"])
 app.include_router(playbook.router, prefix="/clubs", tags=["playbook"])
 
-# ── Matches + Trainings (Phase F) ─────────────────────────────────────────────
 app.include_router(matches.router, prefix="/clubs", tags=["matches"])
 app.include_router(trainings.router, prefix="/clubs", tags=["trainings"])
+
+# Phase H
+app.include_router(competitions.router, prefix="/clubs", tags=["competitions"])
+app.include_router(opponents.router, prefix="/clubs", tags=["opponents"])

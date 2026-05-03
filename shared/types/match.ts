@@ -1,3 +1,4 @@
+import type { OpponentMatchStat } from "./opponent";
 export type MatchLocation = "home" | "away" | "neutral";
 export type MatchStatus = "scheduled" | "in_progress" | "finished" | "cancelled";
 export type MatchVideoLabel = "scouting" | "post_analysis" | "other";
@@ -64,12 +65,15 @@ export interface Match {
   notes: string | null;
   our_score: number | null;
   their_score: number | null;
+  competition_id: number | null;
+  opponent_id: number | null;
   created_by: number | null;
   created_at: string;
   archived_at: string | null;
   match_videos: MatchVideo[];
   match_players: MatchPlayer[];
   match_stats: MatchStat[];
+  opponent_stats: OpponentMatchStat[];
 }
 
 export interface MatchCreate {
@@ -77,8 +81,10 @@ export interface MatchCreate {
   date: string;
   location: MatchLocation;
   season_id: number;
+  competition_id: number;   // required — every match must belong to a competition
   status?: MatchStatus;
   notes?: string | null;
+  opponent_id?: number | null;
 }
 
 export interface MatchUpdate {
@@ -88,7 +94,9 @@ export interface MatchUpdate {
   notes?: string | null;
   our_score?: number | null;
   their_score?: number | null;
-  // status is intentionally excluded — use startMatch, finishMatch, cancelMatch
+  competition_id?: number | null;
+  opponent_id?: number | null;
+  // status is intentionally excluded -- use startMatch, finishMatch, cancelMatch
 }
 
 export interface MatchVideoAdd {
@@ -105,6 +113,6 @@ export interface MatchStatUpsert {
   offensive_rebounds?: number | null;
   steals?: number | null;
   turnovers?: number | null;
-  fouls?: number | null;
+    fouls?: number | null;
   blocks?: number | null;
 }
