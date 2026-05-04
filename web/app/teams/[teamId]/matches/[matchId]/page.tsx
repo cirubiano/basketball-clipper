@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { UserPlus, Trash2, Film, Play, Pause, CheckCircle, Upload, RotateCcw, Plus, UserMinus, ArrowLeftRight } from "lucide-react";
+import { UserPlus, Trash2, Film, Play, Pause, CheckCircle, Upload, RotateCcw, Plus, UserMinus, ArrowLeftRight, Pencil, ChevronRight, ChevronUp, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import {
   getMatch,
@@ -82,7 +82,28 @@ function statusBadgeClass(status: MatchStatus): string {
   }
 }
 
-type TabKey = "convocatoria" | "rival" | "estadisticas" | "videos";
+type TabKey = "convocatoria" | "rival" | "estadisticas" | "informe" | "jugada" | "videos";
+
+// ── Session storage helpers ───────────────────────────────────────────────────
+
+function readSessionData(matchId: number): {
+  homeOnCourt?: number[];
+  rivalOnCourt?: number[];
+  playerEnteredAtMs?: Record<number, number>;
+  rivalEnteredAtMs?: Record<number, number>;
+  playerExitedAtMs?: Record<number, number>;
+  playerExitedWithTotalMs?: Record<number, number>;
+  rivalExitedAtMs?: Record<number, number>;
+  rivalExitedWithTotalMs?: Record<number, number>;
+  timerMs?: number;
+  currentQuarter?: number;
+} | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(`bball_match_${matchId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
 
 // ── Live scoring types ────────────────────────────────────────────────────────
 
@@ -148,11 +169,36 @@ export default function MatchDetailPage({
   const [minutesDraft, setMinutesDraft] = useState<Map<number, string>>(new Map());
   const [actionLog, setActionLog] = useState<ActionLogEntry[]>([]);
   // On-court tracking (current players on pista — used for display when tracking minutes)
-  const [onCourtIds, setOnCourtIds] = useState<Set<number>>(new Set());
-  const [onCourtOppIds, setOnCourtOppIds] = useState<Set<number>>(new Set());
+  // Lazy initializers read sessionStorage synchronously to avoid the save-effect
+  // overwriting persisted data before the restore-effect can apply it.
+  const [onCourtIds, setOnCourtIds] = useState<Set<number>>(
+    () => new Set(readSessionData(matchId)?.homeOnCourt ?? []),
+  );
+  const [onCourtOppIds, setOnCourtOppIds] = useState<Set<number>>(
+    () => new Set(readSessionData(matchId)?.rivalOnCourt ?? []),
+  );
   // When player entered court (timerMs snapshot) — for auto-calculating minutes
-  const [playerEnteredAtMs, setPlayerEnteredAtMs] = useState<Record<number, number>>({});
-  const [rivalEnteredAtMs, setRivalEnteredAtMs] = useState<Record<number, number>>({});
+  const [playerEnteredAtMs, setPlayerEnteredAtMs] = useState<Record<number, number>>(
+    () => readSessionData(matchId)?.playerEnteredAtMs ?? {},
+  );
+  const [rivalEnteredAtMs, setRivalEnteredAtMs] = useState<Record<number, number>>(
+    () => readSessionData(matchId)?.rivalEnteredAtMs ?? {},
+  );
+  // Exit tracking — needed so backward time edits can reduce committed minutes for
+  // players who were substituted out. exitedAtMs = timerMs when they left;
+  // exitedWithTotalMs = exact accumulated ms at exit (immutable reference).
+  const [playerExitedAtMs, setPlayerExitedAtMs] = useState<Record<number, number>>(
+    () => readSessionData(matchId)?.playerExitedAtMs ?? {},
+  );
+  const [playerExitedWithTotalMs, setPlayerExitedWithTotalMs] = useState<Record<number, number>>(
+    () => readSessionData(matchId)?.playerExitedWithTotalMs ?? {},
+  );
+  const [rivalExitedAtMs, setRivalExitedAtMs] = useState<Record<number, number>>(
+    () => readSessionData(matchId)?.rivalExitedAtMs ?? {},
+  );
+  const [rivalExitedWithTotalMs, setRivalExitedWithTotalMs] = useState<Record<number, number>>(
+    () => readSessionData(matchId)?.rivalExitedWithTotalMs ?? {},
+  );
   const [homeTeamSelected, setHomeTeamSelected] = useState(false);
   const [rivalTeamSelected, setRivalTeamSelected] = useState(false);
   // Lineup setup (before match start — selecting starters)
@@ -161,9 +207,15 @@ export default function MatchDetailPage({
   const [lineupSaving, setLineupSaving] = useState(false);
   // Timer (elapsed time per quarter, counts up)
   const [timerRunning, setTimerRunning] = useState(false);
-  const [timerMs, setTimerMs] = useState(0);
-  const [currentQuarter, setCurrentQuarter] = useState(1);
-  const timerBaseRef = useRef(0);
+  const [timerMs, setTimerMs] = useState(() => {
+    const s = readSessionData(matchId);
+    if (s?.timerMs != null) { return s.timerMs; }
+    return 0;
+  });
+  const [currentQuarter, setCurrentQuarter] = useState(
+    () => readSessionData(matchId)?.currentQuarter ?? 1,
+  );
+  const timerBaseRef = useRef(readSessionData(matchId)?.timerMs ?? 0);
   const timerStartAtRef = useRef<number | null>(null);
   const [oppStatDraft, setOppStatDraft] = useState<Map<number, Partial<OpponentMatchStatUpsert>>>(new Map());
   const [oppStatSaving, setOppStatSaving] = useState<Set<number>>(new Set());
@@ -173,12 +225,27 @@ export default function MatchDetailPage({
   const [oppPlayerPosition, setOppPlayerPosition] = useState("");
   const [showBulkAddOppPlayer, setShowBulkAddOppPlayer] = useState(false);
   const [bulkOppJerseys, setBulkOppJerseys] = useState("");
-  // Substitution panel
-  const [showSubstitution, setShowSubstitution] = useState(false);
-  const [subOutId, setSubOutId] = useState<number | null>(null);
-  const [subInId, setSubInId] = useState<number | null>(null);
+  // Substitution panel: null = closed, "home" = home team, "rival" = rival team
+  const [showSubstitution, setShowSubstitution] = useState<"home" | "rival" | null>(null);
+  // Staging: taps only preview; Confirmar commits the changes
+  const [subStagedOut, setSubStagedOut] = useState<Set<number>>(new Set());
+  const [subStagedIn,  setSubStagedIn]  = useState<Set<number>>(new Set());
+  // Edit time dialog
+  const [editTimeOpen, setEditTimeOpen] = useState(false);
+  const [editTimeMin, setEditTimeMin] = useState(0);
+  const [editTimeSec, setEditTimeSec] = useState(0);
+  // Hold-to-repeat ref for drum picker buttons
+  const holdRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Next-quarter gate dialog
+  const [nextQuarterOpen, setNextQuarterOpen] = useState(false);
+  const [nextQuarterMsg, setNextQuarterMsg] = useState("");
+  const [nextQuarterType, setNextQuarterType] = useState<"confirm" | "error">("confirm");
+  // Ref to detect clicks outside the player grid (for deselect)
+  const playerGridRef = useRef<HTMLDivElement>(null);
   // Per-quarter stats tracking
   const [quarterStatsLog, setQuarterStatsLog] = useState<QuarterStatEntry[]>([]);
+  // Out-of-time confirmation dialog (shown when an action is attempted after the period clock reaches 0)
+  const [outOfTimeDialog, setOutOfTimeDialog] = useState<{ open: boolean; label: string; onConfirm: () => void }>({ open: false, label: "", onConfirm: () => {} });
 
   // ── Queries ─────────────────────────────────────────────────────────────────
 
@@ -212,8 +279,8 @@ export default function MatchDetailPage({
     enabled: !!token && !!clubId && !!teamId && !!match?.season_id,
   });
 
-  // Convocatoria and rival management locked once match is finished/cancelled
-  const canEditConvocatoria = isCoachOrTD && !!match && match.status !== "finished" && match.status !== "cancelled";
+  // Convocatoria and rival management only editable before the match starts
+  const canEditConvocatoria = isCoachOrTD && !!match && match.status === "scheduled";
 
   const competitionName = match?.competition_id
     ? competitions.find((c) => c.id === match.competition_id)?.name
@@ -226,6 +293,20 @@ export default function MatchDetailPage({
   const completedVideos = videos.filter((v) => v.status === "completed");
   const linkedVideoIds = new Set(match?.match_videos.map((mv) => mv.video_id) ?? []);
   const availableVideos = completedVideos.filter((v) => !linkedVideoIds.has(v.id));
+
+  // Auto-navigate to estadísticas tab when opening a match already in progress
+  const initialTabSetRef = useRef(false);
+  useEffect(() => {
+    if (!match || initialTabSetRef.current) return;
+    initialTabSetRef.current = true;
+    if (match.status === "in_progress") setTab("estadisticas");
+    if (match.status === "finished") setTab("informe");
+  }, [match]);
+
+  // Redirect away from live-only tabs if match finishes while user is on them
+  useEffect(() => {
+    if (match?.status === "finished" && (tab === "estadisticas" || tab === "jugada")) setTab("informe");
+  }, [match?.status, tab]);
 
   // Sync sessionStats: add any new players that appear after initial load
   useEffect(() => {
@@ -294,30 +375,8 @@ export default function MatchDetailPage({
     });
   }, [match]);
 
-  // Session storage — restore on mount
+  // Session storage key
   const sessionKey = `bball_match_${matchId}`;
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = sessionStorage.getItem(sessionKey);
-      if (!raw) return;
-      const saved = JSON.parse(raw) as {
-        homeOnCourt?: number[];
-        rivalOnCourt?: number[];
-        playerEnteredAtMs?: Record<number, number>;
-        rivalEnteredAtMs?: Record<number, number>;
-        timerMs?: number;
-        currentQuarter?: number;
-      };
-      if (saved.homeOnCourt) setOnCourtIds(new Set(saved.homeOnCourt));
-      if (saved.rivalOnCourt) setOnCourtOppIds(new Set(saved.rivalOnCourt));
-      if (saved.playerEnteredAtMs) setPlayerEnteredAtMs(saved.playerEnteredAtMs);
-      if (saved.rivalEnteredAtMs) setRivalEnteredAtMs(saved.rivalEnteredAtMs);
-      if (saved.timerMs != null) { setTimerMs(saved.timerMs); timerBaseRef.current = saved.timerMs; }
-      if (saved.currentQuarter != null) setCurrentQuarter(saved.currentQuarter);
-    } catch { /* ignore */ }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionKey]);
 
   // Session storage — persist on each relevant state change
   useEffect(() => {
@@ -328,18 +387,32 @@ export default function MatchDetailPage({
         rivalOnCourt: Array.from(onCourtOppIds),
         playerEnteredAtMs,
         rivalEnteredAtMs,
+        playerExitedAtMs,
+        playerExitedWithTotalMs,
+        rivalExitedAtMs,
+        rivalExitedWithTotalMs,
         timerMs,
         currentQuarter,
       }));
     } catch { /* ignore */ }
-  }, [sessionKey, onCourtIds, onCourtOppIds, playerEnteredAtMs, rivalEnteredAtMs, timerMs, currentQuarter]);
+  }, [sessionKey, onCourtIds, onCourtOppIds, playerEnteredAtMs, rivalEnteredAtMs, playerExitedAtMs, playerExitedWithTotalMs, rivalExitedAtMs, rivalExitedWithTotalMs, timerMs, currentQuarter]);
 
-  // Timer
+  // Timer — auto-stops when the period ends (timerMs reaches periodDurationMs)
+  const periodDurationMsRef = useRef(0); // kept current each render for use inside interval
   useEffect(() => {
     if (!timerRunning) return;
     timerStartAtRef.current = Date.now() - timerBaseRef.current;
     const id = setInterval(() => {
-      setTimerMs(Date.now() - timerStartAtRef.current!);
+      const elapsed = Date.now() - timerStartAtRef.current!;
+      const cap = periodDurationMsRef.current;
+      if (cap > 0 && elapsed >= cap) {
+        // Period has ended — clamp and stop
+        setTimerMs(cap);
+        timerBaseRef.current = cap;
+        setTimerRunning(false);
+      } else {
+        setTimerMs(elapsed);
+      }
     }, 100);
     return () => clearInterval(id);
   }, [timerRunning]);
@@ -605,8 +678,9 @@ export default function MatchDetailPage({
     if (homeTeamSelected) {
       const logId = ++logCounterRef.current;
       setActionLog((prev) =>
-        [{ logId, playerId: -1, playerName: "Equipo", label, statKey, delta, team: "home" as const, quarter: currentQuarter }, ...prev].slice(0, 10),
+        [{ logId, playerId: -1, playerName: "Equipo", label, statKey, delta, team: "home" as const, quarter: currentQuarter }, ...prev].slice(0, 500),
       );
+      setHomeTeamSelected(false);
       return;
     }
     if (!selectedPlayerId) return;
@@ -617,13 +691,17 @@ export default function MatchDetailPage({
 
     const logId = ++logCounterRef.current;
     setActionLog((prev) =>
-      [{ logId, playerId: selectedPlayerId, playerName, label, statKey, delta, team: "home" as const, quarter: currentQuarter }, ...prev].slice(0, 10),
+      [{ logId, playerId: selectedPlayerId, playerName, label, statKey, delta, team: "home" as const, quarter: currentQuarter }, ...prev].slice(0, 500),
     );
     if (statKey !== null && delta !== 0) {
       setQuarterStatsLog((prev) => [...prev, { quarter: currentQuarter, team: "home", statKey, delta, playerName }]);
     }
 
-    if (statKey === null || delta === 0) return;
+    if (statKey === null || delta === 0) {
+      // Log-only action (miss) — still deselect so next tap picks intentionally
+      setSelectedPlayerId(null);
+      return;
+    }
 
     const current = sessionStats.get(selectedPlayerId) ?? { player_id: selectedPlayerId };
     const currentVal = ((current[statKey] ?? 0) as number);
@@ -641,6 +719,16 @@ export default function MatchDetailPage({
       const newTotal = totalPoints - currentPlayerPoints + newVal;
       updateScoreMut.mutate(newTotal);
     }
+
+    // Stopped-clock: auto-pause on foul
+    if (statKey === "fouls" && delta > 0 && matchCompetition?.clock_type === "stopped" && timerRunning) {
+      timerBaseRef.current = timerMs;
+      setTimerRunning(false);
+    }
+
+    // Auto-deselect after recording — prevents accidentally attributing the next
+    // action to the same player; user must tap again to continue.
+    setSelectedPlayerId(null);
   }
 
   const OPP_STAT_LABELS: Record<StatKey, string> = {
@@ -648,16 +736,32 @@ export default function MatchDetailPage({
     offensive_rebounds: "REB-O", steals: "REC", turnovers: "PÉR", fouls: "FAL", blocks: "TAP",
   };
 
-  function handleOppAction(statKey: StatKey | null, delta: number) {
-    if (!match || statKey === null || delta === 0) return;
+  function handleOppAction(statKey: StatKey | null, delta: number, overrideLabel?: string) {
+    if (!match) return;
+    const label = overrideLabel ?? (statKey ? (OPP_STAT_LABELS[statKey] ?? statKey) : "");
     if (rivalTeamSelected) {
       const logId = ++logCounterRef.current;
       setActionLog((prev) =>
-        [{ logId, playerId: -1, playerName: "Equipo rival", label: OPP_STAT_LABELS[statKey] ?? statKey, statKey, delta, team: "rival" as const, quarter: currentQuarter }, ...prev].slice(0, 10),
+        [{ logId, playerId: -1, playerName: "Equipo rival", label, statKey, delta, team: "rival" as const, quarter: currentQuarter }, ...prev].slice(0, 500),
       );
+      setRivalTeamSelected(false);
       return;
     }
     if (!selectedOppPlayerId) return;
+    // Log-only for null/0 events (e.g. missed shots)
+    if (statKey === null || delta === 0) {
+      const oppPlayer = match.opponent_stats.find((os) => os.opponent_player_id === selectedOppPlayerId);
+      const oppName = oppPlayer
+        ? (oppPlayer.opponent_player.name ?? `#${oppPlayer.opponent_player.jersey_number}`)
+        : "Rival";
+      const logId = ++logCounterRef.current;
+      setActionLog((prev) =>
+        [{ logId, playerId: selectedOppPlayerId, playerName: oppName, label, statKey, delta, team: "rival" as const, quarter: currentQuarter }, ...prev].slice(0, 500),
+      );
+      // Deselect after miss log too
+      setSelectedOppPlayerId(null);
+      return;
+    }
 
     // Log rival action
     const oppPlayer = match.opponent_stats.find((os) => os.opponent_player_id === selectedOppPlayerId);
@@ -666,7 +770,7 @@ export default function MatchDetailPage({
       : "Rival";
     const logId = ++logCounterRef.current;
     setActionLog((prev) =>
-      [{ logId, playerId: selectedOppPlayerId, playerName: oppName, label: OPP_STAT_LABELS[statKey] ?? statKey, statKey, delta, team: "rival" as const, quarter: currentQuarter }, ...prev].slice(0, 10),
+      [{ logId, playerId: selectedOppPlayerId, playerName: oppName, label: OPP_STAT_LABELS[statKey] ?? statKey, statKey, delta, team: "rival" as const, quarter: currentQuarter }, ...prev].slice(0, 500),
     );
     setQuarterStatsLog((prev) => [...prev, { quarter: currentQuarter, team: "rival", statKey, delta, playerName: oppName }]);
 
@@ -677,6 +781,12 @@ export default function MatchDetailPage({
     setOppStatDraft((prev) => new Map(prev).set(selectedOppPlayerId, updated));
     saveOppStatMut.mutate(updated as OpponentMatchStatUpsert);
 
+    // Stopped-clock: auto-pause on foul
+    if (statKey === "fouls" && delta > 0 && matchCompetition?.clock_type === "stopped" && timerRunning) {
+      timerBaseRef.current = timerMs;
+      setTimerRunning(false);
+    }
+
     if (statKey === "points" && delta > 0) {
       const currentPlayerPts = ((current.points ?? 0) as number);
       const totalPts = Array.from(oppStatDraft.values()).reduce(
@@ -686,6 +796,9 @@ export default function MatchDetailPage({
       const newTotal = totalPts - currentPlayerPts + newVal;
       updateRivalScoreMut.mutate(newTotal);
     }
+
+    // Auto-deselect after recording — same UX as home team actions.
+    setSelectedOppPlayerId(null);
   }
 
   function handleUndo() {
@@ -727,6 +840,11 @@ export default function MatchDetailPage({
   const maxOnCourt = matchCompetition?.players_on_court ?? 5;
 
   function handlePlayerClick(playerId: number) {
+    // Toggle: clicking the already-selected player deselects it
+    if (selectedPlayerId === playerId) {
+      setSelectedPlayerId(null);
+      return;
+    }
     setHomeTeamSelected(false);
     setRivalTeamSelected(false);
     setSelectedOppPlayerId(null);
@@ -751,16 +869,131 @@ export default function MatchDetailPage({
     setRivalTeamSelected(false);
     setHomeTeamSelected(false);
     setSelectedPlayerId(null);
-    if (onCourtOppIds.has(oppPlayerId)) {
-      setSelectedOppPlayerId(oppPlayerId);
-    } else {
-      if (onCourtOppIds.size < maxOnCourt) {
-        setOnCourtOppIds((prev) => new Set(prev).add(oppPlayerId));
-        setSelectedOppPlayerId(oppPlayerId);
-      } else {
-        toast(`Máximo ${maxOnCourt} jugadores en pista`, "error");
+    // Just toggle selection — court management is via lineup/substitutions only
+    setSelectedOppPlayerId((prev) => prev === oppPlayerId ? null : oppPlayerId);
+  }
+
+  // ── Click outside the player grid → deselect ────────────────────────────────
+  useEffect(() => {
+    if (match?.status !== "in_progress") return;
+    function handleDocClick(e: MouseEvent) {
+      if (playerGridRef.current && !playerGridRef.current.contains(e.target as Node)) {
+        setSelectedPlayerId(null);
+        setSelectedOppPlayerId(null);
+        setHomeTeamSelected(false);
+        setRivalTeamSelected(false);
       }
     }
+    document.addEventListener("mousedown", handleDocClick);
+    return () => document.removeEventListener("mousedown", handleDocClick);
+  }, [match?.status]);
+
+  // ── Minutes flush helpers ────────────────────────────────────────────────────
+  // Commits the current stint of every on-court home player to sessionStats and
+  // rsets their playerEnteredAtMs to `nextEnteredAtMs` (0 for quarter change,
+  // newTimerMs for time edit).
+  function flushHomeMins(currentTimerMs: number, nextEnteredAtMs: number) {
+    if (!match?.track_home_minutes) return;
+    const nextEntered: Record<number, number> = { ...playerEnteredAtMs };
+    const nextStats = new Map(sessionStats);
+
+    // ── On-court players: open-ended stint ──────────────────────────────────────
+    Array.from(onCourtIds).forEach((pid) => {
+      if (playerEnteredAtMs[pid] == null) return;
+      // Use raw delta (can be negative on backward edits) added to already-committed
+      // minutes so that time edits in either direction produce the correct total.
+      const rawStintMs = currentTimerMs - playerEnteredAtMs[pid];
+      const existingMin = (nextStats.get(pid)?.minutes ?? 0) as number;
+      const totalMs = Math.max(0, existingMin * 60000 + rawStintMs);
+      const newMin = Math.floor(totalMs / 60000);
+      const remainderMs = totalMs % 60000;
+      if (newMin !== existingMin) {
+        const updated = { ...(nextStats.get(pid) ?? { player_id: pid }), minutes: newMin };
+        nextStats.set(pid, updated);
+        upsertStatMut.mutate(updated);
+      }
+      // Carry sub-minute remainder forward so seconds are never lost across
+      // quarter advances or time edits.
+      nextEntered[pid] = nextEnteredAtMs - remainderMs;
+    });
+
+    // ── Off-court players (substituted out): bounded stint ──────────────────────
+    // playerExitedWithTotalMs[pid] is the exact ms at exit (immutable) so the
+    // formula is idempotent regardless of how many forward/backward edits follow.
+    Object.keys(playerExitedAtMs).forEach((pidStr) => {
+      const pid = Number(pidStr);
+      if (onCourtIds.has(pid)) return; // handled above
+      const exitTime = playerExitedAtMs[pid];
+      const totalAtExit = playerExitedWithTotalMs[pid] ?? 0;
+      // Time accrual is capped at the exit point; backward edits can reduce it.
+      const targetMs = Math.max(0, totalAtExit + Math.min(0, currentTimerMs - exitTime));
+      const newMin = Math.floor(targetMs / 60000);
+      const existingMin = (nextStats.get(pid)?.minutes ?? 0) as number;
+      if (newMin !== existingMin) {
+        const updated = { ...(nextStats.get(pid) ?? { player_id: pid }), minutes: newMin };
+        nextStats.set(pid, updated);
+        upsertStatMut.mutate(updated);
+      }
+    });
+
+    setSessionStats(nextStats);
+    setPlayerEnteredAtMs(nextEntered);
+  }
+
+  function flushRivalMins(currentTimerMs: number, nextEnteredAtMs: number) {
+    if (!match?.track_rival_minutes) return;
+    const nextEntered: Record<number, number> = { ...rivalEnteredAtMs };
+
+    // ── On-court rival players: open-ended stint ─────────────────────────────────
+    Array.from(onCourtOppIds).forEach((pid) => {
+      if (rivalEnteredAtMs[pid] == null) return;
+      const rawStintMs = currentTimerMs - rivalEnteredAtMs[pid];
+      const current = oppStatDraft.get(pid) ?? { opponent_player_id: pid };
+      const existingMin = (current.minutes ?? 0) as number;
+      const totalMs = Math.max(0, existingMin * 60000 + rawStintMs);
+      const newMin = Math.floor(totalMs / 60000);
+      const remainderMs = totalMs % 60000;
+      if (newMin !== existingMin) {
+        const updated = { ...current, minutes: newMin };
+        setOppStatDraft((prev) => new Map(prev).set(pid, updated));
+        saveOppStatMut.mutate(updated as OpponentMatchStatUpsert);
+      }
+      nextEntered[pid] = nextEnteredAtMs - remainderMs;
+    });
+
+    // ── Off-court rival players: bounded stint ───────────────────────────────────
+    Object.keys(rivalExitedAtMs).forEach((pidStr) => {
+      const pid = Number(pidStr);
+      if (onCourtOppIds.has(pid)) return;
+      const exitTime = rivalExitedAtMs[pid];
+      const totalAtExit = rivalExitedWithTotalMs[pid] ?? 0;
+      const targetMs = Math.max(0, totalAtExit + Math.min(0, currentTimerMs - exitTime));
+      const newMin = Math.floor(targetMs / 60000);
+      const current = oppStatDraft.get(pid) ?? { opponent_player_id: pid };
+      const existingMin = (current.minutes ?? 0) as number;
+      if (newMin !== existingMin) {
+        const updated = { ...current, minutes: newMin };
+        setOppStatDraft((prev) => new Map(prev).set(pid, updated));
+        saveOppStatMut.mutate(updated as OpponentMatchStatUpsert);
+      }
+    });
+
+    setRivalEnteredAtMs(nextEntered);
+  }
+
+  // ── Next-quarter advance ─────────────────────────────────────────────────────
+  function doNextQuarter() {
+    flushHomeMins(timerMs, 0);
+    flushRivalMins(timerMs, 0);
+    // Exit records are period-scoped: clear them so Q2 edits don't touch Q1 players
+    setPlayerExitedAtMs({});
+    setPlayerExitedWithTotalMs({});
+    setRivalExitedAtMs({});
+    setRivalExitedWithTotalMs({});
+    timerBaseRef.current = 0;
+    setTimerMs(0);
+    setTimerRunning(false);
+    setCurrentQuarter((q) => q + 1);
   }
 
   function removeOppFromCourt(oppPlayerId: number) {
@@ -773,7 +1006,11 @@ export default function MatchDetailPage({
   const periodDurationMs = (isOT
     ? (matchCompetition?.overtime_minutes ?? 5)
     : (matchCompetition?.minutes_per_quarter ?? 10)) * 60 * 1000;
+  // Keep ref current so the timer interval can read it without stale closure
+  periodDurationMsRef.current = periodDurationMs;
   const remainingMs = Math.max(0, periodDurationMs - timerMs);
+  // True when the period clock has reached 0 (timer naturally expired or edited to 0)
+  const periodEnded = remainingMs === 0 && timerMs > 0;
   const quarterLabel = isOT ? `OT${currentQuarter - regularQuarters}` : `Q${currentQuarter}`;
   const timerDisplay = (() => {
     if (remainingMs >= 60000) {
@@ -786,6 +1023,144 @@ export default function MatchDetailPage({
     const tenths = Math.floor((remainingMs % 1000) / 100);
     return `${String(s).padStart(2, "0")}.${tenths}`;
   })();
+
+  // Guard: if period has ended, wrap action in an out-of-time confirmation dialog
+  function withOutOfTimeGuard(actionLabel: string, action: () => void) {
+    if (periodEnded) {
+      setOutOfTimeDialog({ open: true, label: actionLabel, onConfirm: action });
+    } else {
+      action();
+    }
+  }
+
+  // ── Substitution helpers ─────────────────────────────────────────────────
+
+  function execSubOutHome(pid: number) {
+    if (match!.track_home_minutes && playerEnteredAtMs[pid] != null) {
+      const existingMin = (sessionStats.get(pid)?.minutes ?? 0) as number;
+      const rawStintMs = timerMs - playerEnteredAtMs[pid];
+      const totalAtExit = Math.max(0, existingMin * 60000 + rawStintMs);
+      const newMin = Math.floor(totalAtExit / 60000);
+      if (newMin !== existingMin) {
+        setSessionStats((prev) => {
+          const next = new Map(prev);
+          next.set(pid, { ...(next.get(pid) ?? { player_id: pid }), minutes: newMin });
+          return next;
+        });
+        upsertStatMut.mutate({ player_id: pid, minutes: newMin });
+      }
+      setPlayerExitedAtMs((prev) => ({ ...prev, [pid]: timerMs }));
+      setPlayerExitedWithTotalMs((prev) => ({ ...prev, [pid]: totalAtExit }));
+      setPlayerEnteredAtMs((prev) => { const next = { ...prev }; delete next[pid]; return next; });
+    }
+    setOnCourtIds((prev) => { const n = new Set(prev); n.delete(pid); return n; });
+    const mp = match!.match_players.find((m) => m.player_id === pid);
+    const name = mp ? `${mp.player_first_name ?? ""} ${mp.player_last_name ?? ""}`.trim() : "Jugador";
+    const logId = ++logCounterRef.current;
+    setActionLog((prev) =>
+      [{ logId, playerId: pid, playerName: name, label: "↓ salió", statKey: null, delta: 0, team: "home" as const, quarter: currentQuarter }, ...prev].slice(0, 500),
+    );
+  }
+
+  function execSubInHome(pid: number) {
+    setPlayerEnteredAtMs((prev) => ({ ...prev, [pid]: timerMs }));
+    setOnCourtIds((prev) => { const n = new Set(prev); n.add(pid); return n; });
+    const mp = match!.match_players.find((m) => m.player_id === pid);
+    const name = mp ? `${mp.player_first_name ?? ""} ${mp.player_last_name ?? ""}`.trim() : "Jugador";
+    const logId = ++logCounterRef.current;
+    setActionLog((prev) =>
+      [{ logId, playerId: pid, playerName: name, label: "↑ entró", statKey: null, delta: 0, team: "home" as const, quarter: currentQuarter }, ...prev].slice(0, 500),
+    );
+  }
+
+  function tapCourtPlayerHome(pid: number) {
+    // Toggle staged-out: tap again to unstage
+    setSubStagedOut((prev) => {
+      const n = new Set(prev);
+      if (n.has(pid)) n.delete(pid); else n.add(pid);
+      return n;
+    });
+  }
+
+  function tapBenchPlayerHome(pid: number) {
+    setSubStagedIn((prev) => {
+      const n = new Set(prev);
+      if (n.has(pid)) { n.delete(pid); return n; } // already staged → unstage
+      // Only allow staging in if there's room after the staged changes
+      const effectiveSize = onCourtIds.size - subStagedOut.size + n.size;
+      if (effectiveSize < 5) { n.add(pid); }
+      return n;
+    });
+  }
+
+  function execSubOutRival(pid: number) {
+    if (match!.track_rival_minutes && rivalEnteredAtMs[pid] != null) {
+      const current = oppStatDraft.get(pid) ?? { opponent_player_id: pid };
+      const existingMin = (current.minutes ?? 0) as number;
+      const rawStintMs = timerMs - rivalEnteredAtMs[pid];
+      const totalAtExit = Math.max(0, existingMin * 60000 + rawStintMs);
+      const newMin = Math.floor(totalAtExit / 60000);
+      if (newMin !== existingMin) {
+        setOppStatDraft((prev) => new Map(prev).set(pid, { ...current, minutes: newMin }));
+        saveOppStatMut.mutate({ ...(current as OpponentMatchStatUpsert), minutes: newMin });
+      }
+      setRivalExitedAtMs((prev) => ({ ...prev, [pid]: timerMs }));
+      setRivalExitedWithTotalMs((prev) => ({ ...prev, [pid]: totalAtExit }));
+      setRivalEnteredAtMs((prev) => { const next = { ...prev }; delete next[pid]; return next; });
+    }
+    setOnCourtOppIds((prev) => { const n = new Set(prev); n.delete(pid); return n; });
+    const os = match!.opponent_stats.find((s) => s.opponent_player_id === pid);
+    const name = os ? (os.opponent_player.name ?? `#${os.opponent_player.jersey_number}`) : "Rival";
+    const logId = ++logCounterRef.current;
+    setActionLog((prev) =>
+      [{ logId, playerId: pid, playerName: name, label: "↓ salió", statKey: null, delta: 0, team: "rival" as const, quarter: currentQuarter }, ...prev].slice(0, 500),
+    );
+  }
+
+  function execSubInRival(pid: number) {
+    setRivalEnteredAtMs((prev) => ({ ...prev, [pid]: timerMs }));
+    setOnCourtOppIds((prev) => { const n = new Set(prev); n.add(pid); return n; });
+    const os = match!.opponent_stats.find((s) => s.opponent_player_id === pid);
+    const name = os ? (os.opponent_player.name ?? `#${os.opponent_player.jersey_number}`) : "Rival";
+    const logId = ++logCounterRef.current;
+    setActionLog((prev) =>
+      [{ logId, playerId: pid, playerName: name, label: "↑ entró", statKey: null, delta: 0, team: "rival" as const, quarter: currentQuarter }, ...prev].slice(0, 500),
+    );
+  }
+
+  function tapCourtPlayerRival(pid: number) {
+    setSubStagedOut((prev) => {
+      const n = new Set(prev);
+      if (n.has(pid)) n.delete(pid); else n.add(pid);
+      return n;
+    });
+  }
+
+  function tapBenchPlayerRival(pid: number) {
+    setSubStagedIn((prev) => {
+      const n = new Set(prev);
+      if (n.has(pid)) { n.delete(pid); return n; }
+      const effectiveSize = onCourtOppIds.size - subStagedOut.size + n.size;
+      if (effectiveSize < 5) { n.add(pid); }
+      return n;
+    });
+  }
+
+  function confirmSubstitutions() {
+    const doConfirm = () => {
+      if (showSubstitution === "home") {
+        subStagedOut.forEach((pid) => execSubOutHome(pid));
+        subStagedIn.forEach((pid) => execSubInHome(pid));
+      } else {
+        subStagedOut.forEach((pid) => execSubOutRival(pid));
+        subStagedIn.forEach((pid) => execSubInRival(pid));
+      }
+      setShowSubstitution(null);
+      setSubStagedOut(new Set());
+      setSubStagedIn(new Set());
+    };
+    withOutOfTimeGuard("Sustitución", doConfirm);
+  }
 
   // ── Loading / not found ─────────────────────────────────────────────────────
 
@@ -844,6 +1219,28 @@ export default function MatchDetailPage({
   });
 
   const isTransitioning = startMut.isPending || finishMut.isPending;
+
+  // ── Sorted player lists for live scoring columns ─────────────────────────────
+  // Always sort by jersey. When tracking minutes, only on-court players are shown.
+  const liveHomePlayers = match
+    ? (match.track_home_minutes
+        ? match.match_players.filter((mp) => onCourtIds.has(mp.player_id))
+        : [...match.match_players]
+      ).sort((a, b) => {
+        const aExcl = ((sessionStats.get(a.player_id)?.fouls ?? 0) as number) >= 5;
+        const bExcl = ((sessionStats.get(b.player_id)?.fouls ?? 0) as number) >= 5;
+        if (aExcl !== bExcl) return aExcl ? 1 : -1;
+        return (rosterJerseyMap.get(a.player_id) ?? 999) - (rosterJerseyMap.get(b.player_id) ?? 999);
+      })
+    : [];
+  const liveOppStats = match
+    ? [...match.opponent_stats].sort((a, b) => {
+        const aExcl = ((oppStatDraft.get(a.opponent_player_id)?.fouls ?? 0) as number) >= 5;
+        const bExcl = ((oppStatDraft.get(b.opponent_player_id)?.fouls ?? 0) as number) >= 5;
+        if (aExcl !== bExcl) return aExcl ? 1 : -1;
+        return (a.opponent_player.jersey_number ?? 999) - (b.opponent_player.jersey_number ?? 999);
+      })
+    : [];
 
   // Starters confirmed when tracking is off, or enough is_starter flags are set
   const homeStartersConfirmed =
@@ -965,8 +1362,8 @@ export default function MatchDetailPage({
             </div>
           </div>
 
-          {/* Finalizar partido — solo visible en in_progress */}
-          {isCoachOrTD && match.status === "in_progress" && (
+          {/* Finalizar partido — solo visible en el último cuarto o prórroga */}
+          {isCoachOrTD && match.status === "in_progress" && currentQuarter >= regularQuarters && (
             <div className="flex items-center justify-center mt-4">
               <Button
                 size="sm"
@@ -982,24 +1379,32 @@ export default function MatchDetailPage({
         </div>
 
         {/* Tabs */}
-        <div className="flex items-center gap-1 border-b mb-6">
-          {(["convocatoria", "rival", "estadisticas", "videos"] as TabKey[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={cn(
-                "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
-                tab === t
-                  ? "border-foreground text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {t === "convocatoria" && "Convocatoria"}
-              {t === "rival" && "Rival"}
-              {t === "estadisticas" && "Estadísticas"}
-              {t === "videos" && "Vídeo"}
-            </button>
-          ))}
+        <div className="flex items-center gap-1 border-b mb-6 flex-wrap">
+          {(["convocatoria", "rival", "estadisticas", "informe", "jugada", "videos"] as TabKey[]).map((t) => {
+            // Informe and jugada only visible once match has started
+            if ((t === "informe" || t === "jugada") && match.status === "scheduled") return null;
+            // Estadisticas and jugada hidden for finished matches (live-only data)
+            if ((t === "estadisticas" || t === "jugada") && match.status === "finished") return null;
+            return (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={cn(
+                  "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+                  tab === t
+                    ? "border-foreground text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {t === "convocatoria" && "Convocatoria"}
+                {t === "rival" && "Rival"}
+                {t === "estadisticas" && "Estadísticas"}
+                {t === "informe" && "Informe"}
+                {t === "jugada" && "Jugada a jugada"}
+                {t === "videos" && "Vídeo"}
+              </button>
+            );
+          })}
         </div>
 
         {/* Tab: Convocatoria */}
@@ -1029,7 +1434,7 @@ export default function MatchDetailPage({
                 </div>
               ) : (
                 <div className="border rounded-lg divide-y">
-                  {match.match_players.map((mp) => {
+                  {[...match.match_players].sort((a, b) => (rosterJerseyMap.get(a.player_id) ?? 999) - (rosterJerseyMap.get(b.player_id) ?? 999)).map((mp) => {
                     const photoUrl = rosterPhotoMap.get(mp.player_id);
                     return (
                       <div key={mp.id} className="flex items-center gap-3 px-4 py-3">
@@ -1217,7 +1622,7 @@ export default function MatchDetailPage({
                     </div>
                   ) : (
                     <div className="border rounded-lg divide-y">
-                      {match.opponent_stats.map((os) => (
+                      {[...match.opponent_stats].sort((a, b) => (a.opponent_player.jersey_number ?? 999) - (b.opponent_player.jersey_number ?? 999)).map((os) => (
                         <div key={os.id} className="flex items-center justify-between px-4 py-3">
                           <span className="text-sm font-medium">
                             <span className="text-xs text-muted-foreground mr-2">#{os.opponent_player.jersey_number}</span>
@@ -1340,7 +1745,14 @@ export default function MatchDetailPage({
                       )}
                     </div>
                     <div className="divide-y">
-                      {match.match_players.map((mp) => {
+                      {[...match.match_players]
+                        .sort((a, b) => {
+                          const aChecked = homeStartersConfirmed ? a.is_starter : lineupHomeIds.has(a.player_id);
+                          const bChecked = homeStartersConfirmed ? b.is_starter : lineupHomeIds.has(b.player_id);
+                          if (aChecked !== bChecked) return aChecked ? -1 : 1;
+                          return (rosterJerseyMap.get(a.player_id) ?? 999) - (rosterJerseyMap.get(b.player_id) ?? 999);
+                        })
+                        .map((mp) => {
                         const jersey = rosterJerseyMap.get(mp.player_id);
                         const isConfirmed = homeStartersConfirmed && mp.is_starter;
                         const isPending = !homeStartersConfirmed && lineupHomeIds.has(mp.player_id);
@@ -1414,7 +1826,14 @@ export default function MatchDetailPage({
                       )}
                     </div>
                     <div className="divide-y">
-                      {match.opponent_stats.map((os) => {
+                      {[...match.opponent_stats]
+                        .sort((a, b) => {
+                          const aChecked = rivalStartersConfirmed ? a.is_starter : lineupRivalIds.has(a.opponent_player_id);
+                          const bChecked = rivalStartersConfirmed ? b.is_starter : lineupRivalIds.has(b.opponent_player_id);
+                          if (aChecked !== bChecked) return aChecked ? -1 : 1;
+                          return (a.opponent_player.jersey_number ?? 999) - (b.opponent_player.jersey_number ?? 999);
+                        })
+                        .map((os) => {
                         const isConfirmed = rivalStartersConfirmed && os.is_starter;
                         const isPending = !rivalStartersConfirmed && lineupRivalIds.has(os.opponent_player_id);
                         const checked = isConfirmed || isPending;
@@ -1500,25 +1919,72 @@ export default function MatchDetailPage({
 
             {match.status === "in_progress" && isCoachOrTD && (
               <>
-                {/* ── Cronómetro ── */}
-                <div className="border rounded-lg bg-muted/20">
-                  <div className="flex items-center justify-between px-4 py-2.5">
-                    <div className="flex items-center gap-3">
+                {/* ── Control del partido ── */}
+                <div className="border rounded-lg bg-muted/20 overflow-hidden">
+                  {/* Fila 1: Cuarto */}
+                  <div className="flex items-center justify-between px-4 py-2.5 border-b">
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Periodo</p>
                       <span className={cn(
                         "text-xs font-bold rounded px-2 py-0.5",
-                        isOT ? "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400" : "bg-muted text-muted-foreground"
+                        isOT ? "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400" : "bg-muted text-foreground"
                       )}>
-                        {quarterLabel}/{regularQuarters}Q
-                      </span>
-                      <span className={cn(
-                        "font-mono text-2xl font-bold tabular-nums tracking-tight",
-                        remainingMs < 60000 && remainingMs > 0 ? "text-orange-500" : remainingMs === 0 ? "text-red-500" : ""
-                      )}>
-                        {timerDisplay}
+                        {quarterLabel} / {regularQuarters}Q
                       </span>
                     </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 gap-1 text-xs"
+                      onClick={() => {
+                        const goingToOT = currentQuarter === regularQuarters;
+                        // OT requires tied score
+                        if (goingToOT) {
+                          const hs = match.our_score;
+                          const rs = match.their_score;
+                          if (hs != null && rs != null && hs !== rs) {
+                            setNextQuarterMsg("La prórroga solo es posible con el marcador empatado. Ajusta el resultado antes de continuar.");
+                            setNextQuarterType("error");
+                            setNextQuarterOpen(true);
+                            return;
+                          }
+                        }
+                        // Timer still running — ask for confirmation
+                        if (remainingMs > 0) {
+                          setNextQuarterMsg(
+                            goingToOT
+                              ? `Quedan ${timerDisplay} en el ${quarterLabel}. ¿Avanzar a prórroga igualmente?`
+                              : `Quedan ${timerDisplay} en el ${quarterLabel}. ¿Avanzar al siguiente periodo igualmente?`
+                          );
+                          setNextQuarterType("confirm");
+                          setNextQuarterOpen(true);
+                          return;
+                        }
+                        doNextQuarter();
+                      }}
+                    >
+                      {currentQuarter < regularQuarters
+                        ? `Q${currentQuarter + 1}`
+                        : currentQuarter === regularQuarters
+                        ? "Prórroga"
+                        : `OT${currentQuarter - regularQuarters + 1}`}
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  {/* Fila 2: Timer */}
+                  <div className="flex items-center justify-between px-4 py-3">
+                    <span className={cn(
+                      "font-mono text-3xl font-bold tabular-nums tracking-tight",
+                      remainingMs < 60000 && remainingMs > 0 ? "text-orange-500" : remainingMs === 0 ? "text-red-500" : ""
+                    )}>
+                      {timerDisplay}
+                    </span>
                     <div className="flex items-center gap-1.5">
-                      <Button size="sm" variant={timerRunning ? "default" : "outline"} className="h-8 gap-1.5 text-xs"
+                      <Button
+                        size="sm"
+                        variant={timerRunning ? "default" : "outline"}
+                        className="h-8 gap-1.5 text-xs"
+                        disabled={periodEnded}
                         onClick={() => {
                           if (timerRunning) {
                             timerBaseRef.current = timerMs;
@@ -1526,130 +1992,265 @@ export default function MatchDetailPage({
                           } else {
                             setTimerRunning(true);
                           }
-                        }}>
-                        {timerRunning ? <><Pause className="h-3 w-3" />Pausar</> : <><Play className="h-3 w-3" />{timerMs > 0 ? "Reanudar" : "Iniciar"}</>}
+                        }}
+                      >
+                        {timerRunning
+                          ? <><Pause className="h-3 w-3" />Pausar</>
+                          : periodEnded
+                          ? <><CheckCircle className="h-3 w-3" />Finalizado</>
+                          : <><Play className="h-3 w-3" />{timerMs > 0 ? "Reanudar" : "Iniciar"}</>}
                       </Button>
-                      <Button size="sm" variant="ghost" className="h-8 gap-1 text-xs"
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 gap-1 text-xs"
+                        title="Editar tiempo manualmente"
                         onClick={() => {
-                          timerBaseRef.current = 0;
-                          setTimerMs(0);
-                          if (timerRunning) { setTimerRunning(false); setTimeout(() => setTimerRunning(true), 0); }
-                        }}>
-                        <RotateCcw className="h-3 w-3" />Reset
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-8 text-xs"
-                        onClick={() => {
-                          timerBaseRef.current = 0;
-                          setTimerMs(0);
-                          setTimerRunning(false);
-                          setCurrentQuarter((q) => q + 1);
-                        }}>
-                        {currentQuarter < regularQuarters
-                          ? `Q${currentQuarter + 1} →`
-                          : currentQuarter === regularQuarters
-                          ? "Prórroga →"
-                          : `OT${currentQuarter - regularQuarters + 1} →`}
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-8 gap-1 text-xs"
-                        onClick={() => { setShowSubstitution((s) => !s); setSubOutId(null); setSubInId(null); }}>
-                        <ArrowLeftRight className="h-3 w-3" />Cambio
+                          // Auto-pause timer when opening the edit dialog
+                          if (timerRunning) {
+                            timerBaseRef.current = timerMs;
+                            setTimerRunning(false);
+                          }
+                          const totalSec = Math.floor(remainingMs / 1000);
+                          setEditTimeMin(Math.floor(totalSec / 60));
+                          setEditTimeSec(totalSec % 60);
+                          setEditTimeOpen(true);
+                        }}
+                      >
+                        <Pencil className="h-3 w-3" />
                       </Button>
                     </div>
                   </div>
-                  {/* Substitution panel */}
-                  {showSubstitution && (
-                    <div className="border-t px-4 py-3 space-y-2 bg-accent/5">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Sustitución</p>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Sale (en pista)</Label>
-                          <Select value={subOutId !== null ? String(subOutId) : ""} onValueChange={(v) => setSubOutId(Number(v))}>
-                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Jugador que sale" /></SelectTrigger>
-                            <SelectContent>
-                              {match.match_players.filter((mp) => onCourtIds.has(mp.player_id)).map((mp) => (
-                                <SelectItem key={mp.player_id} value={String(mp.player_id)}>
-                                  {rosterJerseyMap.get(mp.player_id) != null ? `#${rosterJerseyMap.get(mp.player_id)} ` : ""}
-                                  {mp.player_first_name} {mp.player_last_name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                </div>
+
+                {/* ── Panel de sustitución — diseño visual de dos listas ── */}
+                {showSubstitution !== null && (() => {
+                  const isHome = showSubstitution === "home";
+                  const teamLabel = isHome ? (activeProfile?.team_name ?? "Local") : (opponentTeam?.name ?? match.opponent_name);
+                  const courtIds   = isHome ? onCourtIds : onCourtOppIds;
+
+                  // Build sorted player rows for home
+                  const homePlayers = [...match.match_players].sort(
+                    (a, b) => (rosterJerseyMap.get(a.player_id) ?? 999) - (rosterJerseyMap.get(b.player_id) ?? 999),
+                  );
+                  const rivalPlayers = [...match.opponent_stats].sort(
+                    (a, b) => (a.opponent_player.jersey_number ?? 999) - (b.opponent_player.jersey_number ?? 999),
+                  );
+
+                  const courtPlayers = isHome
+                    ? homePlayers.filter((p) => courtIds.has(p.player_id))
+                    : rivalPlayers.filter((p) => courtIds.has(p.opponent_player_id));
+                  const benchPlayers = isHome
+                    ? homePlayers.filter((p) => !courtIds.has(p.player_id))
+                    : rivalPlayers.filter((p) => !courtIds.has(p.opponent_player_id));
+
+                  // Helper to get id/jersey/name/photo for each row
+                  const rowId = (p: typeof courtPlayers[number]) =>
+                    isHome ? (p as typeof homePlayers[number]).player_id : (p as typeof rivalPlayers[number]).opponent_player_id;
+                  const rowJersey = (p: typeof courtPlayers[number]) =>
+                    isHome
+                      ? rosterJerseyMap.get((p as typeof homePlayers[number]).player_id)
+                      : (p as typeof rivalPlayers[number]).opponent_player.jersey_number;
+                  const rowName = (p: typeof courtPlayers[number]) => {
+                    if (isHome) {
+                      const hp = p as typeof homePlayers[number];
+                      return `${hp.player_first_name ?? ""} ${hp.player_last_name ?? ""}`.trim() || "—";
+                    }
+                    const rp = p as typeof rivalPlayers[number];
+                    return rp.opponent_player.name ?? "—";
+                  };
+                  const rowPhoto = (p: typeof courtPlayers[number]) =>
+                    isHome ? rosterPhotoMap.get((p as typeof homePlayers[number]).player_id) : null;
+
+                  // Card for a single player
+                  const PlayerCard = ({
+                    p,
+                    zone,
+                  }: {
+                    p: typeof courtPlayers[number];
+                    zone: "court" | "bench";
+                  }) => {
+                    const pid  = rowId(p);
+                    const jsy  = rowJersey(p);
+                    const name = rowName(p);
+                    const photo = rowPhoto(p);
+                    const isStagedOut = subStagedOut.has(pid);
+                    const isStagedIn  = subStagedIn.has(pid);
+                    const isDisabled  = false; // staging always allows re-toggle
+
+                    const initials = name
+                      .split(" ")
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .map((w) => w[0].toUpperCase())
+                      .join("");
+
+                    return (
+                      <button
+                        key={pid}
+                        disabled={isDisabled}
+                        onClick={() => {
+                          if (zone === "court") {
+                            if (isHome) tapCourtPlayerHome(pid); else tapCourtPlayerRival(pid);
+                          } else {
+                            if (isHome) tapBenchPlayerHome(pid); else tapBenchPlayerRival(pid);
+                          }
+                        }}
+                        className={cn(
+                          "flex items-center gap-2 w-full rounded-lg px-2 py-1.5 text-left transition-colors",
+                          "border",
+                          zone === "court"
+                            ? isStagedOut
+                              ? "border-destructive/50 bg-destructive/10 cursor-pointer"
+                              : "border-transparent hover:bg-destructive/10 hover:border-destructive/30 cursor-pointer"
+                            : isStagedIn
+                            ? "border-green-500/50 bg-green-500/10 cursor-pointer"
+                            : "border-transparent hover:bg-primary/10 hover:border-primary/30 cursor-pointer",
+                        )}
+                      >
+                        {/* Avatar */}
+                        <div className="relative shrink-0">
+                          {photo ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={photo}
+                              alt={name}
+                              className="h-8 w-8 rounded-full object-cover border border-border"
+                            />
+                          ) : (
+                            <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground border border-border">
+                              {initials || "?"}
+                            </div>
+                          )}
+                          {jsy != null && (
+                            <span className="absolute -bottom-0.5 -right-0.5 text-[9px] font-bold bg-background border border-border rounded-full px-1 leading-tight">
+                              {jsy}
+                            </span>
+                          )}
                         </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Entra (banquillo)</Label>
-                          <Select value={subInId !== null ? String(subInId) : ""} onValueChange={(v) => setSubInId(Number(v))}>
-                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Jugador que entra" /></SelectTrigger>
-                            <SelectContent>
-                              {match.match_players.filter((mp) => !onCourtIds.has(mp.player_id)).map((mp) => (
-                                <SelectItem key={mp.player_id} value={String(mp.player_id)}>
-                                  {rosterJerseyMap.get(mp.player_id) != null ? `#${rosterJerseyMap.get(mp.player_id)} ` : ""}
-                                  {mp.player_first_name} {mp.player_last_name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                        {/* Name */}
+                        <span className="flex-1 text-xs font-medium truncate leading-tight">
+                          {name}
+                        </span>
+                        {/* Badge */}
+                        {zone === "court" && isStagedOut && (
+                          <span className="shrink-0 text-[9px] font-semibold rounded-full px-1.5 py-0.5 bg-destructive/15 text-destructive">
+                            saldrá
+                          </span>
+                        )}
+                        {zone === "bench" && isStagedIn && (
+                          <span className="shrink-0 text-[9px] font-semibold rounded-full px-1.5 py-0.5 bg-green-500/15 text-green-700 dark:text-green-400">
+                            entrará
+                          </span>
+                        )}
+                        {/* Arrow hint when not staged */}
+                        {zone === "court" && !isStagedOut && (
+                          <span className="shrink-0 text-muted-foreground/30 text-xs">↓</span>
+                        )}
+                        {zone === "bench" && !isStagedIn && (
+                          <span className="shrink-0 text-muted-foreground/30 text-xs">↑</span>
+                        )}
+                      </button>
+                    );
+                  };
+
+                  return (
+                    <div className="border rounded-lg bg-accent/5 overflow-hidden">
+                      {/* Header */}
+                      <div className="flex items-center justify-between px-4 py-2 border-b bg-background/60">
+                        <div className="flex items-center gap-2">
+                          <ArrowLeftRight className="h-3.5 w-3.5 text-muted-foreground" />
+                          <p className="text-xs font-semibold">
+                            Cambio — <span className="text-muted-foreground">{teamLabel}</span>
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {subStagedOut.size > subStagedIn.size && (
+                            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                              Selecciona quién entra
+                            </span>
+                          )}
+                        {subStagedIn.size > subStagedOut.size && (
+                            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                              Selecciona quién sale
+                            </span>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => {
+                              setShowSubstitution(null);
+                              setSubStagedOut(new Set());
+                              setSubStagedIn(new Set());
+                            }}
+                          >
+                            <span className="text-xs">✕</span>
+                          </Button>
                         </div>
                       </div>
-                      <div className="flex justify-end gap-2">
-                        <Button variant="outline" size="sm" className="h-7 text-xs"
-                          onClick={() => { setShowSubstitution(false); setSubOutId(null); setSubInId(null); }}>
-                          Cancelar
-                        </Button>
-                        <Button size="sm" className="h-7 text-xs"
-                          disabled={subOutId === null || subInId === null}
-                          onClick={() => {
-                            if (subOutId === null || subInId === null) return;
-                            // Auto-calculate minutes for player leaving court
-                            if (match.track_home_minutes && playerEnteredAtMs[subOutId] != null) {
-                              const stintMs = timerMs - playerEnteredAtMs[subOutId];
-                              const stintMin = Math.max(0, Math.round(stintMs / 60000));
-                              const existingMin = sessionStats.get(subOutId)?.minutes ?? 0;
-                              const newMin = (existingMin ?? 0) + stintMin;
-                              setSessionStats((prev) => {
-                                const next = new Map(prev);
-                                next.set(subOutId, { ...(next.get(subOutId) ?? { player_id: subOutId }), minutes: newMin });
-                                return next;
-                              });
-                              upsertStatMut.mutate({ player_id: subOutId, minutes: newMin });
-                              // Update enteredAt: player out leaves, player in starts counting
-                              setPlayerEnteredAtMs((prev) => {
-                                const next = { ...prev };
-                                delete next[subOutId];
-                                next[subInId] = timerMs;
-                                return next;
-                              });
-                            }
-                            setOnCourtIds((prev) => { const n = new Set(prev); n.delete(subOutId); n.add(subInId); return n; });
-                            const outMp = match.match_players.find((mp) => mp.player_id === subOutId);
-                            const inMp = match.match_players.find((mp) => mp.player_id === subInId);
-                            const outName = outMp ? `${outMp.player_first_name ?? ""} ${outMp.player_last_name ?? ""}`.trim() : "Jugador";
-                            const inName = inMp ? `${inMp.player_first_name ?? ""} ${inMp.player_last_name ?? ""}`.trim() : "Jugador";
-                            const logId = ++logCounterRef.current;
-                            setActionLog((prev) =>
-                              [{ logId, playerId: subInId, playerName: inName, label: `↔ ${outName}`, statKey: null, delta: 0, team: "home" as const, quarter: currentQuarter }, ...prev].slice(0, 10),
-                            );
-                            if (selectedPlayerId === subOutId) setSelectedPlayerId(subInId);
-                            setShowSubstitution(false); setSubOutId(null); setSubInId(null);
-                          }}>
-                          Confirmar cambio
+                      {/* Two columns */}
+                      <div className="grid grid-cols-2 divide-x">
+                        {/* En pista */}
+                        <div className="p-2">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-1 mb-1.5">
+                            En pista ({courtPlayers.length})
+                          </p>
+                          <div className="space-y-0.5 max-h-[260px] overflow-y-auto pr-0.5">
+                            {courtPlayers.length === 0 ? (
+                              <p className="text-[11px] text-muted-foreground px-1 py-2">Sin jugadores</p>
+                            ) : (
+                              courtPlayers.map((p) => (
+                                <PlayerCard key={rowId(p)} p={p} zone="court" />
+                              ))
+                            )}
+                          </div>
+                        </div>
+                        {/* Banquillo */}
+                        <div className="p-2">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-1 mb-1.5">
+                            Banquillo ({benchPlayers.length})
+                          </p>
+                          <div className="space-y-0.5 max-h-[260px] overflow-y-auto pr-0.5">
+                            {benchPlayers.length === 0 ? (
+                              <p className="text-[11px] text-muted-foreground px-1 py-2">Sin jugadores</p>
+                            ) : (
+                              benchPlayers.map((p) => (
+                                <PlayerCard key={rowId(p)} p={p} zone="bench" />
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      {/* Footer: hint + Confirmar */}
+                      <div className="px-3 py-2 border-t bg-background/40 flex items-center justify-between gap-3">
+                        <span className="text-[10px] text-muted-foreground">
+                          Toca para marcar · Toca de nuevo para desmarcar
+                        </span>
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs shrink-0"
+                          disabled={subStagedOut.size === 0 && subStagedIn.size === 0}
+                          onClick={confirmSubstitutions}
+                        >
+                          Confirmar{(subStagedOut.size > 0 || subStagedIn.size > 0)
+                            ? ` (${subStagedOut.size}↓ ${subStagedIn.size}↑)`
+                            : ""}
                         </Button>
                       </div>
                     </div>
-                  )}
-                </div>
+                  );
+                })()}
 
                 {/* ── 3 columnas: local | acciones | rival ── */}
-                <div className="grid gap-3" style={{ gridTemplateColumns: "220px 1fr 220px" }}>
+                <div ref={playerGridRef} className="grid gap-3" style={{ gridTemplateColumns: "220px 1fr 220px" }}>
 
                   {/* Columna izquierda: jugadores locales */}
                   <div className="space-y-1.5">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-1">
-                      {activeProfile?.team_name ?? "Local"} · {onCourtIds.size}/{maxOnCourt} en pista
+                      {activeProfile?.team_name ?? "Local"}
                     </p>
-                    {(match.track_home_minutes
-                      ? match.match_players.filter((mp) => onCourtIds.has(mp.player_id))
-                      : match.match_players
-                    ).map((mp) => {
+                    {liveHomePlayers.map((mp) => {
                       const stats = sessionStats.get(mp.player_id);
                       const isSelected = selectedPlayerId === mp.player_id;
                       const isOnCourt = onCourtIds.has(mp.player_id);
@@ -1670,13 +2271,11 @@ export default function MatchDetailPage({
                       return (
                         <button
                           key={mp.player_id}
-                          onClick={() => handlePlayerClick(mp.player_id)}
+                          onClick={() => { if (!isExcluded) handlePlayerClick(mp.player_id); }}
                           className={cn(
                             "w-full text-left rounded-lg p-2 transition-all border",
                             isSelected
                               ? "border-primary bg-primary text-primary-foreground shadow-md"
-                              : isOnCourt
-                              ? "border-primary/60 bg-primary/10"
                               : isExcluded
                               ? "border-red-300 bg-red-50/50 dark:bg-red-900/10 opacity-60"
                               : "border-border hover:bg-muted/40",
@@ -1702,31 +2301,27 @@ export default function MatchDetailPage({
                               <p className="text-xs font-semibold truncate leading-tight">
                                 {mp.player_first_name} {mp.player_last_name}
                               </p>
-                              <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                                <span className={cn("text-[10px] leading-none", isSelected ? "text-primary-foreground/70" : "text-muted-foreground")}>
-                                  {pts}p · {ast}a · {reb}r{match.track_home_minutes ? ` · ${liveMin}min` : ""}
-                                </span>
-                                {isExcluded ? (
-                                  <span className="text-[9px] font-bold bg-red-500 text-white rounded px-1 py-px leading-none">EXCL</span>
-                                ) : isFoulWarning ? (
-                                  <span className={cn("text-[10px] font-bold leading-none", isSelected ? "text-orange-200" : "text-orange-500")}>
-                                    {fal}F ⚠
-                                  </span>
-                                ) : (
-                                  <span className={cn("text-[10px] leading-none", isSelected ? "text-primary-foreground/70" : "text-muted-foreground")}>
-                                    {fal}f
-                                  </span>
-                                )}
-                              </div>
+                              <span className={cn("text-[10px] leading-none mt-0.5 block", isSelected ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                                {pts}p · {ast}a · {reb}r
+                              </span>
                             </div>
-                            {isOnCourt && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); removeFromCourt(mp.player_id); }}
-                                className={cn("text-sm shrink-0 px-1 rounded hover:bg-black/10", isSelected ? "text-primary-foreground" : "text-muted-foreground")}
-                              >
-                                ×
-                              </button>
-                            )}
+                            {/* Foul indicator — escalating visual weight */}
+                            <div className="shrink-0 w-8 flex flex-col items-center justify-center">
+                              {fal >= 5 ? (
+                                <span className="text-[9px] font-bold bg-red-500 text-white rounded px-1 py-px leading-none">EXCL</span>
+                              ) : fal === 4 ? (
+                                <div className="flex flex-col items-center gap-px">
+                                  <span className={cn("text-base font-black leading-none", isSelected ? "text-orange-200" : "text-orange-500")}>{fal}</span>
+                                  <span className={cn("text-[8px] font-bold leading-none", isSelected ? "text-orange-200" : "text-orange-500")}>F ⚠</span>
+                                </div>
+                              ) : fal === 3 ? (
+                                <span className={cn("text-sm font-bold leading-none", isSelected ? "text-amber-200" : "text-amber-500")}>{fal}F</span>
+                              ) : fal === 2 ? (
+                                <span className={cn("text-xs font-semibold leading-none", isSelected ? "text-primary-foreground/60" : "text-muted-foreground")}>{fal}F</span>
+                              ) : fal === 1 ? (
+                                <span className={cn("text-[10px] leading-none", isSelected ? "text-primary-foreground/40" : "text-muted-foreground/60")}>{fal}F</span>
+                              ) : null}
+                            </div>
                           </div>
                         </button>
                       );
@@ -1751,56 +2346,102 @@ export default function MatchDetailPage({
                         </div>
                       </div>
                     </button>
+                    {/* Botón cambio local — solo si se controla el tiempo */}
+                    {match.track_home_minutes && (
+                      <Button
+                        size="sm"
+                        variant={showSubstitution === "home" ? "default" : "outline"}
+                        className="w-full h-8 gap-1.5 text-xs mt-1"
+                        onClick={() => {
+                          if (showSubstitution === "home") {
+                            setShowSubstitution(null);
+                          } else {
+                            setShowSubstitution("home");
+                            setSubStagedOut(new Set());
+                            setSubStagedIn(new Set());
+                          }
+                        }}
+                      >
+                        <ArrowLeftRight className="h-3 w-3" />
+                        Cambio
+                      </Button>
+                    )}
                   </div>
 
                   {/* Columna central: pad de acciones */}
                   <div className="space-y-2">
                     {/* Indicador jugador activo */}
-                    <div className={cn(
-                      "text-center text-sm font-medium border rounded-lg px-3 py-2 truncate",
-                      (selectedPlayerId !== null || homeTeamSelected || selectedOppPlayerId !== null || rivalTeamSelected)
-                        ? "bg-accent/20"
-                        : "text-muted-foreground",
-                    )}>
-                      {homeTeamSelected
-                        ? `${activeProfile?.team_name ?? "Local"} — Equipo`
-                        : rivalTeamSelected
-                        ? `${opponentTeam?.name ?? match.opponent_name} — Equipo rival`
-                        : selectedPlayerId !== null
-                        ? (() => {
-                            const mp = match.match_players.find((p) => p.player_id === selectedPlayerId);
-                            return mp ? `${mp.player_first_name ?? ""} ${mp.player_last_name ?? ""}`.trim() : "";
-                          })()
-                        : selectedOppPlayerId !== null
-                        ? (() => {
-                            const os = match.opponent_stats.find((o) => o.opponent_player_id === selectedOppPlayerId);
-                            return os ? `#${os.opponent_player.jersey_number} ${os.opponent_player.name ?? ""}`.trim() : "";
-                          })()
-                        : <span className="text-muted-foreground text-xs">Selecciona un jugador o equipo</span>}
-                    </div>
+                    {(() => {
+                      const homeActive = selectedPlayerId !== null || homeTeamSelected;
+                      const rivalActive = selectedOppPlayerId !== null || rivalTeamSelected;
+                      const anyActive = homeActive || rivalActive;
+                      let label: React.ReactNode = <span className="text-muted-foreground text-xs">Selecciona un jugador o equipo</span>;
+                      if (homeTeamSelected) label = "Equipo";
+                      else if (rivalTeamSelected) label = "Equipo rival";
+                      else if (selectedPlayerId !== null) {
+                        const mp = match.match_players.find((p) => p.player_id === selectedPlayerId);
+                        label = mp ? `${mp.player_first_name ?? ""} ${mp.player_last_name ?? ""}`.trim() : "";
+                      } else if (selectedOppPlayerId !== null) {
+                        const os = match.opponent_stats.find((o) => o.opponent_player_id === selectedOppPlayerId);
+                        label = os
+                          ? (os.opponent_player.name ? `#${os.opponent_player.jersey_number} ${os.opponent_player.name}` : `#${os.opponent_player.jersey_number}`)
+                          : "";
+                      }
+                      return (
+                        <div className={cn(
+                          "flex items-center border rounded-lg px-3 py-2 min-h-[38px]",
+                          anyActive ? "bg-accent/20" : "text-muted-foreground",
+                        )}>
+                          {/* Left: home team arrow */}
+                          <div className="w-20 shrink-0 flex items-center gap-1">
+                            {homeActive && (
+                              <>
+                                <span className="text-primary font-bold text-base leading-none">◀</span>
+                                <span className="text-[10px] font-semibold text-primary leading-tight truncate">
+                                  {activeProfile?.team_name ?? "Local"}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                          {/* Center: player name */}
+                          <div className="flex-1 text-center text-sm font-medium truncate">{label}</div>
+                          {/* Right: rival team arrow */}
+                          <div className="w-20 shrink-0 flex items-center justify-end gap-1">
+                            {rivalActive && (
+                              <>
+                                <span className="text-[10px] font-semibold text-primary leading-tight truncate">
+                                  {opponentTeam?.name ?? match.opponent_name}
+                                </span>
+                                <span className="text-primary font-bold text-base leading-none">▶</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {(selectedPlayerId !== null || homeTeamSelected || selectedOppPlayerId !== null || rivalTeamSelected) ? (
                       <div className="space-y-1.5">
                         <div className="grid grid-cols-3 gap-1.5">
-                          <ActionButton label="+2P" sublabel="Canasta 2P" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("points", 2, "+2P"); else handleOppAction("points", 2); }} colorClass="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white" />
-                          <ActionButton label="+3P" sublabel="Canasta 3P" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("points", 3, "+3P"); else handleOppAction("points", 3); }} colorClass="bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white" />
-                          <ActionButton label="+TL" sublabel="Tiro libre" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("points", 1, "+1 TL"); else handleOppAction("points", 1); }} colorClass="bg-teal-500 hover:bg-teal-600 active:bg-teal-700 text-white" />
+                          <ActionButton label="+2P" sublabel="Canasta 2P" onClick={() => withOutOfTimeGuard("Canasta 2P", () => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("points", 2, "+2P"); else handleOppAction("points", 2); })} colorClass="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white" />
+                          <ActionButton label="+3P" sublabel="Canasta 3P" onClick={() => withOutOfTimeGuard("Canasta 3P", () => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("points", 3, "+3P"); else handleOppAction("points", 3); })} colorClass="bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white" />
+                          <ActionButton label="+TL" sublabel="Tiro libre" onClick={() => withOutOfTimeGuard("Tiro libre", () => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("points", 1, "+1 TL"); else handleOppAction("points", 1); })} colorClass="bg-teal-500 hover:bg-teal-600 active:bg-teal-700 text-white" />
                         </div>
                         <div className="grid grid-cols-3 gap-1.5">
-                          <ActionButton label="×2P" sublabel="Fallo 2P" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction(null, 0, "Fallo 2P"); }} colorClass="bg-muted hover:bg-muted/80 text-muted-foreground" />
-                          <ActionButton label="×3P" sublabel="Fallo 3P" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction(null, 0, "Fallo 3P"); }} colorClass="bg-muted hover:bg-muted/80 text-muted-foreground" />
-                          <ActionButton label="×TL" sublabel="Fallo TL" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction(null, 0, "Fallo TL"); }} colorClass="bg-muted hover:bg-muted/80 text-muted-foreground" />
+                          <ActionButton label="×2P" sublabel="Fallo 2P" onClick={() => withOutOfTimeGuard("Fallo 2P", () => { if (selectedPlayerId !== null || homeTeamSelected) handleAction(null, 0, "Fallo 2P"); else handleOppAction(null, 0, "Fallo 2P"); })} colorClass="bg-muted hover:bg-muted/80 text-muted-foreground" />
+                          <ActionButton label="×3P" sublabel="Fallo 3P" onClick={() => withOutOfTimeGuard("Fallo 3P", () => { if (selectedPlayerId !== null || homeTeamSelected) handleAction(null, 0, "Fallo 3P"); else handleOppAction(null, 0, "Fallo 3P"); })} colorClass="bg-muted hover:bg-muted/80 text-muted-foreground" />
+                          <ActionButton label="×TL" sublabel="Fallo TL" onClick={() => withOutOfTimeGuard("Fallo TL", () => { if (selectedPlayerId !== null || homeTeamSelected) handleAction(null, 0, "Fallo TL"); else handleOppAction(null, 0, "Fallo TL"); })} colorClass="bg-muted hover:bg-muted/80 text-muted-foreground" />
                         </div>
                         <div className="grid grid-cols-2 gap-1.5">
-                          <ActionButton label="REB-O" sublabel="Ofensivo" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("offensive_rebounds", 1, "REB-O"); else handleOppAction("offensive_rebounds", 1); }} colorClass="bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white" />
-                          <ActionButton label="REB-D" sublabel="Defensivo" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("defensive_rebounds", 1, "REB-D"); else handleOppAction("defensive_rebounds", 1); }} colorClass="bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white" />
+                          <ActionButton label="REB-O" sublabel="Ofensivo" onClick={() => withOutOfTimeGuard("Rebote ofensivo", () => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("offensive_rebounds", 1, "REB-O"); else handleOppAction("offensive_rebounds", 1); })} colorClass="bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white" />
+                          <ActionButton label="REB-D" sublabel="Defensivo" onClick={() => withOutOfTimeGuard("Rebote defensivo", () => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("defensive_rebounds", 1, "REB-D"); else handleOppAction("defensive_rebounds", 1); })} colorClass="bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white" />
                         </div>
                         <div className="grid grid-cols-5 gap-1.5">
-                          <ActionButton label="AST" sublabel="Asistencia" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("assists", 1, "Asistencia"); else handleOppAction("assists", 1); }} colorClass="bg-purple-500 hover:bg-purple-600 active:bg-purple-700 text-white" />
-                          <ActionButton label="REC" sublabel="Recuperación" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("steals", 1, "Recuperación"); else handleOppAction("steals", 1); }} colorClass="bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white" />
-                          <ActionButton label="TAP" sublabel="Tapón" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("blocks", 1, "Tapón"); else handleOppAction("blocks", 1); }} colorClass="bg-cyan-600 hover:bg-cyan-700 active:bg-cyan-800 text-white" />
-                          <ActionButton label="PÉR" sublabel="Pérdida" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("turnovers", 1, "Pérdida"); else handleOppAction("turnovers", 1); }} colorClass="bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white" />
-                          <ActionButton label="FAL" sublabel="Falta" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("fouls", 1, "Falta"); else handleOppAction("fouls", 1); }} colorClass="bg-yellow-500 hover:bg-yellow-600 active:bg-yellow-700 text-black" />
+                          <ActionButton label="AST" sublabel="Asistencia" onClick={() => withOutOfTimeGuard("Asistencia", () => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("assists", 1, "Asistencia"); else handleOppAction("assists", 1); })} colorClass="bg-purple-500 hover:bg-purple-600 active:bg-purple-700 text-white" />
+                          <ActionButton label="REC" sublabel="Recuperación" onClick={() => withOutOfTimeGuard("Recuperación", () => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("steals", 1, "Recuperación"); else handleOppAction("steals", 1); })} colorClass="bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white" />
+                          <ActionButton label="TAP" sublabel="Tapón" onClick={() => withOutOfTimeGuard("Tapón", () => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("blocks", 1, "Tapón"); else handleOppAction("blocks", 1); })} colorClass="bg-cyan-600 hover:bg-cyan-700 active:bg-cyan-800 text-white" />
+                          <ActionButton label="PÉR" sublabel="Pérdida" onClick={() => withOutOfTimeGuard("Pérdida", () => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("turnovers", 1, "Pérdida"); else handleOppAction("turnovers", 1); })} colorClass="bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white" />
+                          <ActionButton label="FAL" sublabel="Falta" onClick={() => withOutOfTimeGuard("Falta", () => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("fouls", 1, "Falta"); else handleOppAction("fouls", 1); })} colorClass="bg-yellow-500 hover:bg-yellow-600 active:bg-yellow-700 text-black" />
                         </div>
                       </div>
                     ) : (
@@ -1821,10 +2462,24 @@ export default function MatchDetailPage({
                         <div className="divide-y">
                           {actionLog.slice(0, 5).map((entry, i) => (
                             <div key={entry.logId} className={cn("flex items-center gap-2 px-3 py-1.5 text-xs", i === 0 && "bg-accent/10")}>
-                              <span className={cn(
-                                "h-2 w-2 rounded-full shrink-0",
-                                entry.team === "home" ? "bg-blue-500" : entry.team === "rival" ? "bg-orange-500" : "bg-muted-foreground/40"
-                              )} />
+                              {/* Directional arrow */}
+                              {entry.team === "home" ? (
+                                <div className="flex items-center gap-0.5 shrink-0 w-[72px]">
+                                  <span className="text-primary font-bold text-sm leading-none">◀</span>
+                                  <span className="text-[9px] font-semibold text-primary leading-tight truncate">
+                                    {activeProfile?.team_name ?? "Local"}
+                                  </span>
+                                </div>
+                              ) : entry.team === "rival" ? (
+                                <div className="flex items-center gap-0.5 shrink-0 w-[72px] justify-end">
+                                  <span className="text-[9px] font-semibold text-orange-500 leading-tight truncate">
+                                    {opponentTeam?.name ?? match.opponent_name}
+                                  </span>
+                                  <span className="text-orange-500 font-bold text-sm leading-none">▶</span>
+                                </div>
+                              ) : (
+                                <div className="w-[72px] shrink-0" />
+                              )}
                               <span className="text-[10px] text-muted-foreground shrink-0 font-mono">
                                 {entry.quarter > (matchCompetition?.quarters ?? 4) ? `OT${entry.quarter - (matchCompetition?.quarters ?? 4)}` : `Q${entry.quarter}`}
                               </span>
@@ -1852,9 +2507,9 @@ export default function MatchDetailPage({
                     ) : (
                       <>
                         <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-1">
-                          {opponentTeam?.name ?? match.opponent_name} · {onCourtOppIds.size}/{maxOnCourt}
+                          {opponentTeam?.name ?? match.opponent_name}
                         </p>
-                        {match.opponent_stats.map((os) => {
+                        {liveOppStats.map((os) => {
                           const draft = oppStatDraft.get(os.opponent_player_id) ?? {};
                           const isSelected = selectedOppPlayerId === os.opponent_player_id;
                           const isOnCourt = onCourtOppIds.has(os.opponent_player_id);
@@ -1867,13 +2522,11 @@ export default function MatchDetailPage({
                           return (
                             <button
                               key={os.opponent_player_id}
-                              onClick={() => handleOppPlayerClick(os.opponent_player_id)}
+                              onClick={() => { if (!oppExcluded) handleOppPlayerClick(os.opponent_player_id); }}
                               className={cn(
                                 "w-full text-left rounded-lg p-2 transition-all border",
                                 isSelected
                                   ? "border-primary bg-primary text-primary-foreground shadow-md"
-                                  : isOnCourt
-                                  ? "border-primary/60 bg-primary/10"
                                   : oppExcluded
                                   ? "border-red-300 bg-red-50/50 dark:bg-red-900/10 opacity-60"
                                   : "border-border hover:bg-muted/40",
@@ -1893,31 +2546,27 @@ export default function MatchDetailPage({
                                   <p className="text-xs font-semibold truncate leading-tight">
                                     {os.opponent_player.name ?? `#${os.opponent_player.jersey_number}`}
                                   </p>
-                                  <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                                    <span className={cn("text-[10px] leading-none", isSelected ? "text-primary-foreground/70" : "text-muted-foreground")}>
-                                      {pts}p · {ast}a · {reb}r
-                                    </span>
-                                    {oppExcluded ? (
-                                      <span className="text-[9px] font-bold bg-red-500 text-white rounded px-1 py-px leading-none">EXCL</span>
-                                    ) : oppFoulWarn ? (
-                                      <span className={cn("text-[10px] font-bold leading-none", isSelected ? "text-orange-200" : "text-orange-500")}>
-                                        {fal}F ⚠
-                                      </span>
-                                    ) : (
-                                      <span className={cn("text-[10px] leading-none", isSelected ? "text-primary-foreground/70" : "text-muted-foreground")}>
-                                        {fal}f
-                                      </span>
-                                    )}
-                                  </div>
+                                  <span className={cn("text-[10px] leading-none mt-0.5 block", isSelected ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                                    {pts}p · {ast}a · {reb}r
+                                  </span>
                                 </div>
-                                {isOnCourt && (
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); removeOppFromCourt(os.opponent_player_id); }}
-                                    className={cn("text-sm shrink-0 px-1 rounded hover:bg-black/10", isSelected ? "text-primary-foreground" : "text-muted-foreground")}
-                                  >
-                                    ×
-                                  </button>
-                                )}
+                                {/* Foul indicator — escalating visual weight */}
+                                <div className="shrink-0 w-8 flex flex-col items-center justify-center">
+                                  {fal >= 5 ? (
+                                    <span className="text-[9px] font-bold bg-red-500 text-white rounded px-1 py-px leading-none">EXCL</span>
+                                  ) : fal === 4 ? (
+                                    <div className="flex flex-col items-center gap-px">
+                                      <span className={cn("text-base font-black leading-none", isSelected ? "text-orange-200" : "text-orange-500")}>{fal}</span>
+                                      <span className={cn("text-[8px] font-bold leading-none", isSelected ? "text-orange-200" : "text-orange-500")}>F ⚠</span>
+                                    </div>
+                                  ) : fal === 3 ? (
+                                    <span className={cn("text-sm font-bold leading-none", isSelected ? "text-amber-200" : "text-amber-500")}>{fal}F</span>
+                                  ) : fal === 2 ? (
+                                    <span className={cn("text-xs font-semibold leading-none", isSelected ? "text-primary-foreground/60" : "text-muted-foreground")}>{fal}F</span>
+                                  ) : fal === 1 ? (
+                                    <span className={cn("text-[10px] leading-none", isSelected ? "text-primary-foreground/40" : "text-muted-foreground/60")}>{fal}F</span>
+                                  ) : null}
+                                </div>
                               </div>
                             </button>
                           );
@@ -1942,61 +2591,189 @@ export default function MatchDetailPage({
                             </div>
                           </div>
                         </button>
+                        {/* Botón cambio rival — solo si se controla el tiempo */}
+                        {match.track_rival_minutes && (
+                          <Button
+                            size="sm"
+                            variant={showSubstitution === "rival" ? "default" : "outline"}
+                            className="w-full h-8 gap-1.5 text-xs mt-1"
+                            onClick={() => {
+                              if (showSubstitution === "rival") {
+                                setShowSubstitution(null);
+                              } else {
+                                setShowSubstitution("rival");
+                                setSubStagedOut(new Set());
+                                setSubStagedIn(new Set());
+                              }
+                            }}
+                          >
+                            <ArrowLeftRight className="h-3 w-3" />
+                            Cambio
+                          </Button>
+                        )}
                       </>
                     )}
                   </div>
                 </div>
 
-                {/* Finalizar partido */}
-                <div className="flex items-center justify-center pt-2">
-                  <Button size="sm" disabled={isTransitioning} onClick={() => finishMut.mutate()} className="gap-1.5">
-                    <CheckCircle className="h-3.5 w-3.5" />
-                    Finalizar partido
-                  </Button>
-                </div>
+                {/* Finalizar partido — solo en el último cuarto o prórroga */}
+                {currentQuarter >= regularQuarters && (
+                  <div className="flex items-center justify-center pt-2">
+                    <Button size="sm" disabled={isTransitioning} onClick={() => finishMut.mutate()} className="gap-1.5">
+                      <CheckCircle className="h-3.5 w-3.5" />
+                      Finalizar partido
+                    </Button>
+                  </div>
+                )}
               </>
             )}
 
-            {/* Read-only: in_progress + non-coach OR finished */}
-            {(match.status === "in_progress" && !isCoachOrTD) || match.status === "finished" ? (
-              <div className="space-y-8">
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                    {activeProfile?.team_name ?? "Nuestro equipo"}
-                  </p>
-                  {match.status === "in_progress" && !isCoachOrTD && (
-                    match.match_players.length === 0 ? (
-                      <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">No hay jugadores en la convocatoria.</div>
-                    ) : (
-                      <StatsTable matchPlayers={match.match_players} stats={match.match_stats} />
-                    )
-                  )}
-                  {match.status === "finished" && (
-                    match.match_stats.length === 0 ? (
-                      <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">No se registraron estadísticas en este partido.</div>
-                    ) : (
-                      <div>
-                        <StatsTable matchPlayers={match.match_players} stats={match.match_stats} />
-                        <StatsBarChart matchPlayers={match.match_players} stats={match.match_stats} />
-                        <p className="text-xs text-muted-foreground text-center py-2 mt-1">Partido finalizado — estadísticas en modo lectura.</p>
-                      </div>
-                    )
-                  )}
-                </div>
-                {match.opponent_id && (
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                      {opponentTeam ? opponentTeam.name : match.opponent_name} (rival)
-                    </p>
-                    {match.opponent_stats.length === 0 ? (
-                      <div className="border rounded-lg p-6 text-center text-muted-foreground text-sm">No hay estadísticas registradas para el equipo rival.</div>
-                    ) : (
-                      <OppStatsTable opponentStats={match.opponent_stats} />
-                    )}
+          </div>
+        )}
+
+        {/* Tab: Informe ─ read-only live/post-match stats */}
+        {tab === "informe" && (
+          <div className="space-y-8">
+            {/* Home team */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                {activeProfile?.team_name ?? "Nuestro equipo"}
+              </p>
+              {match.status === "in_progress" ? (
+                match.match_players.length === 0 ? (
+                  <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
+                    No hay jugadores en la convocatoria.
                   </div>
+                ) : (
+                  <LiveStatsTable
+                    matchPlayers={match.match_players}
+                    sessionStats={sessionStats}
+                    playerEnteredAtMs={playerEnteredAtMs}
+                    timerMs={timerMs}
+                    trackMinutes={match.track_home_minutes}
+                    onCourtIds={onCourtIds}
+                    rosterJerseyMap={rosterJerseyMap}
+                  />
+                )
+              ) : (
+                match.match_stats.length === 0 ? (
+                  <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
+                    No se registraron estadísticas en este partido.
+                  </div>
+                ) : (
+                  <div>
+                    <StatsTable matchPlayers={match.match_players} stats={match.match_stats} rosterJerseyMap={rosterJerseyMap} />
+                    <StatsBarChart matchPlayers={match.match_players} stats={match.match_stats} />
+                  </div>
+                )
+              )}
+            </div>
+            {/* Rival team */}
+            {match.opponent_id && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                  {opponentTeam?.name ?? match.opponent_name} (rival)
+                </p>
+                {match.status === "in_progress" ? (
+                  match.opponent_stats.length === 0 ? (
+                    <div className="border rounded-lg p-6 text-center text-muted-foreground text-sm">
+                      No hay jugadores rivales en la convocatoria.
+                    </div>
+                  ) : (
+                    <LiveOppStatsTable
+                      opponentStats={match.opponent_stats}
+                      oppStatDraft={oppStatDraft}
+                      rivalEnteredAtMs={rivalEnteredAtMs}
+                      timerMs={timerMs}
+                      trackMinutes={match.track_rival_minutes}
+                      onCourtOppIds={onCourtOppIds}
+                    />
+                  )
+                ) : (
+                  match.opponent_stats.length === 0 ? (
+                    <div className="border rounded-lg p-6 text-center text-muted-foreground text-sm">
+                      No hay estadísticas registradas para el equipo rival.
+                    </div>
+                  ) : (
+                    <OppStatsTable opponentStats={match.opponent_stats} />
+                  )
                 )}
               </div>
-            ) : null}
+            )}
+          </div>
+        )}
+
+        {/* Tab: Jugada a jugada */}
+        {tab === "jugada" && (
+          <div className="space-y-4">
+            {actionLog.length === 0 ? (
+              <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
+                Todavía no hay eventos registrados en este partido.
+              </div>
+            ) : (() => {
+              // Group by quarter
+              const regularQuarterCount = matchCompetition?.quarters ?? 4;
+              const grouped = new Map<number, typeof actionLog>();
+              [...actionLog].reverse().forEach((entry) => {
+                const arr = grouped.get(entry.quarter) ?? [];
+                arr.push(entry);
+                grouped.set(entry.quarter, arr);
+              });
+              const quarters = Array.from(grouped.keys()).sort((a, b) => a - b);
+              return (
+                <div className="space-y-6">
+                  {quarters.map((q) => {
+                    const label = q > regularQuarterCount ? `OT${q - regularQuarterCount}` : `Q${q}`;
+                    const entries = grouped.get(q)!;
+                    return (
+                      <div key={q} className="border rounded-lg overflow-hidden">
+                        <div className="px-4 py-2 bg-muted/30 border-b">
+                          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{label}</p>
+                        </div>
+                        <div className="divide-y">
+                          {entries.map((entry) => (
+                            <div key={entry.logId} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                              {/* Team indicator */}
+                              {entry.team === "home" ? (
+                                <div className="flex items-center gap-1 w-[90px] shrink-0">
+                                  <span className="text-primary font-bold text-base leading-none">◀</span>
+                                  <span className="text-[10px] font-semibold text-primary leading-tight truncate">
+                                    {activeProfile?.team_name ?? "Local"}
+                                  </span>
+                                </div>
+                              ) : entry.team === "rival" ? (
+                                <div className="flex items-center justify-end gap-1 w-[90px] shrink-0">
+                                  <span className="text-[10px] font-semibold text-orange-500 leading-tight truncate">
+                                    {opponentTeam?.name ?? match.opponent_name}
+                                  </span>
+                                  <span className="text-orange-500 font-bold text-base leading-none">▶</span>
+                                </div>
+                              ) : (
+                                <div className="w-[90px] shrink-0" />
+                              )}
+                              {/* Player name */}
+                              <span className="flex-1 font-medium truncate">{entry.playerName}</span>
+                              {/* Action badge */}
+                              <span className={cn(
+                                "px-2 py-0.5 rounded-full text-xs font-semibold shrink-0",
+                                entry.delta > 0
+                                  ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
+                                  : "bg-muted text-muted-foreground",
+                              )}>
+                                {entry.label}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <p className="text-xs text-muted-foreground text-center pb-2">
+                    Los eventos se almacenan en memoria — se pierden al recargar la página.
+                  </p>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -2106,6 +2883,186 @@ export default function MatchDetailPage({
           </div>
         )}
       </div>
+
+      {/* Out-of-time confirmation dialog */}
+      <AlertDialog open={outOfTimeDialog.open} onOpenChange={(open) => { if (!open) setOutOfTimeDialog((d) => ({ ...d, open: false })); }}>
+        <AlertDialogContent className="max-w-sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Añadir acción fuera de tiempo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{outOfTimeDialog.label}</strong> se registrará fuera de tiempo para el{" "}
+              <strong>{quarterLabel}</strong>. El reloj ha llegado a 0.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                outOfTimeDialog.onConfirm();
+                setOutOfTimeDialog((d) => ({ ...d, open: false }));
+              }}
+            >
+              Confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Next-quarter gate dialog */}
+      <Dialog open={nextQuarterOpen} onOpenChange={setNextQuarterOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {nextQuarterType === "error" ? "No es posible avanzar" : "¿Avanzar de periodo?"}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground py-2">{nextQuarterMsg}</p>
+          <DialogFooter>
+            {nextQuarterType === "error" ? (
+              <Button onClick={() => setNextQuarterOpen(false)}>Entendido</Button>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setNextQuarterOpen(false)}>Cancelar</Button>
+                <Button onClick={() => { setNextQuarterOpen(false); doNextQuarter(); }}>Avanzar</Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit time dialog — drum picker */}
+      {(() => {
+        const maxMin = Math.floor(periodDurationMs / 60000);
+        const startHold = (fn: () => void) => {
+          fn();
+          holdRef.current = setInterval(fn, 110);
+        };
+        const stopHold = () => {
+          if (holdRef.current) { clearInterval(holdRef.current); holdRef.current = null; }
+        };
+        const incMin = () => setEditTimeMin((m) => Math.min(maxMin, m + 1));
+        const decMin = () => setEditTimeMin((m) => Math.max(0, m - 1));
+        const incSec = () => setEditTimeSec((s) => (s >= 59 ? 0 : s + 1));
+        const decSec = () => setEditTimeSec((s) => (s <= 0 ? 59 : s - 1));
+
+        // Quick presets: fixed times ≤ period duration
+        const allPresets = [
+          { label: `${maxMin}:00`, min: maxMin, sec: 0 },
+          { label: "5:00", min: 5, sec: 0 },
+          { label: "2:00", min: 2, sec: 0 },
+          { label: "1:00", min: 1, sec: 0 },
+          { label: "0:30", min: 0, sec: 30 },
+          { label: "0:00", min: 0, sec: 0 },
+        ].filter(({ min, sec }) => min * 60 + sec <= maxMin * 60);
+        const presets = allPresets.filter(
+          (p, i, arr) => i === 0 || p.min !== arr[i - 1].min || p.sec !== arr[i - 1].sec,
+        );
+
+        const drumBtn = "rounded-lg h-10 w-10 flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors select-none cursor-pointer active:scale-95";
+
+        return (
+          <Dialog open={editTimeOpen} onOpenChange={(open) => { stopHold(); setEditTimeOpen(open); }}>
+            <DialogContent className="max-w-[280px]">
+              <DialogHeader>
+                <DialogTitle className="text-base">Tiempo restante — {quarterLabel}</DialogTitle>
+              </DialogHeader>
+
+              {/* Drum picker */}
+              <div className="flex items-center justify-center gap-3 py-2">
+                {/* Minutes */}
+                <div className="flex flex-col items-center gap-0.5">
+                  <button
+                    className={drumBtn}
+                    onPointerDown={() => startHold(incMin)} onPointerUp={stopHold} onPointerLeave={stopHold}
+                  >
+                    <ChevronUp className="h-5 w-5" />
+                  </button>
+                  <div
+                    className="w-[72px] h-[64px] rounded-xl bg-muted flex items-center justify-center cursor-ns-resize"
+                    onWheel={(e) => { e.preventDefault(); e.deltaY < 0 ? incMin() : decMin(); }}
+                  >
+                    <span className="text-4xl font-mono font-bold tabular-nums leading-none select-none">
+                      {String(editTimeMin).padStart(2, "0")}
+                    </span>
+                  </div>
+                  <button
+                    className={drumBtn}
+                    onPointerDown={() => startHold(decMin)} onPointerUp={stopHold} onPointerLeave={stopHold}
+                  >
+                    <ChevronDown className="h-5 w-5" />
+                  </button>
+                  <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mt-0.5">min</span>
+                </div>
+
+                {/* Separator */}
+                <span className="text-3xl font-bold text-muted-foreground pb-6 select-none">:</span>
+
+                {/* Seconds */}
+                <div className="flex flex-col items-center gap-0.5">
+                  <button
+                    className={drumBtn}
+                    onPointerDown={() => startHold(incSec)} onPointerUp={stopHold} onPointerLeave={stopHold}
+                  >
+                    <ChevronUp className="h-5 w-5" />
+                  </button>
+                  <div
+                    className="w-[72px] h-[64px] rounded-xl bg-muted flex items-center justify-center cursor-ns-resize"
+                    onWheel={(e) => { e.preventDefault(); e.deltaY < 0 ? incSec() : decSec(); }}
+                  >
+                    <span className="text-4xl font-mono font-bold tabular-nums leading-none select-none">
+                      {String(editTimeSec).padStart(2, "0")}
+                    </span>
+                  </div>
+                  <button
+                    className={drumBtn}
+                    onPointerDown={() => startHold(decSec)} onPointerUp={stopHold} onPointerLeave={stopHold}
+                  >
+                    <ChevronDown className="h-5 w-5" />
+                  </button>
+                  <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mt-0.5">seg</span>
+                </div>
+              </div>
+
+              {/* Quick presets */}
+              <div className="flex flex-wrap gap-1.5 justify-center pb-1">
+                {presets.map(({ label, min, sec }) => (
+                  <button
+                    key={label}
+                    onClick={() => { setEditTimeMin(min); setEditTimeSec(sec); }}
+                    className={cn(
+                      "px-2.5 py-1 rounded-full text-xs border font-medium transition-colors",
+                      editTimeMin === min && editTimeSec === sec
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "border-border hover:bg-muted",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" size="sm" onClick={() => { stopHold(); setEditTimeOpen(false); }}>Cancelar</Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    stopHold();
+                    const targetRemainingMs = Math.min((editTimeMin * 60 + editTimeSec) * 1000, periodDurationMs);
+                    const newTimerMs = Math.max(0, periodDurationMs - targetRemainingMs);
+                    flushHomeMins(newTimerMs, newTimerMs);
+                    flushRivalMins(newTimerMs, newTimerMs);
+                    timerBaseRef.current = newTimerMs;
+                    setTimerMs(newTimerMs);
+                    setEditTimeOpen(false);
+                  }}
+                >
+                  Aplicar
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
 
       {/* Score dialog (used after match is finished — both scores editable) */}
       <Dialog open={scoreDialogOpen} onOpenChange={setScoreDialogOpen}>
@@ -2278,6 +3235,260 @@ export default function MatchDetailPage({
   );
 }
 
+
+// ── fmtMinSec — format total milliseconds as "mm:ss" ────────────────────────
+function fmtMinSec(totalMs: number): string {
+  const m = Math.floor(totalMs / 60000);
+  const s = Math.floor((totalMs % 60000) / 1000);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+// ── LiveStatsTable — live stats during in_progress using sessionStats ────────
+
+function LiveStatsTable({
+  matchPlayers,
+  sessionStats,
+  playerEnteredAtMs,
+  timerMs,
+  trackMinutes,
+  onCourtIds,
+  rosterJerseyMap,
+}: {
+  matchPlayers: MatchPlayer[];
+  sessionStats: Map<number, Partial<import("@basketball-clipper/shared/types").MatchStatUpsert>>;
+  playerEnteredAtMs: Record<number, number>;
+  timerMs: number;
+  trackMinutes: boolean;
+  onCourtIds: Set<number>;
+  rosterJerseyMap: Map<number, number | null>;
+}) {
+  const sorted = [...matchPlayers].sort(
+    (a, b) => (rosterJerseyMap.get(a.player_id) ?? 999) - (rosterJerseyMap.get(b.player_id) ?? 999),
+  );
+
+  const rows = sorted.map((mp) => {
+    const stat = sessionStats.get(mp.player_id);
+    const savedMs = ((stat?.minutes ?? 0) as number) * 60000;
+    const stintMs = trackMinutes && onCourtIds.has(mp.player_id) && playerEnteredAtMs[mp.player_id] != null
+      ? Math.max(0, timerMs - playerEnteredAtMs[mp.player_id])
+      : 0;
+    const liveMs = savedMs + stintMs;
+    const reb = ((stat?.defensive_rebounds ?? 0) as number) + ((stat?.offensive_rebounds ?? 0) as number);
+    const jersey = rosterJerseyMap.get(mp.player_id);
+    return {
+      mp,
+      hasStat: !!stat,
+      liveMs,
+      pts: (stat?.points as number | undefined) ?? 0,
+      reb,
+      ast: (stat?.assists as number | undefined) ?? 0,
+      stl: (stat?.steals as number | undefined) ?? 0,
+      blk: (stat?.blocks as number | undefined) ?? 0,
+      tov: (stat?.turnovers as number | undefined) ?? 0,
+      fls: (stat?.fouls as number | undefined) ?? 0,
+      jersey,
+    };
+  });
+
+  const totals = rows.reduce(
+    (acc, r) => ({
+      ms:  acc.ms  + r.liveMs,
+      pts: acc.pts + r.pts,
+      reb: acc.reb + r.reb,
+      ast: acc.ast + r.ast,
+      stl: acc.stl + r.stl,
+      blk: acc.blk + r.blk,
+      tov: acc.tov + r.tov,
+      fls: acc.fls + r.fls,
+    }),
+    { ms: 0, pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, fls: 0 },
+  );
+
+  return (
+    <div className="border rounded-lg overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b bg-muted/30">
+            <th className="text-left px-4 py-2 font-medium">Jugador</th>
+            {trackMinutes && <th className="text-center px-2 py-2 font-medium w-16">Min</th>}
+            <th className="text-center px-2 py-2 font-medium w-12">Pts</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Reb</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Ast</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Rec</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Tap</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Pér</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Falt</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ mp, hasStat, liveMs, pts, reb, ast, stl, blk, tov, fls, jersey }) => (
+            <tr key={mp.player_id} className={cn("border-b last:border-0", onCourtIds.has(mp.player_id) && "bg-primary/5")}>
+              <td className="px-4 py-2.5 font-medium">
+                <div className="flex items-center gap-1.5">
+                  {onCourtIds.has(mp.player_id) && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+                  )}
+                  {jersey != null && <span className="text-xs text-muted-foreground font-mono">#{jersey}</span>}
+                  <span>{mp.player_first_name} {mp.player_last_name}</span>
+                </div>
+              </td>
+              {trackMinutes && (
+                <td className="text-center px-2 py-2.5 text-muted-foreground font-mono text-xs">
+                  {liveMs > 0 ? fmtMinSec(liveMs) : "—"}
+                </td>
+              )}
+              <td className="text-center px-2 py-2.5 font-semibold">{hasStat ? pts : "—"}</td>
+              <td className="text-center px-2 py-2.5 text-muted-foreground">{hasStat ? reb : "—"}</td>
+              <td className="text-center px-2 py-2.5 text-muted-foreground">{hasStat ? ast : "—"}</td>
+              <td className="text-center px-2 py-2.5 text-muted-foreground">{hasStat ? stl : "—"}</td>
+              <td className="text-center px-2 py-2.5 text-muted-foreground">{hasStat ? blk : "—"}</td>
+              <td className="text-center px-2 py-2.5 text-muted-foreground">{hasStat ? tov : "—"}</td>
+              <td className="text-center px-2 py-2.5 text-muted-foreground">{hasStat ? fls : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t bg-muted/40 font-semibold text-foreground">
+            <td className="px-4 py-2 text-xs uppercase tracking-wide text-muted-foreground">Total</td>
+            {trackMinutes && (
+              <td className="text-center px-2 py-2 font-mono text-xs">
+                {totals.ms > 0 ? fmtMinSec(totals.ms) : "—"}
+              </td>
+            )}
+            <td className="text-center px-2 py-2">{totals.pts}</td>
+            <td className="text-center px-2 py-2">{totals.reb}</td>
+            <td className="text-center px-2 py-2">{totals.ast}</td>
+            <td className="text-center px-2 py-2">{totals.stl}</td>
+            <td className="text-center px-2 py-2">{totals.blk}</td>
+            <td className="text-center px-2 py-2">{totals.tov}</td>
+            <td className="text-center px-2 py-2">{totals.fls}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
+
+// ── LiveOppStatsTable — live rival stats during in_progress ──────────────────
+
+function LiveOppStatsTable({
+  opponentStats,
+  oppStatDraft,
+  rivalEnteredAtMs,
+  timerMs,
+  trackMinutes,
+  onCourtOppIds,
+}: {
+  opponentStats: OpponentMatchStat[];
+  oppStatDraft: Map<number, Partial<import("@basketball-clipper/shared/types").OpponentMatchStatUpsert>>;
+  rivalEnteredAtMs: Record<number, number>;
+  timerMs: number;
+  trackMinutes: boolean;
+  onCourtOppIds: Set<number>;
+}) {
+  const sorted = [...opponentStats].sort(
+    (a, b) => (a.opponent_player.jersey_number ?? 999) - (b.opponent_player.jersey_number ?? 999),
+  );
+
+  const rows = sorted.map((os) => {
+    const draft = oppStatDraft.get(os.opponent_player_id) ?? {};
+    const savedMs = ((draft.minutes ?? 0) as number) * 60000;
+    const stintMs = trackMinutes && onCourtOppIds.has(os.opponent_player_id) && rivalEnteredAtMs[os.opponent_player_id] != null
+      ? Math.max(0, timerMs - rivalEnteredAtMs[os.opponent_player_id])
+      : 0;
+    const liveMs = savedMs + stintMs;
+    const hasDraft = Object.keys(draft).length > 0;
+    const reb = ((draft.defensive_rebounds ?? 0) as number) + ((draft.offensive_rebounds ?? 0) as number);
+    return {
+      os,
+      hasDraft,
+      liveMs,
+      pts: (draft.points as number | undefined) ?? 0,
+      reb,
+      ast: (draft.assists as number | undefined) ?? 0,
+      stl: (draft.steals as number | undefined) ?? 0,
+      blk: (draft.blocks as number | undefined) ?? 0,
+      tov: (draft.turnovers as number | undefined) ?? 0,
+      fls: (draft.fouls as number | undefined) ?? 0,
+    };
+  });
+
+  const totals = rows.reduce(
+    (acc, r) => ({
+      ms:  acc.ms  + r.liveMs,
+      pts: acc.pts + r.pts,
+      reb: acc.reb + r.reb,
+      ast: acc.ast + r.ast,
+      stl: acc.stl + r.stl,
+      blk: acc.blk + r.blk,
+      tov: acc.tov + r.tov,
+      fls: acc.fls + r.fls,
+    }),
+    { ms: 0, pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, fls: 0 },
+  );
+
+  return (
+    <div className="border rounded-lg overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b bg-muted/30">
+            <th className="text-left px-4 py-2 font-medium">Jugador</th>
+            {trackMinutes && <th className="text-center px-2 py-2 font-medium w-16">Min</th>}
+            <th className="text-center px-2 py-2 font-medium w-12">Pts</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Reb</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Ast</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Rec</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Tap</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Pér</th>
+            <th className="text-center px-2 py-2 font-medium w-12">Falt</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ os, hasDraft, liveMs, pts, reb, ast, stl, blk, tov, fls }) => (
+            <tr key={os.opponent_player_id} className={cn("border-b last:border-0", onCourtOppIds.has(os.opponent_player_id) && "bg-primary/5")}>
+              <td className="px-4 py-2.5 font-medium">
+                {onCourtOppIds.has(os.opponent_player_id) && (
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary mr-1.5 shrink-0" />
+                )}
+                {os.opponent_player.name ?? `#${os.opponent_player.jersey_number}`}
+              </td>
+              {trackMinutes && (
+                <td className="text-center px-2 py-2.5 text-muted-foreground font-mono text-xs">
+                  {liveMs > 0 ? fmtMinSec(liveMs) : "—"}
+                </td>
+              )}
+              <td className="text-center px-2 py-2.5 font-semibold">{hasDraft ? pts : "—"}</td>
+              <td className="text-center px-2 py-2.5 text-muted-foreground">{hasDraft ? reb : "—"}</td>
+              <td className="text-center px-2 py-2.5 text-muted-foreground">{hasDraft ? ast : "—"}</td>
+              <td className="text-center px-2 py-2.5 text-muted-foreground">{hasDraft ? stl : "—"}</td>
+              <td className="text-center px-2 py-2.5 text-muted-foreground">{hasDraft ? blk : "—"}</td>
+              <td className="text-center px-2 py-2.5 text-muted-foreground">{hasDraft ? tov : "—"}</td>
+              <td className="text-center px-2 py-2.5 text-muted-foreground">{hasDraft ? fls : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t bg-muted/40 font-semibold text-foreground">
+            <td className="px-4 py-2 text-xs uppercase tracking-wide text-muted-foreground">Total</td>
+            {trackMinutes && (
+              <td className="text-center px-2 py-2 font-mono text-xs">
+                {totals.ms > 0 ? fmtMinSec(totals.ms) : "—"}
+              </td>
+            )}
+            <td className="text-center px-2 py-2">{totals.pts}</td>
+            <td className="text-center px-2 py-2">{totals.reb}</td>
+            <td className="text-center px-2 py-2">{totals.ast}</td>
+            <td className="text-center px-2 py-2">{totals.stl}</td>
+            <td className="text-center px-2 py-2">{totals.blk}</td>
+            <td className="text-center px-2 py-2">{totals.tov}</td>
+            <td className="text-center px-2 py-2">{totals.fls}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
+
 // ── StatsTable — read-only stats view ────────────────────────────────────────────
 
 import type { MatchPlayer, MatchStat, OpponentMatchStat } from "@basketball-clipper/shared/types";
@@ -2285,24 +3496,29 @@ import type { MatchPlayer, MatchStat, OpponentMatchStat } from "@basketball-clip
 function StatsTable({
   matchPlayers,
   stats,
+  rosterJerseyMap,
 }: {
   matchPlayers: MatchPlayer[];
   stats: MatchStat[];
+  rosterJerseyMap?: Map<number, number | null>;
 }) {
-  // When match_players is empty (convocatoria not set up), fall back to rendering
-  // rows directly from match_stats using the player names embedded in each stat.
-  const rows =
+  // When match_players is empty, fall back to stats rows directly.
+  const rows = (
     matchPlayers.length > 0
       ? matchPlayers.map((mp) => {
           const stat = stats.find((s) => s.player_id === mp.player_id);
-          return { key: mp.player_id, firstName: mp.player_first_name, lastName: mp.player_last_name, stat };
+          const jersey = rosterJerseyMap?.get(mp.player_id);
+          return { key: mp.player_id, firstName: mp.player_first_name, lastName: mp.player_last_name, stat, jersey };
         })
       : stats.map((s) => ({
           key: s.player_id,
+
           firstName: s.player_first_name,
           lastName: s.player_last_name,
           stat: s,
-        }));
+          jersey: undefined as number | null | undefined,
+        }))
+  );
 
   return (
     <div className="border rounded-lg overflow-x-auto">
@@ -2321,21 +3537,24 @@ function StatsTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map(({ key, firstName, lastName, stat }) => {
+          {rows.map(({ key, firstName, lastName, stat, jersey }) => {
             const totalReb = (stat?.defensive_rebounds ?? 0) + (stat?.offensive_rebounds ?? 0);
             return (
               <tr key={key} className="border-b last:border-0">
                 <td className="px-4 py-2.5 font-medium">
+                  {jersey != null && (
+                    <span className="text-muted-foreground mr-1.5 text-xs">#{jersey}</span>
+                  )}
                   {firstName} {lastName}
                 </td>
-                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.minutes ?? "—"}</td>
-                <td className="text-center px-2 py-2.5 font-semibold">{stat?.points ?? "—"}</td>
-                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat ? totalReb : "—"}</td>
-                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.assists ?? "—"}</td>
-                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.steals ?? "—"}</td>
-                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.blocks ?? "—"}</td>
-                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.turnovers ?? "—"}</td>
-                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.fouls ?? "—"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.minutes ?? "\u2014"}</td>
+                <td className="text-center px-2 py-2.5 font-semibold">{stat?.points ?? "\u2014"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat ? totalReb : "\u2014"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.assists ?? "\u2014"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.steals ?? "\u2014"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.blocks ?? "\u2014"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.turnovers ?? "\u2014"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.fouls ?? "\u2014"}</td>
               </tr>
             );
           })}
@@ -2345,7 +3564,7 @@ function StatsTable({
   );
 }
 
-// ── OppStatsTable — read-only opponent stats view ────────────────────────────────────────────────
+// ── OppStatsTable — read-only opponent stats view ─────────────────────────────
 
 function OppStatsTable({ opponentStats }: { opponentStats: OpponentMatchStat[] }) {
   return (
@@ -2373,14 +3592,14 @@ function OppStatsTable({ opponentStats }: { opponentStats: OpponentMatchStat[] }
                   <span className="text-xs text-muted-foreground mr-2">#{os.opponent_player.jersey_number}</span>
                   {os.opponent_player.name}
                 </td>
-                <td className="text-center px-2 py-2.5 text-muted-foreground">{os.minutes ?? "—"}</td>
-                <td className="text-center px-2 py-2.5 font-semibold">{os.points ?? "—"}</td>
-                <td className="text-center px-2 py-2.5 text-muted-foreground">{totalReb || "—"}</td>
-                <td className="text-center px-2 py-2.5 text-muted-foreground">{os.assists ?? "—"}</td>
-                <td className="text-center px-2 py-2.5 text-muted-foreground">{os.steals ?? "—"}</td>
-                <td className="text-center px-2 py-2.5 text-muted-foreground">{os.blocks ?? "—"}</td>
-                <td className="text-center px-2 py-2.5 text-muted-foreground">{os.turnovers ?? "—"}</td>
-                <td className="text-center px-2 py-2.5 text-muted-foreground">{os.fouls ?? "—"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{os.minutes ?? "\u2014"}</td>
+                <td className="text-center px-2 py-2.5 font-semibold">{os.points ?? "\u2014"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{totalReb || "\u2014"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{os.assists ?? "\u2014"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{os.steals ?? "\u2014"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{os.blocks ?? "\u2014"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{os.turnovers ?? "\u2014"}</td>
+                <td className="text-center px-2 py-2.5 text-muted-foreground">{os.fouls ?? "\u2014"}</td>
               </tr>
             );
           })}
@@ -2390,7 +3609,7 @@ function OppStatsTable({ opponentStats }: { opponentStats: OpponentMatchStat[] }
   );
 }
 
-// ── ActionButton ────────────────────────────────────────────────────────────────────────────
+// ── ActionButton ──────────────────────────────────────────────────────────────
 
 function ActionButton({
   label,
@@ -2418,7 +3637,7 @@ function ActionButton({
   );
 }
 
-// ── StatsBarChart — horizontal bar chart for finished match stats ─────────────────────────────
+// ── StatsBarChart — horizontal bar chart for finished match stats ─────────────
 
 type ChartStat = "points" | "rebounds" | "assists";
 
@@ -2445,15 +3664,12 @@ function StatsBarChart({
         })
       : stats.map((s) => ({ name: `${s.player_first_name} ${s.player_last_name}`, stat: s }))
   )
-    .map(({ name, stat }) => {
-      const rebounds = (stat?.defensive_rebounds ?? 0) + (stat?.offensive_rebounds ?? 0);
-      return {
-        name,
-        points:   stat?.points   ?? 0,
-        rebounds,
-        assists:  stat?.assists  ?? 0,
-      };
-    })
+    .map(({ name, stat }) => ({
+      name,
+      points:   stat?.points   ?? 0,
+      rebounds: (stat?.defensive_rebounds ?? 0) + (stat?.offensive_rebounds ?? 0),
+      assists:  stat?.assists  ?? 0,
+    }))
     .sort((a, b) => b[activeStat] - a[activeStat]);
 
   const maxVal = Math.max(...rows.map((r) => r[activeStat]), 1);
@@ -2479,7 +3695,6 @@ function StatsBarChart({
           ))}
         </div>
       </div>
-
       <div className="space-y-2.5">
         {rows.map((row) => {
           const val   = row[activeStat];
@@ -2505,7 +3720,6 @@ function StatsBarChart({
             </div>
           );
         })}
-
         {rows.every((r) => r[activeStat] === 0) && (
           <p className="text-xs text-muted-foreground text-center py-2">
             Sin datos registrados para esta estadística.

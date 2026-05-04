@@ -76,7 +76,13 @@ python3 scripts/validate_files.py \
 ```
 El script detecta null bytes (los elimina automáticamente) y contenido duplicado (lo reporta).
 
-**6. Migraciones Alembic — columnas con server_default + cast a enum:**
+**6. Tests de regresión — ejecutar siempre tras cambios en routers o modelos:**
+```bash
+cd backend && python3 -m pytest tests/ -q && echo "ALL TESTS OK"
+```
+Si algún test falla, no declarar el trabajo terminado hasta corregirlo.
+
+**7. Migraciones Alembic — columnas con server_default + cast a enum:**
 Cuando una columna tiene `server_default` de texto y se quiere cambiar el tipo a un enum PostgreSQL,
 hay que dropear el default ANTES del ALTER y restaurarlo DESPUÉS — PostgreSQL no puede castear el
 default string al enum automáticamente:
@@ -116,7 +122,13 @@ npx tsc --project web/tsconfig.json --noEmit 2>&1 | head -40
 ```
 Si `tsconfig.json` no tiene `noEmit`, añadir `--noEmit` de todas formas — solo queremos errores, no output.
 
-**2. Coherencia de imports en shared/api/ — regla crítica:**
+**3. Tests unitarios — ejecutar siempre tras cambios en `lib/` o lógica de negocio web:**
+```bash
+cd web && npm test
+```
+Si algún test falla, no declarar el trabajo terminado hasta corregirlo.
+
+**4. Coherencia de imports en shared/api/ — regla crítica:**
 - Los únicos exports de `shared/api/client.ts` son: `BASE_URL`, `WS_BASE_URL`, `ApiError`, `RequestOptions`, `apiRequest`.
 - Ningún archivo de `shared/api/` debe importar `apiClient` — no existe.
 - Todos los bodies de POST/PATCH deben pasarse como `body: JSON.stringify(data)`, nunca como objeto plano.
@@ -247,8 +259,8 @@ Si cualquiera de estos tres pasos falla, el login del frontend fallará — aunq
 **Por qué importa el paso 3**: `hydrateFromToken` en `web/lib/auth.tsx` llama a `getMe` y `getMyProfiles` en paralelo después del login. Si `getMyProfiles` lanza un error (por import roto, URL incorrecta, o respuesta inesperada), el `catch` del formulario de login muestra "credenciales incorrectas" aunque el login haya funcionado.
 
 ### Al finalizar cada sesión
-1. **Ejecuta las verificaciones de backend** descritas arriba sobre todos los archivos tocados.
-2. **Ejecuta las verificaciones de shared/web** si tocaste TypeScript.
+1. **Ejecuta las verificaciones de backend** descritas arriba sobre todos los archivos tocados, incluyendo `python3 -m pytest tests/ -q`.
+2. **Ejecuta las verificaciones de shared/web** si tocaste TypeScript, incluyendo `cd web && npm test`.
 3. **Ejecuta el smoke test de login** si tocaste auth, perfiles o shared/api/.
 4. **Actualiza `PROGRESS.md`**: marca lo completado, actualiza lo pendiente, añade entrada al historial.
 5. **Actualiza `CLAUDE.md`** si cambiaste la arquitectura, añadiste dependencias o tomaste decisiones técnicas nuevas.

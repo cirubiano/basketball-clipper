@@ -304,6 +304,35 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ## Historial de sesiones
 
+### 2026-05-04 — Sesión 49 (Fase H — UX partidos: correcciones y mejoras en control de partido en vivo)
+
+**Objetivo**: corregir bugs reportados en la pantalla de detalle de partido y mejorar la UX de los controles en vivo.
+
+**Web — `web/app/teams/[teamId]/matches/[matchId]/page.tsx`:**
+
+*Bugs corregidos:*
+- **Convocatoria editable durante partido** (`canEditConvocatoria`): cambiado de `status !== "finished" && status !== "cancelled"` a `status === "scheduled"`. La convocatoria solo es editable antes de iniciar el partido.
+- **Titulares perdidos al refrescar**: el `saveEffect` de sessionStorage sobrescribía los datos antes de que el `restoreEffect` los aplicara. Fix: `onCourtIds`, `onCourtOppIds`, `timerMs`, `currentQuarter`, `playerEnteredAtMs`, `rivalEnteredAtMs` se inicializan ahora con lazy initializers de `useState` que leen sessionStorage síncronamente; el `restoreEffect` se ha eliminado.
+- **Dorsales del rival sin orden**: la columna del rival (y la del local cuando `track_home_minutes=false`) ordenan los jugadores por `jersey_number` antes de renderizar. Variables precalculadas `liveHomePlayers` y `liveOppStats`.
+- **Múltiples jugadores "en pista" en el rival**: `handleOppPlayerClick` solo alterna `selectedOppPlayerId`, sin tocar `onCourtOppIds`. Eliminado el fondo azul claro (`bg-primary/10`) de las tarjetas del rival — solo el jugador seleccionado muestra el tratamiento visual completo.
+
+*Mejoras:*
+- **Indicador de equipo activo**: el recuadro central de jugador seleccionado muestra `◀ [Equipo local]` cuando el jugador activo es del equipo local, y `[Rival] ▶` cuando es del rival. El nombre del equipo aparece en ambos lados para orientar visualmente las acciones.
+- **Clic fuera deselecciona**: `mousedown` listener en `document` que comprueba si el clic cae dentro del grid de tres columnas (`playerGridRef`); si cae fuera, limpia `selectedPlayerId`, `selectedOppPlayerId`, `homeTeamSelected` y `rivalTeamSelected`.
+- **Botón "Finalizar partido"**: aparece solo cuando `currentQuarter >= regularQuarters` (último cuarto o prórroga), tanto en el marcador superior como al fondo de la pestaña de estadísticas.
+- **Restricción de avance de cuarto**:
+  - Si `remainingMs > 0`: diálogo de confirmación con el tiempo restante antes de avanzar.
+  - Si el avance lleva a prórroga y el marcador no está empatado: diálogo de error bloqueante.
+- **Reestructuración de controles** (sesión anterior, completado):
+  - Panel de control separado en fila de periodo (badge + botón siguiente cuarto) y fila de cronómetro (tiempo + pausar/reanudar + editar tiempo).
+  - Botón "Cambio" movido a cada columna de equipo; solo aparece si el equipo tiene `track_*_minutes=true`.
+  - Sustituciones del rival implementadas (incluyendo cálculo de minutos si `track_rival_minutes=true`).
+  - Diálogo para editar el tiempo manualmente (formato `mm:ss`).
+
+**Verificaciones**: ESLint 0 errores ✔, TSC 0 errores ✔
+
+---
+
 ### 2026-05-03 — Sesión 48 (Fase H — Seguimiento de minutos: titulares, sustituciones automáticas, minutos en vivo)
 
 **Objetivo**: implementar el sistema completo de seguimiento de minutos por jugador en partidos, incluyendo selección de titulares antes del inicio, cálculo automático de minutos en sustituciones, y minutos en vivo en las tarjetas de jugador.

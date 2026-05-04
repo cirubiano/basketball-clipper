@@ -464,7 +464,14 @@ async def add_match_player(
     await _get_team_or_404(club_id, team_id, db)
     profile = await _require_team_member(club_id, team_id, current_user, db)
     _require_coach_or_td(profile, current_user)
-    await _get_match_or_404(match_id, team_id, db)
+    match = await _get_match_or_404(match_id, team_id, db)
+
+    from app.models.match import MatchStatus as _MS
+    if match.status in (_MS.in_progress, _MS.finished):
+        raise HTTPException(
+            status_code=409,
+            detail="No se puede modificar la convocatoria con el partido en curso o finalizado.",
+        )
 
     player_id: int = body["player_id"]
     player = await db.get(Player, player_id)
@@ -505,8 +512,17 @@ async def remove_match_player(
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     await _get_club_or_404(club_id, db)
+    await _get_team_or_404(club_id, team_id, db)
     profile = await _require_team_member(club_id, team_id, current_user, db)
     _require_coach_or_td(profile, current_user)
+    match = await _get_match_or_404(match_id, team_id, db)
+
+    from app.models.match import MatchStatus as _MS
+    if match.status in (_MS.in_progress, _MS.finished):
+        raise HTTPException(
+            status_code=409,
+            detail="No se puede modificar la convocatoria con el partido en curso o finalizado.",
+        )
 
     mp = await db.scalar(
         select(MatchPlayer).where(
