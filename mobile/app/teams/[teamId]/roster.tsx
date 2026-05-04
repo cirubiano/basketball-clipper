@@ -378,9 +378,9 @@ export default function RosterScreen() {
                       >
                         {p.first_name} {p.last_name}
                       </Text>
-                      {p.position && (
+                      {p.positions.length > 0 && (
                         <Text style={styles.pickerOptionMeta}>
-                          {ROSTER_POSITION_LABELS[p.position]}
+                          {p.positions.map((pos) => pos.name).join(", ")}
                         </Text>
                       )}
                     </TouchableOpacity>
