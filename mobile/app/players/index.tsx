@@ -17,24 +17,14 @@ import {
   updatePlayer,
   archivePlayer,
 } from "@basketball-clipper/shared/api";
-import { POSITION_LABELS } from "@basketball-clipper/shared/types";
-import type { Player, PlayerCreate, PlayerPosition } from "@basketball-clipper/shared/types";
+import type { Player, PlayerCreate } from "@basketball-clipper/shared/types";
 import { useAuth } from "../../lib/auth";
 import { colors, fontSize, radius, spacing } from "../../lib/theme";
-
-const POSITIONS: PlayerPosition[] = [
-  "point_guard",
-  "shooting_guard",
-  "small_forward",
-  "power_forward",
-  "center",
-];
 
 const EMPTY_FORM: PlayerCreate = {
   first_name: "",
   last_name: "",
   date_of_birth: null,
-  position: null,
 };
 
 export default function PlayersScreen() {
@@ -46,7 +36,6 @@ export default function PlayersScreen() {
   const [editPlayer, setEditPlayer] = useState<Player | null>(null);
   const [form, setForm] = useState<PlayerCreate>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
-  const [posPickerOpen, setPosPickerOpen] = useState(false);
 
   const { data: players = [], isLoading } = useQuery({
     queryKey: ["players", clubId],
@@ -84,7 +73,6 @@ export default function PlayersScreen() {
       first_name: p.first_name,
       last_name: p.last_name,
       date_of_birth: p.date_of_birth,
-      position: p.position,
     });
     setFormError(null);
     setModalOpen(true);
@@ -131,7 +119,9 @@ export default function PlayersScreen() {
                 {item.first_name} {item.last_name}
               </Text>
               <Text style={styles.meta}>
-                {item.position ? POSITION_LABELS[item.position] : "Sin posición"}
+                {item.positions.length > 0
+                  ? item.positions.map((pos) => pos.name).join(", ")
+                  : "Sin posición"}
                 {item.date_of_birth ? ` · ${item.date_of_birth}` : ""}
               </Text>
             </View>
@@ -241,20 +231,6 @@ export default function PlayersScreen() {
               keyboardType="numbers-and-punctuation"
             />
 
-            <Text style={styles.label}>Posición</Text>
-            <TouchableOpacity
-              style={[styles.input, styles.inputPicker]}
-              onPress={() => setPosPickerOpen(true)}
-            >
-              <Text
-                style={
-                  form.position ? styles.inputText : styles.inputPlaceholder
-                }
-              >
-                {form.position ? POSITION_LABELS[form.position] : "Sin posición"}
-              </Text>
-            </TouchableOpacity>
-
             {formError && (
               <View style={styles.errorBox}>
                 <Text style={styles.errorText}>{formError}</Text>
@@ -288,54 +264,6 @@ export default function PlayersScreen() {
           </View>
         </View>
 
-        {/* Picker de posición */}
-        <Modal
-          visible={posPickerOpen}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setPosPickerOpen(false)}
-        >
-          <TouchableOpacity
-            style={styles.pickerOverlay}
-            activeOpacity={1}
-            onPress={() => setPosPickerOpen(false)}
-          >
-            <View style={styles.pickerSheet}>
-              <Text style={styles.pickerTitle}>Posición</Text>
-              <TouchableOpacity
-                style={styles.pickerOption}
-                onPress={() => {
-                  setForm((f) => ({ ...f, position: null }));
-                  setPosPickerOpen(false);
-                }}
-              >
-                <Text style={styles.pickerOptionText}>Sin posición</Text>
-              </TouchableOpacity>
-              {POSITIONS.map((pos) => (
-                <TouchableOpacity
-                  key={pos}
-                  style={[
-                    styles.pickerOption,
-                    form.position === pos && styles.pickerOptionActive,
-                  ]}
-                  onPress={() => {
-                    setForm((f) => ({ ...f, position: pos }));
-                    setPosPickerOpen(false);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.pickerOptionText,
-                      form.position === pos && styles.pickerOptionActiveText,
-                    ]}
-                  >
-                    {POSITION_LABELS[pos]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </TouchableOpacity>
-        </Modal>
       </Modal>
     </View>
   );

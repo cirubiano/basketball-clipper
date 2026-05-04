@@ -19,18 +19,18 @@ import {
   updateRosterEntry,
   removeFromRoster,
 } from "@basketball-clipper/shared/api";
-import { POSITION_LABELS } from "@basketball-clipper/shared/types";
+import { ROSTER_POSITION_LABELS } from "@basketball-clipper/shared/types";
 import type {
   Player,
   RosterEntry,
   RosterEntryCreate,
   RosterEntryUpdate,
-  PlayerPosition,
+  RosterPosition,
 } from "@basketball-clipper/shared/types";
 import { useAuth } from "../../../lib/auth";
 import { colors, fontSize, radius, spacing } from "../../../lib/theme";
 
-const POSITIONS: PlayerPosition[] = [
+const POSITIONS: RosterPosition[] = [
   "point_guard",
   "shooting_guard",
   "small_forward",
@@ -60,7 +60,7 @@ export default function RosterScreen() {
   const [addForm, setAddForm] = useState<{
     playerId: number | null;
     jersey: string;
-    position: PlayerPosition | null;
+    position: RosterPosition | null;
   }>({ playerId: null, jersey: "", position: null });
   const [editForm, setEditForm] = useState<RosterEntryUpdate>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -145,7 +145,7 @@ export default function RosterScreen() {
     setPosPickerOpen(true);
   }
 
-  function selectPosition(pos: PlayerPosition | null) {
+  function selectPosition(pos: RosterPosition | null) {
     if (posPickerTarget === "add") {
       setAddForm((f) => ({ ...f, position: pos }));
     } else {
@@ -184,7 +184,7 @@ export default function RosterScreen() {
                 {item.player.first_name} {item.player.last_name}
               </Text>
               <Text style={styles.meta}>
-                {item.position ? POSITION_LABELS[item.position] : "Sin posición"}
+                {item.position ? ROSTER_POSITION_LABELS[item.position] : "Sin posición"}
                 {item.points_per_game != null
                   ? ` · ${item.points_per_game} ppg · ${item.rebounds_per_game} rpg`
                   : ""}
@@ -294,7 +294,7 @@ export default function RosterScreen() {
                 }
               >
                 {addForm.position
-                  ? POSITION_LABELS[addForm.position]
+                  ? ROSTER_POSITION_LABELS[addForm.position]
                   : "Sin posición"}
               </Text>
             </TouchableOpacity>
@@ -380,7 +380,7 @@ export default function RosterScreen() {
                       </Text>
                       {p.position && (
                         <Text style={styles.pickerOptionMeta}>
-                          {POSITION_LABELS[p.position]}
+                          {ROSTER_POSITION_LABELS[p.position]}
                         </Text>
                       )}
                     </TouchableOpacity>
@@ -442,7 +442,7 @@ export default function RosterScreen() {
                 }
               >
                 {editForm.position
-                  ? POSITION_LABELS[editForm.position]
+                  ? ROSTER_POSITION_LABELS[editForm.position]
                   : "Sin posición"}
               </Text>
             </TouchableOpacity>
@@ -542,7 +542,7 @@ export default function RosterScreen() {
                       current === pos && styles.pickerOptionActiveText,
                     ]}
                   >
-                    {POSITION_LABELS[pos]}
+                    {ROSTER_POSITION_LABELS[pos]}
                   </Text>
                 </TouchableOpacity>
               );

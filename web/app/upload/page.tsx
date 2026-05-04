@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PageShell } from "@/components/layout/PageShell";
 import { VideoUploader } from "@/components/video/VideoUploader";
@@ -20,7 +20,7 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 }
 
-export default function UploadPage() {
+function UploadPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { activeProfile } = useAuth();
@@ -254,5 +254,13 @@ export default function UploadPage() {
         )}
       </div>
     </PageShell>
+  );
+}
+
+export default function UploadPage() {
+  return (
+    <Suspense>
+      <UploadPageContent />
+    </Suspense>
   );
 }
