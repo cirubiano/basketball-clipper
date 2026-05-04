@@ -21,35 +21,30 @@
 4. Si el cambio afecta a múltiples capas, identifica todos los archivos implicados antes de empezar (backend → shared → web/mobile).
 
 ### Después de cada bloque de cambios en backend
-Ejecuta siempre estas verificaciones antes de declarar el trabajo terminado:
 
-**1. Sintaxis Python — todos los archivos tocados:**
+**Ejecuta `make check-backend` antes de declarar el trabajo terminado.**
+
+Esto corre pytest completo con coverage. Si algún test falla, no declarar el trabajo terminado.
+
 ```bash
-cd backend
-python -m py_compile \
-  app/main.py \
-  app/core/security.py \
-  app/models/__init__.py \
-  # añade aquí los archivos que hayas creado o modificado
-&& echo "ALL OK"
+make check-backend
+# equivalente: docker compose run --rm backend python -m pytest tests/ -q
 ```
 
-**2. Coherencia de rutas — para cada router nuevo o modificado:**
-- Comprueba el `prefix` con el que está registrado en `main.py`.
-- Verifica que `prefix + path_del_decorator` da la URL documentada en la tabla de API.
-- Ejemplo: prefix `/clubs` + `@router.post("/{id}/profiles")` → `POST /clubs/{id}/profiles` ✓
-- Trampa común: un endpoint en router `/profiles` con path `/clubs/{id}/profiles` → `POST /profiles/clubs/{id}/profiles` ✗
+Los tests automatizan las siguientes verificaciones — no hace falta hacerlas manualmente:
+- Coherencia de rutas (`test_conventions.py::test_all_api_routes_registered`)
+- Convenciones de `shared/api/` (`test_conventions.py::test_no_apiClient_*`)
+- Imports de módulos (`test_startup.py::test_module_imports_cleanly`)
+- Tablas en Base.metadata (`test_startup.py::test_all_models_are_mapped_on_base`)
 
-**3. Coherencia modelo ↔ schema ↔ migración — para cada modelo nuevo:**
+**Regla para endpoints nuevos:** cuando añades un endpoint, también añádelo a `expected` en `test_conventions.py::test_all_api_routes_registered`. El test fallará hasta que lo hagas — así es como funciona.
+
+**Coherencia modelo ↔ schema ↔ migración — verificación manual para cada modelo nuevo:**
 - Cada campo del modelo SQLAlchemy tiene su columna en la migración Alembic.
 - Cada campo del schema Pydantic de respuesta existe en el modelo ORM.
 - Los nombres de columnas y tipos coinciden (ej: `starts_at` no `start_date`).
 
-**4. Imports — para cada router:**
-- Todos los modelos y schemas importados en el router se usan realmente.
-- No hay imports que ya no hagan falta tras refactorizaciones.
-
-**5. Truncamiento y corrupción de archivos — problema conocido del mount bash:**
+**Truncamiento y corrupción de archivos — problema conocido del mount bash:**
 
 El Write/Edit tool escribe en el filesystem Windows, pero el mount bash (`/sessions/.../mnt/`) puede ver una versión desactualizada. Esto provoca dos bugs al usar `cat >>`:
 - **Null bytes al final**: el append sobreescribe bytes ya escritos por el Write tool.
@@ -67,22 +62,12 @@ open(path, "w").write(src)
 # cat >> archivo << 'EOF' ... EOF
 ```
 
-**Validación post-escritura** — ejecutar tras cada sesión de edición de archivos `.tsx` o `.py`:
+Si un archivo TSX está truncado, restaurar desde git:
 ```bash
-python3 scripts/validate_files.py \
-  web/components/layout/Sidebar.tsx \
-  web/app/teams/\[teamId\]/matches/\[matchId\]/page.tsx
-  # añadir aquí todos los archivos tocados
+git show HEAD:web/components/mi_componente.tsx > web/components/mi_componente.tsx
 ```
-El script detecta null bytes (los elimina automáticamente) y contenido duplicado (lo reporta).
 
-**6. Tests de regresión — ejecutar siempre tras cambios en routers o modelos:**
-```bash
-cd backend && python3 -m pytest tests/ -q && echo "ALL TESTS OK"
-```
-Si algún test falla, no declarar el trabajo terminado hasta corregirlo.
-
-**7. Migraciones Alembic — columnas con server_default + cast a enum:**
+**Migraciones Alembic — columnas con server_default + cast a enum:**
 Cuando una columna tiene `server_default` de texto y se quiere cambiar el tipo a un enum PostgreSQL,
 hay que dropear el default ANTES del ALTER y restaurarlo DESPUÉS — PostgreSQL no puede castear el
 default string al enum automáticamente:
@@ -99,61 +84,32 @@ op.execute(sa.text(
 ```
 
 ### Después de cada bloque de cambios en shared/ o web/
-Ejecuta siempre estas verificaciones antes de declarar el trabajo terminado:
 
-**1. Lint de Next.js — ejecutar SIEMPRE antes de declarar terminado:**
+**Ejecuta `make check-web` antes de declarar el trabajo terminado.**
+
 ```bash
-cd web && npm run lint 2>&1 | tail -20
-```
-Errores frecuentes que bloquean CI:
-- `@next/next/no-img-element`: usar `<Image />` de `next/image`, o si la URL es externa y no se puede configurar en `next.config.js`, añadir `{/* eslint-disable-next-line @next/next/no-img-element */}` en la línea anterior.
-- `react/no-unescaped-entities`: los caracteres `"`, `'`, `>`, `{` dentro de texto JSX deben escaparse con `&quot;`, `&apos;`, `&gt;`, `&#123;` — o extraerse a una variable JS.
-  - ✗ `<p>Resultados de "{search}"</p>`
-  - ✓ `<p>Resultados de &quot;{search}&quot;</p>`
-
-**2. Type-check de TypeScript — shared y web:**
-```bash
-# Verificar shared/ (sin emitir archivos)
-cd /path/to/project
-npx tsc --project shared/tsconfig.json --noEmit 2>&1 | head -40
-
-# Verificar web/
-npx tsc --project web/tsconfig.json --noEmit 2>&1 | head -40
-```
-Si `tsconfig.json` no tiene `noEmit`, añadir `--noEmit` de todas formas — solo queremos errores, no output.
-
-**3. Tests unitarios — ejecutar siempre tras cambios en `lib/` o lógica de negocio web:**
-```bash
-cd web && npm test
-```
-Si algún test falla, no declarar el trabajo terminado hasta corregirlo.
-
-**4. Coherencia de imports en shared/api/ — regla crítica:**
-- Los únicos exports de `shared/api/client.ts` son: `BASE_URL`, `WS_BASE_URL`, `ApiError`, `RequestOptions`, `apiRequest`.
-- Ningún archivo de `shared/api/` debe importar `apiClient` — no existe.
-- Todos los bodies de POST/PATCH deben pasarse como `body: JSON.stringify(data)`, nunca como objeto plano.
-- Verificar con grep:
-```bash
-grep -r "apiClient" shared/api/   # debe devolver 0 resultados
-grep -r "body: {" shared/api/     # debe devolver 0 resultados (usar JSON.stringify)
-grep -r "body: data" shared/api/  # debe devolver 0 resultados
+make check-web
+# Corre en secuencia: shared tsc → web tsc → web lint → web vitest
 ```
 
-**5. Imports desde shared — usar siempre sub-paths, nunca el root:**
-- Las páginas web deben importar desde `@basketball-clipper/shared/api` o `@basketball-clipper/shared/types`.
-- NUNCA usar `@basketball-clipper/shared` (root) directamente — el `package.json` de shared
-  ahora expone `"."` pero es más explícito y seguro usar los sub-paths.
-- `shared/package.json` exports correctos:
-```json
-{
-  ".": "./index.ts",
-  "./types": "./types/index.ts",
-  "./api": "./api/index.ts"
-}
-```
-- Si se añade un nuevo sub-módulo, actualizar el `exports` en `shared/package.json`.
+Esto incluye el test de convenciones de imports (`conventions.test.ts`) — no hace falta hacer el grep manualmente.
 
-**6. Select de shadcn/ui — nunca usar `value=""` en `<SelectItem>`:**
+Errores frecuentes que detecta el lint:
+- `@next/next/no-img-element`: usar `<Image />` de `next/image`, o si la URL es externa, añadir el comentario `// eslint-disable-next-line @next/next/no-img-element` (comentario JS, no JSX) en la línea anterior al `<img>`.
+- `react/no-unescaped-entities`: los caracteres `"`, `'`, `>`, `{` dentro de texto JSX deben escaparse: `&quot;`, `&apos;`, `&gt;`, `&#123;`.
+
+**Convenciones de shared/api/ — los únicos exports de `client.ts` son:**
+`BASE_URL`, `WS_BASE_URL`, `ApiError`, `RequestOptions`, `apiRequest`.
+- Usar `apiRequest`, nunca `apiClient` (no existe).
+- Bodies de POST/PATCH: siempre `body: JSON.stringify(data)`, nunca objeto plano.
+- Estas reglas están cubiertas por `test_conventions.py` — si las rompes, `make check-backend` falla.
+
+**Imports desde shared — usar siempre sub-paths:**
+- ✓ `@basketball-clipper/shared/api` · `@basketball-clipper/shared/types`
+- ✗ `@basketball-clipper/shared` (root) — cubierto por `conventions.test.ts`
+- Si se añade un nuevo sub-módulo, actualizar `exports` en `shared/package.json`.
+
+**Select de shadcn/ui — nunca usar `value=""` en `<SelectItem>`:**
 Radix UI usa el string vacío internamente para limpiar la selección. Un `<SelectItem value="">` lanza un error en runtime.
 - ✗ `<SelectItem value="">Sin posición</SelectItem>`
 - ✓ `<SelectItem value="none">Sin posición</SelectItem>`
@@ -215,28 +171,18 @@ Si se necesita un componente nuevo, también hay que añadir su paquete `@radix-
 `web/package.json` y ejecutar `docker-compose down -v && docker-compose build web && docker-compose up`
 para reinstalar los node_modules (el volumen Docker persiste los packages instalados).
 
-**7. Truncamiento de archivos web — restaurar desde git:**
-Si un archivo TypeScript/TSX está truncado (termina a mitad de código), restaurarlo desde git:
-```bash
-git show HEAD:web/components/mi_componente.tsx > web/components/mi_componente.tsx
-# Verificar:
-tail -1 web/components/mi_componente.tsx   # debe ser "}" o similar
-wc -l web/components/mi_componente.tsx     # comparar con git show HEAD:... | wc -l
-```
-
-**3. Coherencia shared/api/ ↔ tabla de API REST — para cada función nueva:**
+**Coherencia shared/api/ ↔ tabla de API REST — para cada función nueva:**
 - Cada función en `shared/api/` llama a una URL que existe en la tabla de API de este archivo.
 - El método HTTP coincide (GET/POST/PATCH/DELETE).
-- Las URLs con `profile_id`, `club_id`, etc. coinciden exactamente con el patrón del endpoint.
 - Trampa frecuente: `assignProfile` era `/profiles/clubs/${clubId}/profiles` cuando el endpoint real es `/clubs/${clubId}/profiles`.
 
-**4. Coherencia shared/types/ ↔ schemas Pydantic — para cada tipo nuevo:**
+**Coherencia shared/types/ ↔ schemas Pydantic — para cada tipo nuevo:**
 - Los nombres de campos coinciden exactamente (snake_case en ambos lados).
 - Los tipos opcionales en Python (`Optional[X]`) corresponden a `X | null` en TypeScript.
 - Los enums coinciden: si el backend define `"future" | "active" | "archived"`, el tipo TS debe ser igual.
 
-### Smoke test de login — ejecutar siempre tras cambios en auth o shared/api/
-Antes de declarar cualquier tarea terminada que toque auth, perfiles o shared/api, verificar manualmente (o con curl) que el flujo de login funciona de extremo a extremo:
+### Smoke test de login — solo si tocas auth, perfiles o shared/api/
+Si `make check` pasa pero sospechas de un problema de integración en el flujo de login, verifica los tres pasos manualmente con el stack levantado:
 
 ```bash
 # 1. Login → debe devolver access_token
@@ -249,23 +195,19 @@ TOKEN="<token_del_paso_anterior>"
 curl -s http://localhost:8000/auth/me \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 
-# 3. Verificar /profiles (usado por hydrateFromToken en el frontend)
+# 3. Verificar /profiles (el más crítico — usado por hydrateFromToken)
 curl -s http://localhost:8000/profiles \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 ```
 
-Si cualquiera de estos tres pasos falla, el login del frontend fallará — aunque el backend devuelva 200 en `/auth/login`.
-
-**Por qué importa el paso 3**: `hydrateFromToken` en `web/lib/auth.tsx` llama a `getMe` y `getMyProfiles` en paralelo después del login. Si `getMyProfiles` lanza un error (por import roto, URL incorrecta, o respuesta inesperada), el `catch` del formulario de login muestra "credenciales incorrectas" aunque el login haya funcionado.
+**Por qué importa el paso 3**: `hydrateFromToken` en `web/lib/auth.tsx` llama a `getMe` y `getMyProfiles` en paralelo. Si `getMyProfiles` falla (URL incorrecta, import roto), el frontend muestra "credenciales incorrectas" aunque el login haya funcionado.
 
 ### Al finalizar cada sesión
-1. **Ejecuta las verificaciones de backend** descritas arriba sobre todos los archivos tocados, incluyendo `python3 -m pytest tests/ -q`.
-2. **Ejecuta las verificaciones de shared/web** si tocaste TypeScript, incluyendo `cd web && npm test`.
-3. **Ejecuta el smoke test de login** si tocaste auth, perfiles o shared/api/.
-4. **Actualiza `PROGRESS.md`**: marca lo completado, actualiza lo pendiente, añade entrada al historial.
-5. **Actualiza `CLAUDE.md`** si cambiaste la arquitectura, añadiste dependencias o tomaste decisiones técnicas nuevas.
-6. Si añades un endpoint nuevo: actualiza la tabla de API REST de este archivo.
-7. Si cambias la estructura de archivos: actualiza las secciones de estructura.
+1. **Ejecuta `make check`** — si pasa, puedes declarar el trabajo terminado.
+2. **Actualiza `PROGRESS.md`**: marca lo completado, actualiza lo pendiente, añade entrada al historial.
+3. **Actualiza `CLAUDE.md`** si cambiaste la arquitectura, añadiste dependencias o tomaste decisiones técnicas nuevas.
+4. Si añades un endpoint nuevo: añádelo a la tabla de API REST de este archivo **y** a `expected` en `test_conventions.py::test_all_api_routes_registered`.
+5. Si cambias la estructura de archivos: actualiza las secciones de estructura.
 
 ### Reglas de coordinación entre capas
 - Backend nuevo endpoint → actualizar `shared/api/` y `shared/types/` siempre.
@@ -275,62 +217,38 @@ Si cualquiera de estos tres pasos falla, el login del frontend fallará — aunq
 
 ---
 
-## Errores frecuentes detectados en auditoría (2026-04-29)
-
-Esta sección documenta los patrones de error encontrados en la auditoría web de la sesión 16.
+## Errores frecuentes y patrones de diseño
 
 ### Error 1 — Comentario ESLint dentro de JSX como nodo hermano
 
-**Archivo afectado**: `web/app/players/page.tsx`
-**Síntoma**: `Parsing error: ')' expected` (ESLint) y cascada de errores TypeScript.
-**Causa**: La forma `{/* eslint-disable-next-line */}` es un nodo JSX. Si se pone dentro de una función que retorna un solo elemento, se convierte en un segundo nodo junto con el siguiente elemento y JSX no puede tener dos nodos sin wrapper:
+**Síntoma**: `Parsing error: ')' expected` (ESLint) + cascada de errores TypeScript.
+**Causa**: `{/* eslint-disable-next-line */}` es un nodo JSX. Dentro de un `return` con un solo elemento, crea dos nodos y JSX falla.
 
 ```tsx
-// ✗ MAL — el comentario es un nodo JSX, el <img> es otro → parse error
+// ✗ MAL
 return (
   {/* eslint-disable-next-line @next/next/no-img-element */}
   <img src={...} />
 );
-```
 
-**Solución**: usar el comentario JS (`//`) directamente dentro del bloque `return (...)`, inmediatamente antes del elemento:
-
-```tsx
-// ✓ BIEN — comentario JS dentro del JSX, justo encima del elemento
+// ✓ BIEN — comentario JS, no JSX
 return (
   // eslint-disable-next-line @next/next/no-img-element
   <img src={...} />
 );
 ```
 
-**Nota**: Si el eslint-disable-next-line se pone fuera del return (en la línea anterior al `return (`), Next.js lint seguirá reportando el warning porque el comment se aplica al `return`, no al `<img>`.
+### Error 2 — Import desde root de `@basketball-clipper/shared`
 
-**Detección automática**: si el archivo falla `npm run lint` con `Parsing error: ')' expected` en una línea `<img`, buscar `{/* eslint-disable` justo antes.
-
-### Error 2 — Import desde root de `@basketball-clipper/shared` en lugar de sub-paths
-
-**Archivo afectado**: `web/app/drills/page.tsx`
-**Síntoma**: Funciona en runtime (si `shared/index.ts` re-exporta todo) pero viola la regla de sub-paths y puede causar problemas con tree-shaking, type resolution, y cambios futuros en `shared/package.json`.
+**Cubierto por test**: `web/lib/__tests__/conventions.test.ts` — si `make check-web` pasa, no hay imports incorrectos.
 
 ```tsx
-// ✗ MAL — import desde root
-import { listDrills, createDrill } from "@basketball-clipper/shared";
-import type { DrillSummary } from "@basketball-clipper/shared";
-import { COURT_LAYOUT_LABELS } from "@basketball-clipper/shared";
-```
+// ✗ MAL
+import { listDrills } from "@basketball-clipper/shared";
 
-```tsx
-// ✓ BIEN — imports desde sub-paths
-import { listDrills, createDrill } from "@basketball-clipper/shared/api";
+// ✓ BIEN
+import { listDrills } from "@basketball-clipper/shared/api";
 import type { DrillSummary } from "@basketball-clipper/shared/types";
-import { COURT_LAYOUT_LABELS } from "@basketball-clipper/shared/types";
-```
-
-**Detección automática**:
-```bash
-grep -rn "from '@basketball-clipper/shared'" web/   # debe dar 0 resultados (solo las líneas con /api o /types están OK)
-# Afina: sólo los imports sin sub-path:
-grep -rn "from '@basketball-clipper/shared'" web/ | grep -v "/api" | grep -v "/types"
 ```
 
 ---

@@ -1,6 +1,6 @@
 # Levanta el Entorno
 
-Inicia todos los servicios con docker-compose y ejecuta las verificaciones de calidad (tests backend + lint web) para confirmar que todo está listo para trabajar.
+Inicia todos los servicios con docker-compose y ejecuta `make check` para confirmar que todo está listo para trabajar.
 
 ## Pasos
 
@@ -19,17 +19,12 @@ Inicia todos los servicios con docker-compose y ejecuta las verificaciones de ca
    cd backend && python scripts/preflight.py
    ```
 
-4. Ejecuta los tests del backend (desde `backend/` para que pytest.ini aplique `asyncio_mode = auto`):
+4. Ejecuta todas las verificaciones del proyecto:
    ```bash
-   cd backend && python -m pytest -q
+   make check
    ```
 
-5. Ejecuta el lint de Next.js:
-   ```bash
-   cd web && npm run lint
-   ```
-
-6. Resume el resultado:
-   - Cuántos tests pasaron / fallaron
-   - Si el lint pasó sin errores (warnings son aceptables, errors bloquean CI)
+5. Resume el resultado:
+   - Cuántos tests del backend pasaron / fallaron y el porcentaje de coverage
+   - Si el lint y el type-check de web pasaron sin errores
    - Si el entorno está listo para trabajar

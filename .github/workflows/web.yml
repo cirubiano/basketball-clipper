@@ -49,6 +49,10 @@ jobs:
         working-directory: web
         run: npm run type-check
 
+      - name: Test (Vitest)
+        working-directory: web
+        run: npm test
+
       - name: Build
         working-directory: web
         env:

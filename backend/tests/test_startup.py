@@ -35,26 +35,69 @@ def test_cors_origins_parses_comma_separated_string(monkeypatch):
 @pytest.mark.parametrize(
     "module_path",
     [
+        # Core
         "app.main",
         "app.core.config",
         "app.core.database",
         "app.core.security",
+        # Models — todos deben importar sin error
         "app.models.user",
         "app.models.video",
         "app.models.clip",
         "app.models.exercise",
+        "app.models.club",
+        "app.models.season",
+        "app.models.team",
+        "app.models.profile",
+        "app.models.club_member",
+        "app.models.player",
+        "app.models.club_position",
+        "app.models.drill",
+        "app.models.club_tag",
+        "app.models.catalog",
+        "app.models.playbook",
+        "app.models.match",
+        "app.models.training",
+        "app.models.competition",
+        "app.models.opponent",
+        # Routers — todos deben importar sin error
         "app.routers.auth",
         "app.routers.video",
         "app.routers.clips",
         "app.routers.ws",
         "app.routers.exercises",
+        "app.routers.clubs",
+        "app.routers.seasons",
+        "app.routers.teams",
+        "app.routers.players",
+        "app.routers.positions",
+        "app.routers.profiles",
+        "app.routers.drills",
+        "app.routers.catalog",
+        "app.routers.playbook",
+        "app.routers.matches",
+        "app.routers.trainings",
+        "app.routers.competitions",
+        "app.routers.opponents",
+        # Schemas
         "app.schemas.auth",
         "app.schemas.video",
         "app.schemas.clip",
+        "app.schemas.club",
+        "app.schemas.player",
+        "app.schemas.drill",
+        "app.schemas.catalog",
+        "app.schemas.playbook",
+        "app.schemas.match",
+        "app.schemas.training",
+        "app.schemas.competition",
+        "app.schemas.opponent",
+        # Services
         "app.services.queue",
         "app.services.storage",
         "app.services.detector",
         "app.services.cutter",
+        "app.services.catalog",
     ],
 )
 def test_module_imports_cleanly(module_path: str):
@@ -63,28 +106,20 @@ def test_module_imports_cleanly(module_path: str):
 
 # ── 3. FastAPI app ───────────────────────────────────────────────────────────
 
-def test_fastapi_app_has_expected_routes():
+def test_fastapi_app_core_routes_registered():
+    """
+    Smoke check: las rutas esenciales de arranque estan registradas.
+    La cobertura completa de rutas esta en test_conventions.py::test_all_api_routes_registered.
+    """
     from app.main import app
 
-    paths = {route.path for route in app.routes}
+    paths = {route.path for route in app.routes if hasattr(route, "path")}
 
-    expected = {
-        "/health",
-        "/auth/register",
-        "/auth/login",
-        "/auth/me",
-        # Nuevo flujo multipart upload
-        "/videos/init-upload",
-        "/videos/{video_id}/upload-status",
-        "/videos/{video_id}/complete-upload",
-        "/videos/{video_id}/abort-upload",
-        "/videos/{video_id}/status",
-        "/clips/",
-        "/clips/{clip_id}",
-        "/ws/{video_id}",
-    }
-    missing = expected - paths
-    assert not missing, f"Rutas faltantes: {missing}"
+    assert "/health" in paths
+    assert "/auth/login" in paths
+    assert "/auth/me" in paths
+    assert "/videos/init-upload" in paths
+    assert "/ws/{video_id}" in paths
 
 
 def test_health_endpoint_responds_ok():
@@ -100,15 +135,49 @@ def test_health_endpoint_responds_ok():
 # ── 4. Modelos ───────────────────────────────────────────────────────────────
 
 def test_all_models_are_mapped_on_base():
+    """Todos los modelos SQLAlchemy estan registrados en Base.metadata."""
     from app.core.database import Base
-    import app.models.clip  # noqa: F401
-    import app.models.exercise  # noqa: F401
-    import app.models.user  # noqa: F401
-    import app.models.video  # noqa: F401
+
+    # Importar todos los modelos para que se registren en Base.metadata
+    import app.models.clip         # noqa: F401
+    import app.models.exercise     # noqa: F401
+    import app.models.user         # noqa: F401
+    import app.models.video        # noqa: F401
+    import app.models.club         # noqa: F401
+    import app.models.season       # noqa: F401
+    import app.models.team         # noqa: F401
+    import app.models.profile      # noqa: F401
+    import app.models.club_member  # noqa: F401
+    import app.models.player       # noqa: F401
+    import app.models.club_position  # noqa: F401
+    import app.models.drill        # noqa: F401
+    import app.models.club_tag     # noqa: F401
+    import app.models.catalog      # noqa: F401
+    import app.models.playbook     # noqa: F401
+    import app.models.match        # noqa: F401
+    import app.models.training     # noqa: F401
+    import app.models.competition  # noqa: F401
+    import app.models.opponent     # noqa: F401
 
     tables = set(Base.metadata.tables.keys())
-    expected = {"users", "videos", "clips", "exercises"}
-    assert expected.issubset(tables), f"Faltan: {expected - tables}"
+
+    expected = {
+        "users", "videos", "clips", "exercises",
+        "clubs", "club_members", "seasons", "teams", "profiles",
+        "players", "roster_entries", "club_positions",
+        "tags", "drills",
+        "club_tags", "club_catalog_entries",
+        "team_playbook_entries",
+        "matches", "match_players", "match_stats", "match_videos",
+        "trainings", "training_drills", "training_attendances", "training_drill_groups",
+        "competitions",
+        "opponent_teams", "opponent_players", "opponent_match_stats",
+    }
+    missing = expected - tables
+    assert not missing, (
+        "Tablas no encontradas en Base.metadata — falta importar el modelo?\n"
+        + "\n".join(f"  x {t}" for t in sorted(missing))
+    )
 
 
 def test_video_status_enum_values():
@@ -150,7 +219,7 @@ def test_initial_migration_creates_expected_tables():
     assert migration.is_file()
     src = migration.read_text()
     for table in ("users", "videos", "clips"):
-        assert f'"{table}"' in src, f"Migración 0001 no crea la tabla {table!r}"
+        assert f'"{table}"' in src, f"Migracion 0001 no crea la tabla {table!r}"
 
 
 def test_multipart_migration_exists():
@@ -160,7 +229,7 @@ def test_multipart_migration_exists():
         / "versions"
         / "0002_multipart_upload.py"
     )
-    assert migration.is_file(), "Migración 0002 debe existir"
+    assert migration.is_file(), "Migracion 0002 debe existir"
     src = migration.read_text()
     assert "upload_id" in src
     assert "upload_parts" in src
@@ -201,7 +270,7 @@ def test_celery_app_registers_process_video_task():
 # ── 8. Storage multipart API ─────────────────────────────────────────────────
 
 def test_storage_module_exposes_multipart_helpers():
-    """El nuevo flujo depende de estos símbolos."""
+    """El nuevo flujo depende de estos simbolos."""
     from app.services import storage
 
     assert callable(storage.create_multipart_upload)
