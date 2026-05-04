@@ -189,6 +189,7 @@ def test_create_match_returns_201_for_admin():
             "date": "2025-10-01T18:00:00",
             "location": "home",
             "season_id": 3,
+            "competition_id": 1,
         },
         headers=_auth_headers(),
     )
@@ -202,7 +203,7 @@ def test_create_match_requires_auth():
     """Sin token → 401."""
     r = TestClient(app).post(
         "/clubs/1/teams/10/matches",
-        json={"opponent_name": "Rival FC", "date": "2025-10-01T18:00:00", "location": "home", "season_id": 3},
+        json={"opponent_name": "Rival FC", "date": "2025-10-01T18:00:00", "location": "home", "season_id": 3, "competition_id": 1},
     )
     assert r.status_code == 401
 
@@ -222,7 +223,7 @@ def test_create_match_requires_coach_or_td():
 
     r = TestClient(app).post(
         "/clubs/1/teams/10/matches",
-        json={"opponent_name": "Rival FC", "date": "2025-10-01T18:00:00", "location": "home", "season_id": 3},
+        json={"opponent_name": "Rival FC", "date": "2025-10-01T18:00:00", "location": "home", "season_id": 3, "competition_id": 1},
         headers=_auth_headers(),
     )
     assert r.status_code == 403

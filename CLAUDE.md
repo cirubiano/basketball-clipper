@@ -49,12 +49,32 @@ python -m py_compile \
 - Todos los modelos y schemas importados en el router se usan realmente.
 - No hay imports que ya no hagan falta tras refactorizaciones.
 
-**5. Truncamiento de archivos — el Write tool puede truncar archivos largos:**
-```bash
-xxd backend/app/routers/mi_router.py | tail -3
-# El último byte debe ser 0a (newline). Si el archivo termina a mitad de línea, está truncado.
-# Solución: reescribir el archivo completo via cat > archivo << 'PYEOF' ... PYEOF
+**5. Truncamiento y corrupción de archivos — problema conocido del mount bash:**
+
+El Write/Edit tool escribe en el filesystem Windows, pero el mount bash (`/sessions/.../mnt/`) puede ver una versión desactualizada. Esto provoca dos bugs al usar `cat >>`:
+- **Null bytes al final**: el append sobreescribe bytes ya escritos por el Write tool.
+- **Contenido duplicado**: el mount ve el archivo truncado, el append añade el trozo "que falta", pero el Write tool ya lo tenía — resultado: el bloque aparece dos veces.
+
+**Regla crítica**: NUNCA usar `cat >>` para completar archivos. Usar siempre Python:
+
+```python
+# ✓ Correcto — leer, modificar, reescribir completo
+src = open(path).read()
+src = src + "...nuevo contenido..."
+open(path, "w").write(src)
+
+# ✗ Incorrecto — puede duplicar contenido
+# cat >> archivo << 'EOF' ... EOF
 ```
+
+**Validación post-escritura** — ejecutar tras cada sesión de edición de archivos `.tsx` o `.py`:
+```bash
+python3 scripts/validate_files.py \
+  web/components/layout/Sidebar.tsx \
+  web/app/teams/\[teamId\]/matches/\[matchId\]/page.tsx
+  # añadir aquí todos los archivos tocados
+```
+El script detecta null bytes (los elimina automáticamente) y contenido duplicado (lo reporta).
 
 **6. Migraciones Alembic — columnas con server_default + cast a enum:**
 Cuando una columna tiene `server_default` de texto y se quiere cambiar el tipo a un enum PostgreSQL,

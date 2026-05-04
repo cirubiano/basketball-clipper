@@ -34,7 +34,6 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Plus, Trash2, Lock, Pencil, ChevronLeft, ChevronRight, GitBranch, MessageSquare, BookMarked } from "lucide-react";
 import Link from "next/link";
-import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import {
   listPlaybook,
   addToPlaybook,
@@ -152,11 +151,6 @@ export default function PlaybookPage({
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-6 max-w-4xl">
-        <Breadcrumb items={[
-          { label: activeProfile?.club_name ?? "Club", href: clubId ? `/clubs/${clubId}/teams` : "/" },
-          { label: activeProfile?.team_name ?? "Equipo", href: `/teams/${teamId}/matches` },
-          { label: "Playbook" },
-        ]} />
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold">Playbook del equipo</h1>

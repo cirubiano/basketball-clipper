@@ -44,6 +44,7 @@ from app.schemas.match import (
     MatchUpdate,
     MatchVideoAdd,
     MatchVideoResponse,
+    SetStartersRequest,
 )
 from app.schemas.opponent import OpponentMatchStatResponse, OpponentPlayerResponse
 
@@ -128,6 +129,7 @@ def _serialize_match(match: Match) -> MatchResponse:
             player_id=mp.player_id,
             player_first_name=mp.player.first_name if mp.player else None,
             player_last_name=mp.player.last_name if mp.player else None,
+            is_starter=mp.is_starter,
         )
         for mp in match.match_players
     ]
@@ -136,6 +138,8 @@ def _serialize_match(match: Match) -> MatchResponse:
             id=ms.id,
             match_id=ms.match_id,
             player_id=ms.player_id,
+            player_first_name=ms.player.first_name if ms.player else None,
+            player_last_name=ms.player.last_name if ms.player else None,
             points=ms.points,
             minutes=ms.minutes,
             assists=ms.assists,
@@ -144,6 +148,7 @@ def _serialize_match(match: Match) -> MatchResponse:
             steals=ms.steals,
             turnovers=ms.turnovers,
             fouls=ms.fouls,
+            blocks=ms.blocks,
         )
         for ms in match.match_stats
     ]
@@ -160,6 +165,7 @@ def _serialize_match(match: Match) -> MatchResponse:
                 position=os.opponent_player.position,
                 archived_at=os.opponent_player.archived_at,
             ),
+            is_starter=os.is_starter,
             points=os.points,
             minutes=os.minutes,
             assists=os.assists,
@@ -185,6 +191,8 @@ def _serialize_match(match: Match) -> MatchResponse:
         their_score=match.their_score,
         competition_id=match.competition_id,
         opponent_id=match.opponent_id,
+        track_home_minutes=match.track_home_minutes,
+        track_rival_minutes=match.track_rival_minutes,
         created_by=match.created_by,
         created_at=match.created_at,
         archived_at=match.archived_at,
@@ -261,6 +269,8 @@ async def create_match(
         notes=body.notes,
         competition_id=body.competition_id,
         opponent_id=body.opponent_id,
+        track_home_minutes=body.track_home_minutes,
+        track_rival_minutes=body.track_rival_minutes,
         created_by=current_user.id,
     )
     db.add(match)
@@ -651,4 +661,95 @@ async def upsert_match_stat(
         steals=stat.steals,
         turnovers=stat.turnovers,
         fouls=stat.fouls,
+        blocks=stat.blocks,
     )
+
+
+# ── Titulares ─────────────────────────────────────────────────────────────────
+
+@router.post(
+    "/{club_id}/teams/{team_id}/matches/{match_id}/set-starters",
+    response_model=MatchResponse,
+)
+async def set_home_starters(
+    club_id: int,
+    team_id: int,
+    match_id: int,
+    body: SetStartersRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MatchResponse:
+    """Mark which home players start. Resets all is_starter then sets given ones."""
+    await _get_club_or_404(club_id, db)
+    await _get_team_or_404(club_id, team_id, db)
+    profile = await _require_team_member(club_id, team_id, current_user, db)
+    _require_coach_or_td(profile, current_user)
+
+    match = await _get_match_or_404(match_id, team_id, db)
+    if not match.track_home_minutes:
+        raise HTTPException(422, "Este partido no tiene seguimiento de minutos del equipo local")
+
+    # Reset all
+    all_mp = (await db.scalars(
+        select(MatchPlayer).where(MatchPlayer.match_id == match_id)
+    )).all()
+    for mp in all_mp:
+        mp.is_starter = False
+
+    # Set starters
+    for pid in body.player_ids:
+        mp = await db.scalar(
+            select(MatchPlayer).where(
+                MatchPlayer.match_id == match_id,
+                MatchPlayer.player_id == pid,
+            )
+        )
+        if mp:
+            mp.is_starter = True
+
+    await db.commit()
+    return _serialize_match(await _get_match_or_404(match_id, team_id, db))
+
+
+@router.post(
+    "/{club_id}/teams/{team_id}/matches/{match_id}/set-rival-starters",
+    response_model=MatchResponse,
+)
+async def set_rival_starters(
+    club_id: int,
+    team_id: int,
+    match_id: int,
+    body: SetStartersRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MatchResponse:
+    """Mark which rival players start. Resets all is_starter then sets given ones."""
+    await _get_club_or_404(club_id, db)
+    await _get_team_or_404(club_id, team_id, db)
+    profile = await _require_team_member(club_id, team_id, current_user, db)
+    _require_coach_or_td(profile, current_user)
+
+    match = await _get_match_or_404(match_id, team_id, db)
+    if not match.track_rival_minutes:
+        raise HTTPException(422, "Este partido no tiene seguimiento de minutos del equipo rival")
+
+    # Reset all
+    all_os = (await db.scalars(
+        select(OppStat).where(OppStat.match_id == match_id)
+    )).all()
+    for os in all_os:
+        os.is_starter = False
+
+    # Set starters
+    for opp_pid in body.player_ids:
+        os = await db.scalar(
+            select(OppStat).where(
+                OppStat.match_id == match_id,
+                OppStat.opponent_player_id == opp_pid,
+            )
+        )
+        if os:
+            os.is_starter = True
+
+    await db.commit()
+    return _serialize_match(await _get_match_or_404(match_id, team_id, db))

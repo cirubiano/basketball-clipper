@@ -11,6 +11,7 @@ export interface Competition {
   players_on_court: number;
   bench_size: number;
   clock_type: ClockType;
+  overtime_minutes: number;
   created_by: number | null;
   created_at: string;
   archived_at: string | null;
@@ -26,6 +27,7 @@ export interface CompetitionCreate {
   players_on_court?: number;
   bench_size?: number;
   clock_type?: ClockType;
+  overtime_minutes?: number;
 }
 
 export interface CompetitionUpdate {
@@ -36,4 +38,5 @@ export interface CompetitionUpdate {
   players_on_court?: number;
   bench_size?: number;
   clock_type?: ClockType;
+  overtime_minutes?: number;
 }

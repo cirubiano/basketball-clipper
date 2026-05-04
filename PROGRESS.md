@@ -304,6 +304,71 @@ personal, el catálogo del club y los playbooks de los equipos.
 
 ## Historial de sesiones
 
+### 2026-05-03 — Sesión 48 (Fase H — Seguimiento de minutos: titulares, sustituciones automáticas, minutos en vivo)
+
+**Objetivo**: implementar el sistema completo de seguimiento de minutos por jugador en partidos, incluyendo selección de titulares antes del inicio, cálculo automático de minutos en sustituciones, y minutos en vivo en las tarjetas de jugador.
+
+**Backend:**
+- `app/models/match.py`: añadidos `track_home_minutes` (Boolean, server_default=true) y `track_rival_minutes` (Boolean, server_default=false) a `Match`; `is_starter` (Boolean, server_default=false) a `MatchPlayer`.
+- `app/models/opponent.py`: `is_starter` (Boolean, server_default=false) a `OpponentMatchStat`.
+- `app/schemas/match.py`: `MatchPlayerResponse` + `is_starter`; `MatchResponse` + `track_home_minutes` / `track_rival_minutes`; `MatchCreate` + mismos campos; nueva clase `SetStartersRequest`.
+- `app/schemas/opponent.py`: `OpponentMatchStatResponse` + `is_starter`.
+- `app/routers/matches.py`: serialización actualizada con `is_starter`, `track_home_minutes`, `track_rival_minutes`, `blocks`; `create_match` aplica las flags; nuevos endpoints `POST .../set-starters` y `POST .../set-rival-starters` (reset + set de `is_starter`).
+- `alembic/versions/0022_match_minutes_tracking.py`: 4 columnas nuevas en `matches`, `match_players`, `opponent_match_stats`.
+
+**Shared:**
+- `shared/types/match.ts`: `MatchPlayer.is_starter`, `Match.track_home_minutes/track_rival_minutes`, `MatchCreate` con mismos campos; nueva interfaz `SetStartersRequest`.
+- `shared/types/opponent.ts`: `OpponentMatchStat.is_starter`.
+- `shared/api/matches.ts`: funciones `setHomeStarters` y `setRivalStarters`.
+
+**Web — `web/app/teams/[teamId]/matches/_tabs/PartidosTab.tsx`:**
+- Formulario de creación: checkboxes "Seguir minutos del equipo local" (default ON) y "Seguir minutos del rival" (default OFF).
+
+**Web — `web/app/teams/[teamId]/matches/[matchId]/page.tsx`:**
+- Nuevas variables de estado: `lineupHomeIds`, `lineupRivalIds` (selección de titulares antes del inicio), `playerEnteredAtMs`, `rivalEnteredAtMs` (timestap timerMs al entrar), `homeStartersConfirmed`, `rivalStartersConfirmed`.
+- `canStartMatch` actualizado: bloquea el inicio si los titulares no están confirmados para los equipos con tracking ON.
+- Pestaña Estadísticas (estado `scheduled`): cuando `track_home_minutes` o `track_rival_minutes` es true, muestra paneles de selección de titulares (checkboxes por convocado, counter X/N, botón "Confirmar"); una vez confirmados muestra "X titulares confirmados ✓" y botón "Cambiar". El botón "Iniciar partido" solo se habilita cuando ambos equipos (que rastrean minutos) tienen titulares confirmados.
+- Mutaciones `setHomeStartersMut` / `setRivalStartersMut`: llaman al backend y al confirmar inicializan `onCourtIds`/`onCourtOppIds` y `playerEnteredAtMs`/`rivalEnteredAtMs`.
+- Sustitución automática de minutos: al confirmar un cambio con `track_home_minutes=true`, calcula `stintMin = round((timerMs - playerEnteredAtMs[subOutId]) / 60000)`, suma a los minutos existentes del jugador saliente y hace upsert.
+- `finishMut.mutationFn`: antes de llamar `finishMatch`, hace upsert de minutos para todos los jugadores aún en pista (auto-guarda minutos del último stint al finalizar).
+- Tarjetas de jugador en `in_progress`: cuando `track_home_minutes=true`, muestra minutos en vivo (`savedMin + currentStintMin`) en la línea de estadísticas `Xp · Xa · Xr · Xmin`.
+- Session storage: persiste y restaura `homeOnCourt`, `rivalOnCourt`, `playerEnteredAtMs`, `rivalEnteredAtMs`, `timerMs`, `currentQuarter`; se limpia al finalizar el partido.
+
+**Convocatoria (mejoras de la sesión anterior):**
+- "Convocar todos" respeta `bench_size` de la competición (máximo N jugadores).
+- "Desconvocar todos" (local y rival): sin popup de confirmación, acción directa.
+
+**Verificaciones**: ESLint 0 errores ✔, TSC 0 errores ✔
+
+**Pendiente (para sesión siguiente):**
+- Ejecutar migración: `docker compose exec backend alembic upgrade head`
+
+---
+
+### 2026-05-03 — Sesión 47 (Fase H — UX partidos: convocatoria obligatoria, vídeos bloqueados, detalles)
+
+**Objetivo**: pulir UX de la página de detalle de partido con 5 mejoras solicitadas.
+
+**Web — `web/app/teams/[teamId]/matches/[matchId]/page.tsx`:**
+- `canStartMatch`: nuevo booleano — `match_players.length > 0 && (!match.opponent_id || opponent_stats.length > 0)`. El partido no puede iniciarse hasta que haya convocatoria del equipo local y (si hay rival) del rival.
+- Botón "Iniciar partido" eliminado del header del marcador; solo aparece en la pestaña de Estadísticas.
+- Pestaña Estadísticas (estado `scheduled`): nuevo CTA que muestra "Iniciar partido" si `canStartMatch`, o checklist de requisitos pendientes si no (convocatoria local y/o rival).
+- Desconvocar jugador propio: eliminado AlertDialog de confirmación — acción directa en `onClick`.
+- Desconvocar jugador rival (opponent_stat): eliminado AlertDialog de confirmación — acción directa en `onClick`.
+- Sección "No convocados" (local): siempre visible; muestra "Todos los jugadores de la plantilla están convocados." cuando vacía; "Convocar a todos" solo aparece si hay jugadores pendientes.
+- Sección "No convocados" (rival): siempre visible; muestra "Todos los jugadores del rival están convocados." cuando vacía.
+- Pestaña Vídeos: upload/vincular bloqueados hasta `match.status === "finished"`; cuando no está finalizado, muestra mensaje "Los vídeos del partido se pueden vincular una vez finalizado el partido."
+
+**Web — otros archivos:**
+- `CompeticionesTab.tsx`: descripción → "Ligas, copas y torneos del equipo. Haz clic en una competición para ver sus partidos."
+- `RivalesTab.tsx`: descripción → "Rivales de la temporada disponibles para scouting y asignación de partidos."; botón "Partidos" en cada rival navega al tab Partidos filtrado por `?opp={id}`.
+- `PartidosTab.tsx`: acepta `initialOpponentId` prop + filtra partidos por rival; `onGoToLeagues` wired.
+- `tailwind.config.ts` + `globals.css`: añadidos tokens `popover` / `popover-foreground` para corregir transparencia de SelectContent.
+
+**Verificaciones**: ESLint 0 errores ✔, TSC 0 errores ✔, validate_files OK ✔
+
+---
+
 ### 2026-05-03 — Sesión 46 (Fase H — pulido UX: validaciones, renombres, hard delete, dorsal duplicado)
 
 **Objetivo**: 5 mejoras UX solicitadas sobre el hub de Competiciones/Rivales/Partidos.
@@ -571,6 +636,44 @@ Fases 1–3 completas (no-"Grande"), Fase 4 no-"Grande" (#36 thumbnails, #30 CSV
 - Favoritos: corazón → rojo, tab Favoritos filtra correctamente
 
 **Verificaciones**: ESLint 0 errores ✔ (generate/page.tsx)
+
+---
+
+### 2026-05-03 — Sesión 46 (UX match detail — estadísticas partido finalizado + mejoras de navegación)
+
+**Objetivo**: corregir varios bugs de UX en el detalle de partido y mejorar la navegación del hub de competiciones.
+
+**Bugs corregidos:**
+
+**BUG — Estadísticas no aparecen en partidos finalizados**
+- **Causa**: `StatsTable` solo iteraba sobre `match_players` (convocatoria formal). En partidos finalizados, `match_players` podía estar vacío aunque `match_stats` tuviese datos.
+- `backend/app/schemas/match.py` — `MatchStatResponse` ahora incluye `player_first_name: str | None` y `player_last_name: str | None`.
+- `backend/app/routers/matches.py` — `_serialize_match` rellena los campos de nombre del jugador desde `ms.player` (cargado con `selectinload`).
+- `shared/types/match.ts` — `MatchStat` incluye `player_first_name` y `player_last_name`.
+- `web/app/teams/[teamId]/matches/[matchId]/page.tsx` — `StatsTable` y `StatsBarChart` construyen filas desde `matchPlayers` si hay datos; si no, caen back a `stats` directamente usando los nombres del stat. Empty state de partido finalizado comprueba `match_stats.length` (no `match_players.length`).
+
+**Mejoras UX en partido finalizado:**
+- Eliminado botón "Editar resultado final" cuando `status === "finished"`.
+- Convocatoria (home + rival) read-only para `finished`/`cancelled` — variable `canEditConvocatoria` usada en lugar de `isCoachOrTD`.
+- Eliminado botón imprimir convocatoria (se reimplementará con PDF mejorado — ver pendientes).
+
+**Sidebar "Competiciones":**
+- `web/components/layout/Sidebar.tsx` — query de competiciones al cargar; si existe una competición activa (`is_default && !archived_at`), el enlace apunta directamente a `?tab=partidos&comp={id}`; si no, a la tab Ligas.
+- `isActive` ignora query params para determinar el ítem activo.
+
+**Breadcrumb eliminado:**
+- Componente `Breadcrumb` eliminado de las 13 pantallas que lo usaban.
+
+**Bloquear creación de partidos sin liga activa:**
+- `web/app/teams/[teamId]/matches/_tabs/CompeticionesTab.tsx` — al crear la primera competición activa (cuando no hay ninguna), se fuerza `is_default: true` y se oculta el checkbox "Marcar como activa".
+- `web/app/teams/[teamId]/matches/_tabs/PartidosTab.tsx` — nueva prop `onGoToLeagues: () => void`; si no hay competiciones activas, muestra estado vacío con botón "Crear una liga" que navega al tab Ligas.
+- `web/app/teams/[teamId]/matches/page.tsx` — pasa `onGoToLeagues={() => setTab("competiciones")}` a `PartidosTab`.
+
+**Infraestructura anti-corrupción:**
+- `scripts/validate_files.py` — nuevo script que detecta null bytes (los elimina automáticamente) y contenido duplicado en cola (lo reporta). Ejecutar tras cada sesión de edición.
+- `CLAUDE.md` — documentada la regla crítica: nunca `cat >>` para completar archivos; usar siempre Python `open().read()` → modificar → `open().write()`.
+
+**Verificaciones**: ESLint 0 errores ✔, TSC 0 errores ✔
 
 ---
 
@@ -1524,21 +1627,34 @@ Todos los ítems de Fase 3 del `docs/UX_ROADMAP.md` han sido implementados:
   - Barra horizontal proporcional a la duración del vídeo; cada clip ocupa su fracción exacta de tiempo (left + width en %)
   - Equipo A = azul (`bg-blue-500`), Equipo B = ámbar (`bg-amber-500`), soporte dark mode
   - Cada segmento es un enlace `<a>` al detalle del clip correspondiente con tooltip (nombre del equipo + timestamps)
-  - Stats debajo: porcentaje de posesión por equipo, tiempo total por equipo, número de clips
-  - Solo se muestra cuando el vídeo tiene clips disponibles
-  - No requiere nuevos endpoints — usa los `start_time`/`end_time`/`team` ya presentes en cada `Clip`
+  - Stats debajo: porcentaje de posesión por equipo, tiempo total por equipo, número de clips por equipo
+  - Se renderiza solo cuando hay ≥1 clip procesado; oculto si el vídeo no tiene clips
 
-**Verificaciones**: ESLint 0 errores ✅ · TSC 0 errores ✅
+**Verificaciones**: Python py_compile ✅ ALL OK · ESLint 0 errores ✅ · TSC 0 errores ✅
 ---
 
-### 2026-05-02 — Sesión 44 (Fase 5 UX — Caché offline React Query)
+### 2026-05-03 — Sesión 44 (Estadísticas en vivo — cronómetro, prórroga, faltas, sustituciones)
 
 **Completado:**
-- **#52 Caché offline de datos clave**: persistencia manual del cache React Query en `localStorage` sin paquetes adicionales — misma semántica que `@tanstack/react-query-persist-client` pero sin dependencias nuevas. Implementado en `web/lib/providers.tsx`:
-  - `saveCache(qc)`: serializa a `bc_rq_cache_v1` en localStorage todas las queries con status `success` cuyos keys empiezan por: `players`, `positions`, `roster`, `teams`, `seasons`, `members`, `drills`, `playbook`, `catalog`, `trainings`, `matches`. Ignorado en errores de cuota/serialización.
-  - `restoreCache(qc)`: en el montaje inicial, restaura los datos (si tienen < 24h) con `qc.setQueryData`, sin sobreescribir datos más frescos. Si el JSON es inválido o caduca, limpia la entrada.
-  - Guardado automático: `beforeunload` + intervalo de 2 min + `useEffect` cleanup. Excluidas consultas de auth y estado de upload.
-  - `gcTime` actualizado a 10 min (> `staleTime` de 30s) para que los datos persistan en memoria durante el background refetch.
-  - Los ítems "Grande" pendientes de Fase 4 (#19 vista en vivo, #31 canvas mobile, #24 modo en cancha, #45 notificaciones) quedan anotados para sprints futuros.
+- **`overtime_minutes` en Competición**:
+  - `backend/app/models/competition.py`: nuevo campo `overtime_minutes: Mapped[int]` (server_default="5")
+  - `backend/app/schemas/competition.py`: campo en `CompetitionCreate`, `CompetitionUpdate`, `CompetitionResponse`
+  - `backend/alembic/versions/0021_competition_overtime_minutes.py`: migración ADD COLUMN
+  - `shared/types/competition.ts`: campo `overtime_minutes: number` en `Competition`, `CompetitionCreate`, `CompetitionUpdate`
+  - `CompeticionesTab.tsx`: campo "Min. prórroga" en formulario de formato de partido (default 5)
 
-**Verificaciones**: ESLint 0 errores ✅ · TSC 0 errores ✅
+- **Cronómetro cuenta regresiva**: el cronómetro ahora cuenta hacia atrás desde `minutes_per_quarter` hasta 0. Cuando queda < 1 minuto, muestra formato `SS.t` (segundos + décimas, en naranja). Al llegar a 0, se muestra en rojo. En prórroga usa `overtime_minutes` como duración.
+
+- **Prórroga (`OT`)**: el botón de avance de cuarto ahora siempre está visible. Etiquetas: Q1→Q4 para cuartos regulares, "Prórroga →" en el último cuarto regular, "OT2 →", "OT3 →"... para prórrogas adicionales. El badge del cuarto muestra `OT1`, `OT2`... con fondo naranja para distinguirlo visualmente.
+
+- **Indicador visual de faltas**: en las tarjetas de jugador (local y rival):
+  - ≥4 faltas → texto naranja con `⚠` visible
+  - ≥5 faltas → badge rojo `EXCL` + tarjeta con borde rojo suavizado y opacidad reducida
+
+- **Panel de sustituciones**: botón `Cambio` en la barra del cronómetro abre un panel inline con dos selectores: "Sale" (jugadores en pista) y "Entra" (jugadores en banquillo). Al confirmar: swap en `onCourtIds`, log de sustitución en el registro de acciones, reasigna el jugador seleccionado si es necesario.
+
+- **Log de acciones con colores de equipo**: cada entrada del log tiene un punto de color (azul = local, naranja = rival, gris = sin equipo) y etiqueta de cuarto (`Q1`, `OT1`...). El log ahora registra también las acciones del equipo rival. Undo solo deshace acciones del equipo local.
+
+- **Registro por cuarto**: todas las acciones se acumulan en `quarterStatsLog` con `{ quarter, team, statKey, delta, playerName }` para análisis futuro por cuarto.
+
+**Verificaciones**: Python py_compile ✅ ALL OK · ESLint 0 errores ✅ · TSC 0 errores ✅

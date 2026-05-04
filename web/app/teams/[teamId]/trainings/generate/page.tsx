@@ -17,7 +17,6 @@ import type {
   TrainingBulkItem,
 } from "@basketball-clipper/shared/types";
 import { PageShell } from "@/components/layout/PageShell";
-import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
@@ -238,15 +237,6 @@ export default function GeneratePlanPage({
       <div className="container mx-auto px-4 py-8 max-w-2xl">
         {/* Header */}
         <div className="mb-6">
-          <Breadcrumb
-            className="mb-4"
-            items={[
-              { label: activeProfile?.club_name ?? "Club", href: clubId ? `/clubs/${clubId}/teams` : "/" },
-              { label: activeProfile?.team_name ?? "Equipo", href: `/teams/${teamId}/trainings` },
-              { label: "Entrenamientos", href: `/teams/${teamId}/trainings` },
-              { label: "Generar plan" },
-            ]}
-          />
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Wand2 className="h-6 w-6 text-purple-500" />
             Generar plan de entrenamientos

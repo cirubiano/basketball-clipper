@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { UserPlus, Trash2, Film, Play, CheckCircle, Upload, RotateCcw, Printer, Plus, UserMinus } from "lucide-react";
+import { UserPlus, Trash2, Film, Play, Pause, CheckCircle, Upload, RotateCcw, Plus, UserMinus, ArrowLeftRight } from "lucide-react";
 import Link from "next/link";
 import {
   getMatch,
@@ -18,9 +18,12 @@ import {
   listVideos,
   getOpponent,
   addOpponentPlayer,
+  bulkAddOpponentPlayers,
   upsertOpponentStat,
   deleteOpponentStat,
   listCompetitions,
+  setHomeStarters,
+  setRivalStarters,
 } from "@basketball-clipper/shared/api";
 import {
   MATCH_LOCATION_LABELS,
@@ -100,6 +103,16 @@ type ActionLogEntry = {
   label: string;
   statKey: StatKey | null;
   delta: number;
+  team: "home" | "rival" | "none";
+  quarter: number;
+};
+
+type QuarterStatEntry = {
+  quarter: number;
+  team: "home" | "rival";
+  statKey: StatKey;
+  delta: number;
+  playerName: string;
 };
 
 // ── Page component ────────────────────────────────────────────────────────────
@@ -119,6 +132,7 @@ export default function MatchDetailPage({
     activeProfile?.role === "head_coach" ||
     activeProfile?.role === "technical_director";
 
+
   const [tab, setTab] = useState<TabKey>("convocatoria");
   const [selectedVideoId, setSelectedVideoId] = useState<string>("");
   const [selectedVideoLabel, setSelectedVideoLabel] = useState<MatchVideoLabel>("other");
@@ -133,12 +147,38 @@ export default function MatchDetailPage({
   const [sessionStats, setSessionStats] = useState<Map<number, MatchStatUpsert>>(new Map());
   const [minutesDraft, setMinutesDraft] = useState<Map<number, string>>(new Map());
   const [actionLog, setActionLog] = useState<ActionLogEntry[]>([]);
+  // On-court tracking (current players on pista — used for display when tracking minutes)
+  const [onCourtIds, setOnCourtIds] = useState<Set<number>>(new Set());
+  const [onCourtOppIds, setOnCourtOppIds] = useState<Set<number>>(new Set());
+  // When player entered court (timerMs snapshot) — for auto-calculating minutes
+  const [playerEnteredAtMs, setPlayerEnteredAtMs] = useState<Record<number, number>>({});
+  const [rivalEnteredAtMs, setRivalEnteredAtMs] = useState<Record<number, number>>({});
+  const [homeTeamSelected, setHomeTeamSelected] = useState(false);
+  const [rivalTeamSelected, setRivalTeamSelected] = useState(false);
+  // Lineup setup (before match start — selecting starters)
+  const [lineupHomeIds, setLineupHomeIds] = useState<Set<number>>(new Set());
+  const [lineupRivalIds, setLineupRivalIds] = useState<Set<number>>(new Set());
+  const [lineupSaving, setLineupSaving] = useState(false);
+  // Timer (elapsed time per quarter, counts up)
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [timerMs, setTimerMs] = useState(0);
+  const [currentQuarter, setCurrentQuarter] = useState(1);
+  const timerBaseRef = useRef(0);
+  const timerStartAtRef = useRef<number | null>(null);
   const [oppStatDraft, setOppStatDraft] = useState<Map<number, Partial<OpponentMatchStatUpsert>>>(new Map());
   const [oppStatSaving, setOppStatSaving] = useState<Set<number>>(new Set());
   const [showAddOppPlayer, setShowAddOppPlayer] = useState(false);
   const [oppPlayerJersey, setOppPlayerJersey] = useState("");
   const [oppPlayerName, setOppPlayerName] = useState("");
   const [oppPlayerPosition, setOppPlayerPosition] = useState("");
+  const [showBulkAddOppPlayer, setShowBulkAddOppPlayer] = useState(false);
+  const [bulkOppJerseys, setBulkOppJerseys] = useState("");
+  // Substitution panel
+  const [showSubstitution, setShowSubstitution] = useState(false);
+  const [subOutId, setSubOutId] = useState<number | null>(null);
+  const [subInId, setSubInId] = useState<number | null>(null);
+  // Per-quarter stats tracking
+  const [quarterStatsLog, setQuarterStatsLog] = useState<QuarterStatEntry[]>([]);
 
   // ── Queries ─────────────────────────────────────────────────────────────────
 
@@ -172,8 +212,15 @@ export default function MatchDetailPage({
     enabled: !!token && !!clubId && !!teamId && !!match?.season_id,
   });
 
+  // Convocatoria and rival management locked once match is finished/cancelled
+  const canEditConvocatoria = isCoachOrTD && !!match && match.status !== "finished" && match.status !== "cancelled";
+
   const competitionName = match?.competition_id
     ? competitions.find((c) => c.id === match.competition_id)?.name
+    : null;
+
+  const matchCompetition = match?.competition_id
+    ? competitions.find((c) => c.id === match.competition_id)
     : null;
 
   const completedVideos = videos.filter((v) => v.status === "completed");
@@ -247,6 +294,56 @@ export default function MatchDetailPage({
     });
   }, [match]);
 
+  // Session storage — restore on mount
+  const sessionKey = `bball_match_${matchId}`;
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = sessionStorage.getItem(sessionKey);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as {
+        homeOnCourt?: number[];
+        rivalOnCourt?: number[];
+        playerEnteredAtMs?: Record<number, number>;
+        rivalEnteredAtMs?: Record<number, number>;
+        timerMs?: number;
+        currentQuarter?: number;
+      };
+      if (saved.homeOnCourt) setOnCourtIds(new Set(saved.homeOnCourt));
+      if (saved.rivalOnCourt) setOnCourtOppIds(new Set(saved.rivalOnCourt));
+      if (saved.playerEnteredAtMs) setPlayerEnteredAtMs(saved.playerEnteredAtMs);
+      if (saved.rivalEnteredAtMs) setRivalEnteredAtMs(saved.rivalEnteredAtMs);
+      if (saved.timerMs != null) { setTimerMs(saved.timerMs); timerBaseRef.current = saved.timerMs; }
+      if (saved.currentQuarter != null) setCurrentQuarter(saved.currentQuarter);
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionKey]);
+
+  // Session storage — persist on each relevant state change
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      sessionStorage.setItem(sessionKey, JSON.stringify({
+        homeOnCourt: Array.from(onCourtIds),
+        rivalOnCourt: Array.from(onCourtOppIds),
+        playerEnteredAtMs,
+        rivalEnteredAtMs,
+        timerMs,
+        currentQuarter,
+      }));
+    } catch { /* ignore */ }
+  }, [sessionKey, onCourtIds, onCourtOppIds, playerEnteredAtMs, rivalEnteredAtMs, timerMs, currentQuarter]);
+
+  // Timer
+  useEffect(() => {
+    if (!timerRunning) return;
+    timerStartAtRef.current = Date.now() - timerBaseRef.current;
+    const id = setInterval(() => {
+      setTimerMs(Date.now() - timerStartAtRef.current!);
+    }, 100);
+    return () => clearInterval(id);
+  }, [timerRunning]);
+
   // ── State transitions ───────────────────────────────────────────────────────
 
   const startMut = useMutation({
@@ -260,11 +357,64 @@ export default function MatchDetailPage({
   });
 
   const finishMut = useMutation({
-    mutationFn: () => finishMatch(token!, clubId!, teamId, matchId),
+    mutationFn: async () => {
+      // Auto-save minutes for home players still on court
+      if (match?.track_home_minutes && onCourtIds.size > 0) {
+        await Promise.all(
+          Array.from(onCourtIds)
+            .filter((pid) => playerEnteredAtMs[pid] != null)
+            .map((pid) => {
+              const stintMs = timerMs - playerEnteredAtMs[pid];
+              const stintMin = Math.max(0, Math.round(stintMs / 60000));
+              const existingMin = (sessionStats.get(pid)?.minutes ?? 0) as number;
+              return upsertMatchStat(token!, clubId!, teamId, matchId, {
+                player_id: pid,
+                minutes: (existingMin ?? 0) + stintMin,
+              });
+            }),
+        );
+      }
+      return finishMatch(token!, clubId!, teamId, matchId);
+    },
     onSuccess: (m) => {
       void qc.invalidateQueries({ queryKey: ["match", matchId] });
       void qc.invalidateQueries({ queryKey: ["matches", teamId] });
       toast(`Partido vs. ${m.opponent_name} finalizado.`);
+      // Clear session on finish
+      try { sessionStorage.removeItem(sessionKey); } catch { /* ignore */ }
+    },
+    onError: (e: Error) => toast(e.message, "error"),
+  });
+
+  const setHomeStartersMut = useMutation({
+    mutationFn: (playerIds: number[]) =>
+      setHomeStarters(token!, clubId!, teamId, matchId, { player_ids: playerIds }),
+    onSuccess: (m) => {
+      void qc.invalidateQueries({ queryKey: ["match", matchId] });
+      // Initialize on-court with confirmed starters
+      const starterIds = m.match_players.filter((mp) => mp.is_starter).map((mp) => mp.player_id);
+      setOnCourtIds(new Set(starterIds));
+      const now = timerMs;
+      const entered: Record<number, number> = {};
+      starterIds.forEach((id) => { entered[id] = now; });
+      setPlayerEnteredAtMs(entered);
+      toast("Titulares confirmados.");
+    },
+    onError: (e: Error) => toast(e.message, "error"),
+  });
+
+  const setRivalStartersMut = useMutation({
+    mutationFn: (playerIds: number[]) =>
+      setRivalStarters(token!, clubId!, teamId, matchId, { player_ids: playerIds }),
+    onSuccess: (m) => {
+      void qc.invalidateQueries({ queryKey: ["match", matchId] });
+      const starterIds = m.opponent_stats.filter((os) => os.is_starter).map((os) => os.opponent_player_id);
+      setOnCourtOppIds(new Set(starterIds));
+      const now = timerMs;
+      const entered: Record<number, number> = {};
+      starterIds.forEach((id) => { entered[id] = now; });
+      setRivalEnteredAtMs(entered);
+      toast("Titulares del rival confirmados.");
     },
     onError: (e: Error) => toast(e.message, "error"),
   });
@@ -414,10 +564,52 @@ export default function MatchDetailPage({
     onError: (e: Error) => toast(e.message, "error"),
   });
 
+  const bulkAddOppPlayerMut = useMutation({
+    mutationFn: (jerseys: number[]) =>
+      bulkAddOpponentPlayers(token!, clubId!, match!.opponent_id!, { jersey_numbers: jerseys }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["opponent", clubId, match?.opponent_id] });
+      setShowBulkAddOppPlayer(false);
+      setBulkOppJerseys("");
+      toast("Jugadores añadidos al rival.");
+    },
+    onError: (e: Error) => toast(e.message, "error"),
+  });
+
+  const convocarAllOppMut = useMutation({
+    mutationFn: (oppPlayerIds: number[]) =>
+      Promise.all(oppPlayerIds.map((id) =>
+        upsertOpponentStat(token!, clubId!, teamId, matchId, { opponent_player_id: id })
+      )),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["match", matchId] });
+      toast("Todos los jugadores del rival convocados.");
+    },
+    onError: (e: Error) => toast(e.message, "error"),
+  });
+
+  const removeAllOppStatsMut = useMutation({
+    mutationFn: (statIds: number[]) =>
+      Promise.all(statIds.map((id) => deleteOpponentStat(token!, clubId!, teamId, matchId, id))),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["match", matchId] });
+      toast("Convocatoria rival vaciada.");
+    },
+    onError: (e: Error) => toast(e.message, "error"),
+  });
+
   // ── Live scoring handlers ───────────────────────────────────────────────────
 
   function handleAction(statKey: StatKey | null, delta: number, label: string) {
-    if (!selectedPlayerId || !match) return;
+    if (!match) return;
+    if (homeTeamSelected) {
+      const logId = ++logCounterRef.current;
+      setActionLog((prev) =>
+        [{ logId, playerId: -1, playerName: "Equipo", label, statKey, delta, team: "home" as const, quarter: currentQuarter }, ...prev].slice(0, 10),
+      );
+      return;
+    }
+    if (!selectedPlayerId) return;
     const mp = match.match_players.find((p) => p.player_id === selectedPlayerId);
     const playerName = mp
       ? `${mp.player_first_name ?? ""} ${mp.player_last_name ?? ""}`.trim()
@@ -425,8 +617,11 @@ export default function MatchDetailPage({
 
     const logId = ++logCounterRef.current;
     setActionLog((prev) =>
-      [{ logId, playerId: selectedPlayerId, playerName, label, statKey, delta }, ...prev].slice(0, 10),
+      [{ logId, playerId: selectedPlayerId, playerName, label, statKey, delta, team: "home" as const, quarter: currentQuarter }, ...prev].slice(0, 10),
     );
+    if (statKey !== null && delta !== 0) {
+      setQuarterStatsLog((prev) => [...prev, { quarter: currentQuarter, team: "home", statKey, delta, playerName }]);
+    }
 
     if (statKey === null || delta === 0) return;
 
@@ -448,8 +643,32 @@ export default function MatchDetailPage({
     }
   }
 
+  const OPP_STAT_LABELS: Record<StatKey, string> = {
+    points: "+Pts", assists: "AST", defensive_rebounds: "REB-D",
+    offensive_rebounds: "REB-O", steals: "REC", turnovers: "PÉR", fouls: "FAL", blocks: "TAP",
+  };
+
   function handleOppAction(statKey: StatKey | null, delta: number) {
-    if (!selectedOppPlayerId || !match || statKey === null || delta === 0) return;
+    if (!match || statKey === null || delta === 0) return;
+    if (rivalTeamSelected) {
+      const logId = ++logCounterRef.current;
+      setActionLog((prev) =>
+        [{ logId, playerId: -1, playerName: "Equipo rival", label: OPP_STAT_LABELS[statKey] ?? statKey, statKey, delta, team: "rival" as const, quarter: currentQuarter }, ...prev].slice(0, 10),
+      );
+      return;
+    }
+    if (!selectedOppPlayerId) return;
+
+    // Log rival action
+    const oppPlayer = match.opponent_stats.find((os) => os.opponent_player_id === selectedOppPlayerId);
+    const oppName = oppPlayer
+      ? (oppPlayer.opponent_player.name ?? `#${oppPlayer.opponent_player.jersey_number}`)
+      : "Rival";
+    const logId = ++logCounterRef.current;
+    setActionLog((prev) =>
+      [{ logId, playerId: selectedOppPlayerId, playerName: oppName, label: OPP_STAT_LABELS[statKey] ?? statKey, statKey, delta, team: "rival" as const, quarter: currentQuarter }, ...prev].slice(0, 10),
+    );
+    setQuarterStatsLog((prev) => [...prev, { quarter: currentQuarter, team: "rival", statKey, delta, playerName: oppName }]);
 
     const current = oppStatDraft.get(selectedOppPlayerId) ?? { opponent_player_id: selectedOppPlayerId };
     const currentVal = ((current[statKey as keyof typeof current] ?? 0) as number);
@@ -473,7 +692,8 @@ export default function MatchDetailPage({
     if (actionLog.length === 0) return;
     const last = actionLog[0];
     setActionLog((prev) => prev.slice(1));
-    if (last.statKey === null || last.delta === 0) return;
+    // Only undo home player stats — rival stats are saved directly and not undoable here
+    if (last.team !== "home" || last.statKey === null || last.delta === 0) return;
 
     const current = sessionStats.get(last.playerId) ?? { player_id: last.playerId };
     const currentVal = ((current[last.statKey] ?? 0) as number);
@@ -501,6 +721,71 @@ export default function MatchDetailPage({
     setSessionStats((prev) => new Map(prev).set(playerId, updated));
     upsertStatMut.mutate(updated);
   }
+
+  // ── On-court helpers ────────────────────────────────────────────────────────
+
+  const maxOnCourt = matchCompetition?.players_on_court ?? 5;
+
+  function handlePlayerClick(playerId: number) {
+    setHomeTeamSelected(false);
+    setRivalTeamSelected(false);
+    setSelectedOppPlayerId(null);
+    if (onCourtIds.has(playerId)) {
+      setSelectedPlayerId(playerId);
+    } else {
+      if (onCourtIds.size < maxOnCourt) {
+        setOnCourtIds((prev) => new Set(prev).add(playerId));
+        setSelectedPlayerId(playerId);
+      } else {
+        toast(`Máximo ${maxOnCourt} jugadores en pista`, "error");
+      }
+    }
+  }
+
+  function removeFromCourt(playerId: number) {
+    setOnCourtIds((prev) => { const n = new Set(prev); n.delete(playerId); return n; });
+    if (selectedPlayerId === playerId) setSelectedPlayerId(null);
+  }
+
+  function handleOppPlayerClick(oppPlayerId: number) {
+    setRivalTeamSelected(false);
+    setHomeTeamSelected(false);
+    setSelectedPlayerId(null);
+    if (onCourtOppIds.has(oppPlayerId)) {
+      setSelectedOppPlayerId(oppPlayerId);
+    } else {
+      if (onCourtOppIds.size < maxOnCourt) {
+        setOnCourtOppIds((prev) => new Set(prev).add(oppPlayerId));
+        setSelectedOppPlayerId(oppPlayerId);
+      } else {
+        toast(`Máximo ${maxOnCourt} jugadores en pista`, "error");
+      }
+    }
+  }
+
+  function removeOppFromCourt(oppPlayerId: number) {
+    setOnCourtOppIds((prev) => { const n = new Set(prev); n.delete(oppPlayerId); return n; });
+    if (selectedOppPlayerId === oppPlayerId) setSelectedOppPlayerId(null);
+  }
+
+  const regularQuarters = matchCompetition?.quarters ?? 4;
+  const isOT = currentQuarter > regularQuarters;
+  const periodDurationMs = (isOT
+    ? (matchCompetition?.overtime_minutes ?? 5)
+    : (matchCompetition?.minutes_per_quarter ?? 10)) * 60 * 1000;
+  const remainingMs = Math.max(0, periodDurationMs - timerMs);
+  const quarterLabel = isOT ? `OT${currentQuarter - regularQuarters}` : `Q${currentQuarter}`;
+  const timerDisplay = (() => {
+    if (remainingMs >= 60000) {
+      const totalSec = Math.floor(remainingMs / 1000);
+      const m = Math.floor(totalSec / 60);
+      const s = totalSec % 60;
+      return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+    const s = Math.floor(remainingMs / 1000);
+    const tenths = Math.floor((remainingMs % 1000) / 100);
+    return `${String(s).padStart(2, "0")}.${tenths}`;
+  })();
 
   // ── Loading / not found ─────────────────────────────────────────────────────
 
@@ -549,6 +834,7 @@ export default function MatchDetailPage({
   const convocadoIds = new Set(match.match_players.map((mp) => mp.player_id));
   const notConvocado = roster.filter((re) => !convocadoIds.has(re.player_id) && !re.archived_at);
   const rosterPhotoMap = new Map(roster.map((re) => [re.player_id, re.player.photo_url]));
+  const rosterJerseyMap = new Map(roster.map((re) => [re.player_id, re.jersey_number]));
 
   const dateStr = new Date(match.date).toLocaleDateString("es-ES", {
     weekday: "long", day: "2-digit", month: "long", year: "numeric",
@@ -558,6 +844,22 @@ export default function MatchDetailPage({
   });
 
   const isTransitioning = startMut.isPending || finishMut.isPending;
+
+  // Starters confirmed when tracking is off, or enough is_starter flags are set
+  const homeStartersConfirmed =
+    !match.track_home_minutes ||
+    match.match_players.filter((mp) => mp.is_starter).length >= maxOnCourt;
+  const rivalStartersConfirmed =
+    !match.track_rival_minutes ||
+    match.opponent_stats.filter((os) => os.is_starter).length >= maxOnCourt;
+
+  // Iniciar partido requires at least one home player + one rival player (if rival is set)
+  // + confirmed starters for each team that tracks minutes
+  const canStartMatch =
+    match.match_players.length > 0 &&
+    (!match.opponent_id || match.opponent_stats.length > 0) &&
+    homeStartersConfirmed &&
+    rivalStartersConfirmed;
   const showScore = match.status === "in_progress" || match.status === "finished";
 
   // ── #22 Imprimir convocatoria ─────────────────────────────────────────────────
@@ -663,20 +965,9 @@ export default function MatchDetailPage({
             </div>
           </div>
 
-          {/* Acciones de transición */}
-          <div className="flex items-center justify-center gap-2 mt-4 flex-wrap">
-            {isCoachOrTD && match.status === "scheduled" && (
-              <Button
-                size="sm"
-                disabled={isTransitioning}
-                onClick={() => startMut.mutate()}
-                className="gap-1.5"
-              >
-                <Play className="h-3.5 w-3.5" />
-                Iniciar partido
-              </Button>
-            )}
-            {isCoachOrTD && match.status === "in_progress" && (
+          {/* Finalizar partido — solo visible en in_progress */}
+          {isCoachOrTD && match.status === "in_progress" && (
+            <div className="flex items-center justify-center mt-4">
               <Button
                 size="sm"
                 disabled={isTransitioning}
@@ -686,17 +977,8 @@ export default function MatchDetailPage({
                 <CheckCircle className="h-3.5 w-3.5" />
                 Finalizar partido
               </Button>
-            )}
-            {isCoachOrTD && match.status === "finished" && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setScoreDialogOpen(true)}
-              >
-                Editar resultado final
-              </Button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Tabs */}
@@ -718,17 +1000,6 @@ export default function MatchDetailPage({
               {t === "videos" && "Vídeo"}
             </button>
           ))}
-          {/* Print button — visible only on convocatoria tab */}
-          {tab === "convocatoria" && match.match_players.length > 0 && (
-            <button
-              onClick={handlePrintConvocatoria}
-              className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors shrink-0"
-              title="Imprimir convocatoria"
-            >
-              <Printer className="h-3.5 w-3.5" />
-              Imprimir
-            </button>
-          )}
         </div>
 
         {/* Tab: Convocatoria */}
@@ -739,37 +1010,17 @@ export default function MatchDetailPage({
                 <p className="text-sm font-semibold">
                   Convocados ({match.match_players.length})
                 </p>
-                {isCoachOrTD && match.match_players.length > 0 && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
-                        disabled={removeAllPlayersMut.isPending}
-                      >
-                        <UserMinus className="h-3 w-3" />
-                        Quitar todos
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>¿Quitar toda la convocatoria?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Se retirarán los {match.match_players.length} jugadores convocados. Esta acción no afecta a las estadísticas ya registradas.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                        <AlertDialogAction
-                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          onClick={() => removeAllPlayersMut.mutate(match.match_players.map((mp) => mp.player_id))}
-                        >
-                          Quitar todos
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+                {canEditConvocatoria && match.match_players.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    disabled={removeAllPlayersMut.isPending}
+                    onClick={() => removeAllPlayersMut.mutate(match.match_players.map((mp) => mp.player_id))}
+                  >
+                    <UserMinus className="h-3 w-3" />
+                    Quitar todos
+                  </Button>
                 )}
               </div>
               {match.match_players.length === 0 ? (
@@ -796,39 +1047,25 @@ export default function MatchDetailPage({
                         )}
                         <div className="flex-1">
                           <p className="text-sm font-medium">
+                            {rosterJerseyMap.get(mp.player_id) != null && (
+                              <span className="text-xs text-muted-foreground mr-2">
+                                #{rosterJerseyMap.get(mp.player_id)}
+                              </span>
+                            )}
                             {mp.player_first_name} {mp.player_last_name}
                           </p>
                         </div>
-                        {isCoachOrTD && (
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                disabled={removePlayerMut.isPending}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>¿Retirar jugador?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Se retirará a <strong>{mp.player_first_name} {mp.player_last_name}</strong> de la convocatoria.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => removePlayerMut.mutate(mp.player_id)}
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                >
-                                  Retirar
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                        {canEditConvocatoria && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            disabled={removePlayerMut.isPending}
+                            onClick={() => removePlayerMut.mutate(mp.player_id)}
+                            title="Retirar de la convocatoria"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
                         )}
                       </div>
                     );
@@ -837,25 +1074,33 @@ export default function MatchDetailPage({
               )}
             </div>
 
-            {notConvocado.length > 0 && (
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm font-semibold text-muted-foreground">
-                    No convocados ({notConvocado.length})
-                  </p>
-                  {isCoachOrTD && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs gap-1"
-                      disabled={addPlayerMut.isPending}
-                      onClick={() => notConvocado.forEach((re) => addPlayerMut.mutate(re.player_id))}
-                    >
-                      <UserPlus className="h-3 w-3" />
-                      Convocar a todos
-                    </Button>
-                  )}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-muted-foreground">
+                  No convocados ({notConvocado.length})
+                </p>
+                {canEditConvocatoria && notConvocado.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1"
+                    disabled={addPlayerMut.isPending}
+                    onClick={() => {
+                      const maxSquad = matchCompetition?.bench_size ?? 12;
+                      const slots = Math.max(0, maxSquad - match.match_players.length);
+                      notConvocado.slice(0, slots).forEach((re) => addPlayerMut.mutate(re.player_id));
+                    }}
+                  >
+                    <UserPlus className="h-3 w-3" />
+                    Convocar a todos
+                  </Button>
+                )}
+              </div>
+              {notConvocado.length === 0 ? (
+                <div className="border rounded-lg p-4 text-center text-sm text-muted-foreground">
+                  Todos los jugadores de la plantilla están convocados.
                 </div>
+              ) : (
                 <div className="border rounded-lg divide-y">
                   {notConvocado.map((re) => {
                     const photoUrl = re.player.photo_url;
@@ -873,8 +1118,13 @@ export default function MatchDetailPage({
                             {(re.player.first_name?.[0] ?? "").toUpperCase()}{(re.player.last_name?.[0] ?? "").toUpperCase()}
                           </div>
                         )}
-                        <p className="text-sm flex-1 text-muted-foreground">{re.player.first_name} {re.player.last_name}</p>
-                        {isCoachOrTD && (
+                        <p className="text-sm flex-1 text-muted-foreground">
+                          {re.jersey_number != null && (
+                            <span className="text-xs mr-2">#{re.jersey_number}</span>
+                          )}
+                          {re.player.first_name} {re.player.last_name}
+                        </p>
+                        {canEditConvocatoria && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -890,8 +1140,8 @@ export default function MatchDetailPage({
                     );
                   })}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
 
@@ -918,24 +1168,49 @@ export default function MatchDetailPage({
                     />
                     <span className="font-semibold">{opponentTeam.name}</span>
                   </div>
-                  {isCoachOrTD && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs gap-1"
-                      onClick={() => { setOppPlayerJersey(""); setOppPlayerName(""); setOppPlayerPosition(""); setShowAddOppPlayer(true); }}
-                    >
-                      <Plus className="h-3 w-3" />
-                      Nuevo jugador rival
-                    </Button>
+                  {canEditConvocatoria && (
+                    <div className="flex gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs gap-1"
+                        onClick={() => { setBulkOppJerseys(""); setShowBulkAddOppPlayer(true); }}
+                      >
+                        <Plus className="h-3 w-3" />
+                        Añadir jugadores
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs gap-1"
+                        onClick={() => { setOppPlayerJersey(""); setOppPlayerName(""); setOppPlayerPosition(""); setShowAddOppPlayer(true); }}
+                      >
+                        <Plus className="h-3 w-3" />
+                        Jugador individual
+                      </Button>
+                    </div>
                   )}
                 </div>
 
                 {/* Convocados del rival */}
                 <div>
-                  <p className="text-sm font-semibold mb-2">
-                    Convocados del rival ({match.opponent_stats.length})
-                  </p>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-semibold">
+                      Convocados del rival ({match.opponent_stats.length})
+                    </p>
+                    {canEditConvocatoria && match.opponent_stats.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs gap-1 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        disabled={removeAllOppStatsMut.isPending}
+                        onClick={() => removeAllOppStatsMut.mutate(match.opponent_stats.map((os) => os.id))}
+                      >
+                        <UserMinus className="h-3 w-3" />
+                        Quitar todos
+                      </Button>
+                    )}
+                  </div>
                   {match.opponent_stats.length === 0 ? (
                     <div className="border rounded-lg p-6 text-center text-muted-foreground text-sm">
                       No hay jugadores convocados del rival aún.
@@ -948,35 +1223,17 @@ export default function MatchDetailPage({
                             <span className="text-xs text-muted-foreground mr-2">#{os.opponent_player.jersey_number}</span>
                             {os.opponent_player.name}
                           </span>
-                          {isCoachOrTD && (
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Deconvocar jugador rival</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    Se eliminarán las estadísticas de <strong>{os.opponent_player.name}</strong> en este partido.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                    onClick={() => deleteOppStatMut.mutate(os.id)}
-                                  >
-                                    Deconvocar
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
+                          {canEditConvocatoria && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                              disabled={deleteOppStatMut.isPending}
+                              onClick={() => deleteOppStatMut.mutate(os.id)}
+                              title="Deconvocar jugador rival"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
                           )}
                         </div>
                       ))}
@@ -984,36 +1241,63 @@ export default function MatchDetailPage({
                   )}
                 </div>
 
-                {/* No convocados del rival */}
-                {isCoachOrTD && (() => {
+                {/* No convocados del rival — always visible */}
+                {(() => {
                   const convocadoOppIds = new Set(match.opponent_stats.map((os) => os.opponent_player_id));
-                  const notConv = opponentTeam.players.filter((p) => !convocadoOppIds.has(p.id) && !p.archived_at);
-                  if (notConv.length === 0) return null;
+                  const notConv = opponentTeam.players
+                    .filter((p) => !convocadoOppIds.has(p.id) && !p.archived_at)
+                    .sort((a, b) => (a.jersey_number ?? 999) - (b.jersey_number ?? 999));
                   return (
                     <div>
-                      <p className="text-sm font-semibold text-muted-foreground mb-2">
-                        No convocados ({notConv.length})
-                      </p>
-                      <div className="border rounded-lg divide-y">
-                        {[...notConv].sort((a, b) => (a.jersey_number ?? 999) - (b.jersey_number ?? 999)).map((p) => (
-                          <div key={p.id} className="flex items-center justify-between px-4 py-2.5">
-                            <span className="text-sm">
-                              <span className="text-xs text-muted-foreground mr-2">#{p.jersey_number}</span>
-                              {p.name}
-                            </span>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-xs gap-1"
-                              onClick={() => convocarOppMut.mutate(p.id)}
-                              disabled={convocarOppMut.isPending}
-                            >
-                              <UserPlus className="h-3 w-3" />
-                              Convocar
-                            </Button>
-                          </div>
-                        ))}
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm font-semibold text-muted-foreground">
+                          No convocados ({notConv.length})
+                        </p>
+                        {canEditConvocatoria && notConv.length > 0 && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1"
+                            disabled={convocarAllOppMut.isPending}
+                            onClick={() => {
+                              const maxSquad = matchCompetition?.bench_size ?? 12;
+                              const slots = Math.max(0, maxSquad - match.opponent_stats.length);
+                              convocarAllOppMut.mutate(notConv.slice(0, slots).map((p) => p.id));
+                            }}
+                          >
+                            <UserPlus className="h-3 w-3" />
+                            Convocar a todos
+                          </Button>
+                        )}
                       </div>
+                      {notConv.length === 0 ? (
+                        <div className="border rounded-lg p-4 text-center text-sm text-muted-foreground">
+                          Todos los jugadores del rival están convocados.
+                        </div>
+                      ) : (
+                        <div className="border rounded-lg divide-y">
+                          {notConv.map((p) => (
+                            <div key={p.id} className="flex items-center justify-between px-4 py-2.5">
+                              <span className="text-sm">
+                                <span className="text-xs text-muted-foreground mr-2">#{p.jersey_number}</span>
+                                {p.name}
+                              </span>
+                              {canEditConvocatoria && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs gap-1"
+                                  onClick={() => convocarOppMut.mutate(p.id)}
+                                  disabled={convocarOppMut.isPending}
+                                >
+                                  <UserPlus className="h-3 w-3" />
+                                  Convocar
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
@@ -1024,10 +1308,187 @@ export default function MatchDetailPage({
 
         {/* Tab: Estadísticas */}
         {tab === "estadisticas" && (
-          <div className="space-y-8">
+          <div className="space-y-4">
             {match.status === "scheduled" && (
-              <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
-                Las estadísticas se pueden registrar una vez iniciado el partido.
+              <div className="space-y-4">
+
+                {/* ── Lineup setup: equipo local ── */}
+                {isCoachOrTD && match.track_home_minutes && match.match_players.length > 0 && (
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="px-4 py-3 border-b bg-muted/20 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold">
+                          Titulares — {activeProfile?.team_name ?? "Equipo local"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {homeStartersConfirmed
+                            ? `${match.match_players.filter((mp) => mp.is_starter).length} titulares confirmados ✓`
+                            : `Selecciona ${maxOnCourt} jugadores · ${lineupHomeIds.size}/${maxOnCourt}`}
+                        </p>
+                      </div>
+                      {homeStartersConfirmed ? (
+                        <Button size="sm" variant="outline"
+                          onClick={() => setHomeStartersMut.mutate([])}>
+                          Cambiar
+                        </Button>
+                      ) : (
+                        <Button size="sm"
+                          disabled={lineupHomeIds.size !== maxOnCourt || setHomeStartersMut.isPending}
+                          onClick={() => setHomeStartersMut.mutate(Array.from(lineupHomeIds))}>
+                          Confirmar
+                        </Button>
+                      )}
+                    </div>
+                    <div className="divide-y">
+                      {match.match_players.map((mp) => {
+                        const jersey = rosterJerseyMap.get(mp.player_id);
+                        const isConfirmed = homeStartersConfirmed && mp.is_starter;
+                        const isPending = !homeStartersConfirmed && lineupHomeIds.has(mp.player_id);
+                        const checked = isConfirmed || isPending;
+                        return (
+                          <button
+                            key={mp.player_id}
+                            disabled={homeStartersConfirmed}
+                            className={cn(
+                              "w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors",
+                              !homeStartersConfirmed && "hover:bg-muted/30",
+                              checked && "bg-primary/5",
+                            )}
+                            onClick={() => {
+                              if (homeStartersConfirmed) return;
+                              setLineupHomeIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(mp.player_id)) {
+                                  next.delete(mp.player_id);
+                                } else if (next.size < maxOnCourt) {
+                                  next.add(mp.player_id);
+                                } else {
+                                  toast(`Máximo ${maxOnCourt} titulares`, "error");
+                                }
+                                return next;
+                              });
+                            }}
+                          >
+                            <div className={cn(
+                              "h-4 w-4 rounded shrink-0 border-2 flex items-center justify-center",
+                              checked ? "bg-primary border-primary" : "border-muted-foreground/40",
+                            )}>
+                              {checked && <CheckCircle className="h-3 w-3 text-primary-foreground" />}
+                            </div>
+                            <span className="text-[11px] font-medium text-muted-foreground w-7 shrink-0">
+                              {jersey != null ? `#${jersey}` : ""}
+                            </span>
+                            <span className="text-sm">{mp.player_first_name} {mp.player_last_name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Lineup setup: equipo rival ── */}
+                {isCoachOrTD && match.track_rival_minutes && match.opponent_stats.length > 0 && (
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="px-4 py-3 border-b bg-muted/20 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold">
+                          Titulares — {opponentTeam?.name ?? match.opponent_name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {rivalStartersConfirmed
+                            ? `${match.opponent_stats.filter((os) => os.is_starter).length} titulares confirmados ✓`
+                            : `Selecciona ${maxOnCourt} jugadores · ${lineupRivalIds.size}/${maxOnCourt}`}
+                        </p>
+                      </div>
+                      {rivalStartersConfirmed ? (
+                        <Button size="sm" variant="outline"
+                          onClick={() => setRivalStartersMut.mutate([])}>
+                          Cambiar
+                        </Button>
+                      ) : (
+                        <Button size="sm"
+                          disabled={lineupRivalIds.size !== maxOnCourt || setRivalStartersMut.isPending}
+                          onClick={() => setRivalStartersMut.mutate(Array.from(lineupRivalIds))}>
+                          Confirmar
+                        </Button>
+                      )}
+                    </div>
+                    <div className="divide-y">
+                      {match.opponent_stats.map((os) => {
+                        const isConfirmed = rivalStartersConfirmed && os.is_starter;
+                        const isPending = !rivalStartersConfirmed && lineupRivalIds.has(os.opponent_player_id);
+                        const checked = isConfirmed || isPending;
+                        return (
+                          <button
+                            key={os.opponent_player_id}
+                            disabled={rivalStartersConfirmed}
+                            className={cn(
+                              "w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors",
+                              !rivalStartersConfirmed && "hover:bg-muted/30",
+                              checked && "bg-primary/5",
+                            )}
+                            onClick={() => {
+                              if (rivalStartersConfirmed) return;
+                              setLineupRivalIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(os.opponent_player_id)) {
+                                  next.delete(os.opponent_player_id);
+                                } else if (next.size < maxOnCourt) {
+                                  next.add(os.opponent_player_id);
+                                } else {
+                                  toast(`Máximo ${maxOnCourt} titulares`, "error");
+                                }
+                                return next;
+                              });
+                            }}
+                          >
+                            <div className={cn(
+                              "h-4 w-4 rounded shrink-0 border-2 flex items-center justify-center",
+                              checked ? "bg-primary border-primary" : "border-muted-foreground/40",
+                            )}>
+                              {checked && <CheckCircle className="h-3 w-3 text-primary-foreground" />}
+                            </div>
+                            <span className="text-[11px] font-medium text-muted-foreground w-7 shrink-0">
+                              {os.opponent_player.jersey_number != null ? `#${os.opponent_player.jersey_number}` : ""}
+                            </span>
+                            <span className="text-sm">{os.opponent_player.name ?? "Jugador"}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Iniciar partido ── */}
+                <div className="border rounded-lg p-8 text-center space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    Las estadísticas se registran durante el partido.
+                  </p>
+                  {isCoachOrTD && (
+                    canStartMatch ? (
+                      <Button size="sm" disabled={isTransitioning} onClick={() => startMut.mutate()} className="gap-1.5">
+                        <Play className="h-3.5 w-3.5" />
+                        Iniciar partido
+                      </Button>
+                    ) : (
+                      <div className="text-xs text-muted-foreground space-y-1">
+                        <p className="font-medium text-foreground text-sm">Para iniciar el partido necesitas:</p>
+                        {match.match_players.length === 0 && (
+                          <p>· <button className="underline" onClick={() => setTab("convocatoria")}>Añadir jugadores a la convocatoria</button></p>
+                        )}
+                        {!!match.opponent_id && match.opponent_stats.length === 0 && (
+                          <p>· <button className="underline" onClick={() => setTab("rival")}>Convocar al menos un jugador del rival</button></p>
+                        )}
+                        {match.match_players.length > 0 && !homeStartersConfirmed && (
+                          <p>· Confirmar los titulares del equipo local ({lineupHomeIds.size}/{maxOnCourt})</p>
+                        )}
+                        {match.opponent_stats.length > 0 && !rivalStartersConfirmed && (
+                          <p>· Confirmar los titulares del rival ({lineupRivalIds.size}/{maxOnCourt})</p>
+                        )}
+                      </div>
+                    )
+                  )}
+                </div>
               </div>
             )}
 
@@ -1037,299 +1498,505 @@ export default function MatchDetailPage({
               </div>
             )}
 
-            {(match.status === "in_progress" || match.status === "finished") && (
+            {match.status === "in_progress" && isCoachOrTD && (
               <>
-                {/* ── Nuestro equipo ── */}
+                {/* ── Cronómetro ── */}
+                <div className="border rounded-lg bg-muted/20">
+                  <div className="flex items-center justify-between px-4 py-2.5">
+                    <div className="flex items-center gap-3">
+                      <span className={cn(
+                        "text-xs font-bold rounded px-2 py-0.5",
+                        isOT ? "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400" : "bg-muted text-muted-foreground"
+                      )}>
+                        {quarterLabel}/{regularQuarters}Q
+                      </span>
+                      <span className={cn(
+                        "font-mono text-2xl font-bold tabular-nums tracking-tight",
+                        remainingMs < 60000 && remainingMs > 0 ? "text-orange-500" : remainingMs === 0 ? "text-red-500" : ""
+                      )}>
+                        {timerDisplay}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Button size="sm" variant={timerRunning ? "default" : "outline"} className="h-8 gap-1.5 text-xs"
+                        onClick={() => {
+                          if (timerRunning) {
+                            timerBaseRef.current = timerMs;
+                            setTimerRunning(false);
+                          } else {
+                            setTimerRunning(true);
+                          }
+                        }}>
+                        {timerRunning ? <><Pause className="h-3 w-3" />Pausar</> : <><Play className="h-3 w-3" />{timerMs > 0 ? "Reanudar" : "Iniciar"}</>}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-8 gap-1 text-xs"
+                        onClick={() => {
+                          timerBaseRef.current = 0;
+                          setTimerMs(0);
+                          if (timerRunning) { setTimerRunning(false); setTimeout(() => setTimerRunning(true), 0); }
+                        }}>
+                        <RotateCcw className="h-3 w-3" />Reset
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-8 text-xs"
+                        onClick={() => {
+                          timerBaseRef.current = 0;
+                          setTimerMs(0);
+                          setTimerRunning(false);
+                          setCurrentQuarter((q) => q + 1);
+                        }}>
+                        {currentQuarter < regularQuarters
+                          ? `Q${currentQuarter + 1} →`
+                          : currentQuarter === regularQuarters
+                          ? "Prórroga →"
+                          : `OT${currentQuarter - regularQuarters + 1} →`}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-8 gap-1 text-xs"
+                        onClick={() => { setShowSubstitution((s) => !s); setSubOutId(null); setSubInId(null); }}>
+                        <ArrowLeftRight className="h-3 w-3" />Cambio
+                      </Button>
+                    </div>
+                  </div>
+                  {/* Substitution panel */}
+                  {showSubstitution && (
+                    <div className="border-t px-4 py-3 space-y-2 bg-accent/5">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Sustitución</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Sale (en pista)</Label>
+                          <Select value={subOutId !== null ? String(subOutId) : ""} onValueChange={(v) => setSubOutId(Number(v))}>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Jugador que sale" /></SelectTrigger>
+                            <SelectContent>
+                              {match.match_players.filter((mp) => onCourtIds.has(mp.player_id)).map((mp) => (
+                                <SelectItem key={mp.player_id} value={String(mp.player_id)}>
+                                  {rosterJerseyMap.get(mp.player_id) != null ? `#${rosterJerseyMap.get(mp.player_id)} ` : ""}
+                                  {mp.player_first_name} {mp.player_last_name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Entra (banquillo)</Label>
+                          <Select value={subInId !== null ? String(subInId) : ""} onValueChange={(v) => setSubInId(Number(v))}>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Jugador que entra" /></SelectTrigger>
+                            <SelectContent>
+                              {match.match_players.filter((mp) => !onCourtIds.has(mp.player_id)).map((mp) => (
+                                <SelectItem key={mp.player_id} value={String(mp.player_id)}>
+                                  {rosterJerseyMap.get(mp.player_id) != null ? `#${rosterJerseyMap.get(mp.player_id)} ` : ""}
+                                  {mp.player_first_name} {mp.player_last_name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" className="h-7 text-xs"
+                          onClick={() => { setShowSubstitution(false); setSubOutId(null); setSubInId(null); }}>
+                          Cancelar
+                        </Button>
+                        <Button size="sm" className="h-7 text-xs"
+                          disabled={subOutId === null || subInId === null}
+                          onClick={() => {
+                            if (subOutId === null || subInId === null) return;
+                            // Auto-calculate minutes for player leaving court
+                            if (match.track_home_minutes && playerEnteredAtMs[subOutId] != null) {
+                              const stintMs = timerMs - playerEnteredAtMs[subOutId];
+                              const stintMin = Math.max(0, Math.round(stintMs / 60000));
+                              const existingMin = sessionStats.get(subOutId)?.minutes ?? 0;
+                              const newMin = (existingMin ?? 0) + stintMin;
+                              setSessionStats((prev) => {
+                                const next = new Map(prev);
+                                next.set(subOutId, { ...(next.get(subOutId) ?? { player_id: subOutId }), minutes: newMin });
+                                return next;
+                              });
+                              upsertStatMut.mutate({ player_id: subOutId, minutes: newMin });
+                              // Update enteredAt: player out leaves, player in starts counting
+                              setPlayerEnteredAtMs((prev) => {
+                                const next = { ...prev };
+                                delete next[subOutId];
+                                next[subInId] = timerMs;
+                                return next;
+                              });
+                            }
+                            setOnCourtIds((prev) => { const n = new Set(prev); n.delete(subOutId); n.add(subInId); return n; });
+                            const outMp = match.match_players.find((mp) => mp.player_id === subOutId);
+                            const inMp = match.match_players.find((mp) => mp.player_id === subInId);
+                            const outName = outMp ? `${outMp.player_first_name ?? ""} ${outMp.player_last_name ?? ""}`.trim() : "Jugador";
+                            const inName = inMp ? `${inMp.player_first_name ?? ""} ${inMp.player_last_name ?? ""}`.trim() : "Jugador";
+                            const logId = ++logCounterRef.current;
+                            setActionLog((prev) =>
+                              [{ logId, playerId: subInId, playerName: inName, label: `↔ ${outName}`, statKey: null, delta: 0, team: "home" as const, quarter: currentQuarter }, ...prev].slice(0, 10),
+                            );
+                            if (selectedPlayerId === subOutId) setSelectedPlayerId(subInId);
+                            setShowSubstitution(false); setSubOutId(null); setSubInId(null);
+                          }}>
+                          Confirmar cambio
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── 3 columnas: local | acciones | rival ── */}
+                <div className="grid gap-3" style={{ gridTemplateColumns: "220px 1fr 220px" }}>
+
+                  {/* Columna izquierda: jugadores locales */}
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-1">
+                      {activeProfile?.team_name ?? "Local"} · {onCourtIds.size}/{maxOnCourt} en pista
+                    </p>
+                    {(match.track_home_minutes
+                      ? match.match_players.filter((mp) => onCourtIds.has(mp.player_id))
+                      : match.match_players
+                    ).map((mp) => {
+                      const stats = sessionStats.get(mp.player_id);
+                      const isSelected = selectedPlayerId === mp.player_id;
+                      const isOnCourt = onCourtIds.has(mp.player_id);
+                      const photoUrl = rosterPhotoMap.get(mp.player_id);
+                      const jersey = rosterJerseyMap.get(mp.player_id);
+                      const pts = (stats?.points ?? 0) as number;
+                      const ast = (stats?.assists ?? 0) as number;
+                      const reb = ((stats?.defensive_rebounds ?? 0) as number) + ((stats?.offensive_rebounds ?? 0) as number);
+                      const fal = (stats?.fouls ?? 0) as number;
+                      const isExcluded = fal >= 5;
+                      const isFoulWarning = fal === 4;
+                      // Live minutes: saved minutes + current stint if on court
+                      const savedMin = (stats?.minutes ?? 0) as number;
+                      const currentStintMin = match.track_home_minutes && isOnCourt && playerEnteredAtMs[mp.player_id] != null
+                        ? Math.round((timerMs - playerEnteredAtMs[mp.player_id]) / 60000)
+                        : 0;
+                      const liveMin = (savedMin ?? 0) + currentStintMin;
+                      return (
+                        <button
+                          key={mp.player_id}
+                          onClick={() => handlePlayerClick(mp.player_id)}
+                          className={cn(
+                            "w-full text-left rounded-lg p-2 transition-all border",
+                            isSelected
+                              ? "border-primary bg-primary text-primary-foreground shadow-md"
+                              : isOnCourt
+                              ? "border-primary/60 bg-primary/10"
+                              : isExcluded
+                              ? "border-red-300 bg-red-50/50 dark:bg-red-900/10 opacity-60"
+                              : "border-border hover:bg-muted/40",
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="h-10 w-10 rounded-full shrink-0 overflow-hidden bg-muted flex items-center justify-center border border-border">
+                              {photoUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={photoUrl} alt="" className="h-full w-full object-cover" />
+                              ) : (
+                                <span className={cn("font-bold text-sm", isSelected ? "text-primary-foreground" : "text-foreground")}>
+                                  {jersey != null ? jersey : `${mp.player_first_name?.[0] ?? ""}${mp.player_last_name?.[0] ?? ""}`}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              {jersey != null && (
+                                <div className={cn("text-[10px] font-bold leading-none", isSelected ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                                  #{jersey}
+                                </div>
+                              )}
+                              <p className="text-xs font-semibold truncate leading-tight">
+                                {mp.player_first_name} {mp.player_last_name}
+                              </p>
+                              <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                                <span className={cn("text-[10px] leading-none", isSelected ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                                  {pts}p · {ast}a · {reb}r{match.track_home_minutes ? ` · ${liveMin}min` : ""}
+                                </span>
+                                {isExcluded ? (
+                                  <span className="text-[9px] font-bold bg-red-500 text-white rounded px-1 py-px leading-none">EXCL</span>
+                                ) : isFoulWarning ? (
+                                  <span className={cn("text-[10px] font-bold leading-none", isSelected ? "text-orange-200" : "text-orange-500")}>
+                                    {fal}F ⚠
+                                  </span>
+                                ) : (
+                                  <span className={cn("text-[10px] leading-none", isSelected ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                                    {fal}f
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {isOnCourt && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); removeFromCourt(mp.player_id); }}
+                                className={cn("text-sm shrink-0 px-1 rounded hover:bg-black/10", isSelected ? "text-primary-foreground" : "text-muted-foreground")}
+                              >
+                                ×
+                              </button>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                    {/* Botón equipo local */}
+                    <button
+                      onClick={() => { setHomeTeamSelected(true); setSelectedPlayerId(null); setRivalTeamSelected(false); setSelectedOppPlayerId(null); }}
+                      className={cn(
+                        "w-full text-left rounded-lg p-2 transition-all border",
+                        homeTeamSelected ? "border-primary bg-primary text-primary-foreground shadow-md" : "border-dashed border-muted-foreground/30 hover:bg-muted/30",
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="h-10 w-10 rounded-full bg-muted/50 flex items-center justify-center shrink-0 text-lg">
+                          🏀
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold">Equipo</p>
+                          <p className={cn("text-[10px]", homeTeamSelected ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                            Sin jugador asignado
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Columna central: pad de acciones */}
+                  <div className="space-y-2">
+                    {/* Indicador jugador activo */}
+                    <div className={cn(
+                      "text-center text-sm font-medium border rounded-lg px-3 py-2 truncate",
+                      (selectedPlayerId !== null || homeTeamSelected || selectedOppPlayerId !== null || rivalTeamSelected)
+                        ? "bg-accent/20"
+                        : "text-muted-foreground",
+                    )}>
+                      {homeTeamSelected
+                        ? `${activeProfile?.team_name ?? "Local"} — Equipo`
+                        : rivalTeamSelected
+                        ? `${opponentTeam?.name ?? match.opponent_name} — Equipo rival`
+                        : selectedPlayerId !== null
+                        ? (() => {
+                            const mp = match.match_players.find((p) => p.player_id === selectedPlayerId);
+                            return mp ? `${mp.player_first_name ?? ""} ${mp.player_last_name ?? ""}`.trim() : "";
+                          })()
+                        : selectedOppPlayerId !== null
+                        ? (() => {
+                            const os = match.opponent_stats.find((o) => o.opponent_player_id === selectedOppPlayerId);
+                            return os ? `#${os.opponent_player.jersey_number} ${os.opponent_player.name ?? ""}`.trim() : "";
+                          })()
+                        : <span className="text-muted-foreground text-xs">Selecciona un jugador o equipo</span>}
+                    </div>
+
+                    {(selectedPlayerId !== null || homeTeamSelected || selectedOppPlayerId !== null || rivalTeamSelected) ? (
+                      <div className="space-y-1.5">
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <ActionButton label="+2P" sublabel="Canasta 2P" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("points", 2, "+2P"); else handleOppAction("points", 2); }} colorClass="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white" />
+                          <ActionButton label="+3P" sublabel="Canasta 3P" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("points", 3, "+3P"); else handleOppAction("points", 3); }} colorClass="bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white" />
+                          <ActionButton label="+TL" sublabel="Tiro libre" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("points", 1, "+1 TL"); else handleOppAction("points", 1); }} colorClass="bg-teal-500 hover:bg-teal-600 active:bg-teal-700 text-white" />
+                        </div>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <ActionButton label="×2P" sublabel="Fallo 2P" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction(null, 0, "Fallo 2P"); }} colorClass="bg-muted hover:bg-muted/80 text-muted-foreground" />
+                          <ActionButton label="×3P" sublabel="Fallo 3P" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction(null, 0, "Fallo 3P"); }} colorClass="bg-muted hover:bg-muted/80 text-muted-foreground" />
+                          <ActionButton label="×TL" sublabel="Fallo TL" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction(null, 0, "Fallo TL"); }} colorClass="bg-muted hover:bg-muted/80 text-muted-foreground" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <ActionButton label="REB-O" sublabel="Ofensivo" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("offensive_rebounds", 1, "REB-O"); else handleOppAction("offensive_rebounds", 1); }} colorClass="bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white" />
+                          <ActionButton label="REB-D" sublabel="Defensivo" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("defensive_rebounds", 1, "REB-D"); else handleOppAction("defensive_rebounds", 1); }} colorClass="bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white" />
+                        </div>
+                        <div className="grid grid-cols-5 gap-1.5">
+                          <ActionButton label="AST" sublabel="Asistencia" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("assists", 1, "Asistencia"); else handleOppAction("assists", 1); }} colorClass="bg-purple-500 hover:bg-purple-600 active:bg-purple-700 text-white" />
+                          <ActionButton label="REC" sublabel="Recuperación" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("steals", 1, "Recuperación"); else handleOppAction("steals", 1); }} colorClass="bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white" />
+                          <ActionButton label="TAP" sublabel="Tapón" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("blocks", 1, "Tapón"); else handleOppAction("blocks", 1); }} colorClass="bg-cyan-600 hover:bg-cyan-700 active:bg-cyan-800 text-white" />
+                          <ActionButton label="PÉR" sublabel="Pérdida" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("turnovers", 1, "Pérdida"); else handleOppAction("turnovers", 1); }} colorClass="bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white" />
+                          <ActionButton label="FAL" sublabel="Falta" onClick={() => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("fouls", 1, "Falta"); else handleOppAction("fouls", 1); }} colorClass="bg-yellow-500 hover:bg-yellow-600 active:bg-yellow-700 text-black" />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="border rounded-lg flex items-center justify-center min-h-[200px] text-muted-foreground text-sm text-center p-8">
+                        Selecciona un jugador o equipo para registrar acciones
+                      </div>
+                    )}
+
+                    {/* Action log */}
+                    {actionLog.length > 0 && (
+                      <div className="border rounded-lg overflow-hidden">
+                        <div className="flex items-center justify-between px-3 py-1.5 bg-muted/30 border-b">
+                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Últimas acciones</p>
+                          <Button variant="ghost" size="sm" className="h-6 text-xs gap-1 text-muted-foreground hover:text-foreground" onClick={handleUndo}>
+                            <RotateCcw className="h-3 w-3" />Deshacer
+                          </Button>
+                        </div>
+                        <div className="divide-y">
+                          {actionLog.slice(0, 5).map((entry, i) => (
+                            <div key={entry.logId} className={cn("flex items-center gap-2 px-3 py-1.5 text-xs", i === 0 && "bg-accent/10")}>
+                              <span className={cn(
+                                "h-2 w-2 rounded-full shrink-0",
+                                entry.team === "home" ? "bg-blue-500" : entry.team === "rival" ? "bg-orange-500" : "bg-muted-foreground/40"
+                              )} />
+                              <span className="text-[10px] text-muted-foreground shrink-0 font-mono">
+                                {entry.quarter > (matchCompetition?.quarters ?? 4) ? `OT${entry.quarter - (matchCompetition?.quarters ?? 4)}` : `Q${entry.quarter}`}
+                              </span>
+                              <span className="font-medium truncate flex-1">{entry.playerName}</span>
+                              <span className={cn("px-1.5 py-0.5 rounded-full font-semibold shrink-0 text-[10px]", entry.delta > 0 ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400" : "bg-muted text-muted-foreground")}>
+                                {entry.label}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Columna derecha: jugadores rival */}
+                  <div className="space-y-1.5">
+                    {!match.opponent_id ? (
+                      <div className="border rounded-lg p-4 text-center text-xs text-muted-foreground">
+                        Sin rival registrado
+                      </div>
+                    ) : match.opponent_stats.length === 0 ? (
+                      <div className="border rounded-lg p-4 text-center text-xs text-muted-foreground">
+                        <button className="underline" onClick={() => setTab("rival")}>Convocar jugadores del rival</button>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-1">
+                          {opponentTeam?.name ?? match.opponent_name} · {onCourtOppIds.size}/{maxOnCourt}
+                        </p>
+                        {match.opponent_stats.map((os) => {
+                          const draft = oppStatDraft.get(os.opponent_player_id) ?? {};
+                          const isSelected = selectedOppPlayerId === os.opponent_player_id;
+                          const isOnCourt = onCourtOppIds.has(os.opponent_player_id);
+                          const pts = (draft.points ?? 0) as number;
+                          const ast = (draft.assists ?? 0) as number;
+                          const reb = ((draft.defensive_rebounds ?? 0) as number) + ((draft.offensive_rebounds ?? 0) as number);
+                          const fal = (draft.fouls ?? 0) as number;
+                          const oppExcluded = fal >= 5;
+                          const oppFoulWarn = fal === 4;
+                          return (
+                            <button
+                              key={os.opponent_player_id}
+                              onClick={() => handleOppPlayerClick(os.opponent_player_id)}
+                              className={cn(
+                                "w-full text-left rounded-lg p-2 transition-all border",
+                                isSelected
+                                  ? "border-primary bg-primary text-primary-foreground shadow-md"
+                                  : isOnCourt
+                                  ? "border-primary/60 bg-primary/10"
+                                  : oppExcluded
+                                  ? "border-red-300 bg-red-50/50 dark:bg-red-900/10 opacity-60"
+                                  : "border-border hover:bg-muted/40",
+                              )}
+                            >
+                              <div className="flex items-center gap-2">
+                                <div className={cn(
+                                  "h-10 w-10 rounded-full shrink-0 flex items-center justify-center border font-bold text-sm",
+                                  isSelected ? "bg-primary-foreground/20 border-primary-foreground/30 text-primary-foreground" : "bg-muted border-border",
+                                )}>
+                                  {os.opponent_player.jersey_number ?? "?"}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className={cn("text-[10px] font-bold leading-none", isSelected ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                                    #{os.opponent_player.jersey_number}
+                                  </div>
+                                  <p className="text-xs font-semibold truncate leading-tight">
+                                    {os.opponent_player.name ?? `#${os.opponent_player.jersey_number}`}
+                                  </p>
+                                  <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                                    <span className={cn("text-[10px] leading-none", isSelected ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                                      {pts}p · {ast}a · {reb}r
+                                    </span>
+                                    {oppExcluded ? (
+                                      <span className="text-[9px] font-bold bg-red-500 text-white rounded px-1 py-px leading-none">EXCL</span>
+                                    ) : oppFoulWarn ? (
+                                      <span className={cn("text-[10px] font-bold leading-none", isSelected ? "text-orange-200" : "text-orange-500")}>
+                                        {fal}F ⚠
+                                      </span>
+                                    ) : (
+                                      <span className={cn("text-[10px] leading-none", isSelected ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                                        {fal}f
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                {isOnCourt && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); removeOppFromCourt(os.opponent_player_id); }}
+                                    className={cn("text-sm shrink-0 px-1 rounded hover:bg-black/10", isSelected ? "text-primary-foreground" : "text-muted-foreground")}
+                                  >
+                                    ×
+                                  </button>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                        {/* Botón equipo rival */}
+                        <button
+                          onClick={() => { setRivalTeamSelected(true); setSelectedOppPlayerId(null); setHomeTeamSelected(false); setSelectedPlayerId(null); }}
+                          className={cn(
+                            "w-full text-left rounded-lg p-2 transition-all border",
+                            rivalTeamSelected ? "border-primary bg-primary text-primary-foreground shadow-md" : "border-dashed border-muted-foreground/30 hover:bg-muted/30",
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="h-10 w-10 rounded-full bg-muted/50 flex items-center justify-center shrink-0 text-lg">
+                              🏀
+                            </div>
+                            <div>
+                              <p className="text-xs font-semibold">Equipo rival</p>
+                              <p className={cn("text-[10px]", rivalTeamSelected ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                                Sin jugador asignado
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Finalizar partido */}
+                <div className="flex items-center justify-center pt-2">
+                  <Button size="sm" disabled={isTransitioning} onClick={() => finishMut.mutate()} className="gap-1.5">
+                    <CheckCircle className="h-3.5 w-3.5" />
+                    Finalizar partido
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* Read-only: in_progress + non-coach OR finished */}
+            {(match.status === "in_progress" && !isCoachOrTD) || match.status === "finished" ? (
+              <div className="space-y-8">
                 <div>
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
                     {activeProfile?.team_name ?? "Nuestro equipo"}
                   </p>
-
-                  {/* Live scoring — in_progress + coach */}
-                  {match.status === "in_progress" && isCoachOrTD && (
+                  {match.status === "in_progress" && !isCoachOrTD && (
                     match.match_players.length === 0 ? (
-                      <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
-                        Primero añade jugadores a la convocatoria en la pestaña{" "}
-                        <button
-                          className="underline text-foreground"
-                          onClick={() => setTab("convocatoria")}
-                        >
-                          Convocatoria
-                        </button>
-                        .
-                      </div>
+                      <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">No hay jugadores en la convocatoria.</div>
                     ) : (
-                      <div className="space-y-4">
-                        <div className="flex gap-4">
-                          {/* Player cards */}
-                          <div className="w-[32%] flex-shrink-0 space-y-2">
-                            {match.match_players.map((mp) => {
-                              const stats = sessionStats.get(mp.player_id);
-                              const isSelected = selectedPlayerId === mp.player_id;
-                              const pts = (stats?.points ?? 0) as number;
-                              const ast = (stats?.assists ?? 0) as number;
-                              const reb = ((stats?.defensive_rebounds ?? 0) as number) + ((stats?.offensive_rebounds ?? 0) as number);
-                              const fal = (stats?.fouls ?? 0) as number;
-                              return (
-                                <button
-                                  key={mp.player_id}
-                                  onClick={() => setSelectedPlayerId(mp.player_id)}
-                                  className={cn(
-                                    "w-full text-left border rounded-lg px-3 py-2 transition-all",
-                                    isSelected
-                                      ? "border-primary bg-primary/5 ring-1 ring-primary shadow-sm"
-                                      : "hover:bg-muted/40 hover:border-muted-foreground/30",
-                                  )}
-                                >
-                                  <p className="text-sm font-semibold truncate leading-tight">
-                                    {mp.player_first_name} {mp.player_last_name}
-                                  </p>
-                                  <div className="flex gap-2 mt-1 text-xs text-muted-foreground">
-                                    <span>Pts <strong className="text-foreground">{pts}</strong></span>
-                                    <span>Ast <strong className="text-foreground">{ast}</strong></span>
-                                    <span>Reb <strong className="text-foreground">{reb}</strong></span>
-                                    <span>Fal <strong className="text-foreground">{fal}</strong></span>
-                                  </div>
-                                  <div
-                                    className="flex items-center gap-1.5 mt-1.5"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <span className="text-xs text-muted-foreground">Min</span>
-                                    <Input
-                                      type="number"
-                                      min={0}
-                                      className="h-5 w-12 text-xs text-center px-1 py-0"
-                                      value={minutesDraft.get(mp.player_id) ?? ""}
-                                      onChange={(e) =>
-                                        setMinutesDraft((prev) =>
-                                          new Map(prev).set(mp.player_id, e.target.value),
-                                        )
-                                      }
-                                      onBlur={() => handleMinutesSave(mp.player_id)}
-                                      placeholder="—"
-                                    />
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          </div>
-
-                          {/* Action buttons */}
-                          <div className="flex-1 min-w-0">
-                            {!selectedPlayerId ? (
-                              <div className="border rounded-lg h-full min-h-[280px] flex items-center justify-center text-muted-foreground text-sm text-center p-8">
-                                Selecciona un jugador para registrar acciones
-                              </div>
-                            ) : (
-                              <div className="space-y-3">
-                                <div>
-                                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Anotación</p>
-                                  <div className="grid grid-cols-3 gap-2">
-                                    <ActionButton label="+2P" sublabel="Canasta 2P" onClick={() => handleAction("points", 2, "+2P")} colorClass="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white" />
-                                    <ActionButton label="+3P" sublabel="Canasta 3P" onClick={() => handleAction("points", 3, "+3P")} colorClass="bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white" />
-                                    <ActionButton label="+TL" sublabel="Tiro libre" onClick={() => handleAction("points", 1, "+1 TL")} colorClass="bg-teal-500 hover:bg-teal-600 active:bg-teal-700 text-white" />
-                                  </div>
-                                </div>
-                                <div>
-                                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Fallos</p>
-                                  <div className="grid grid-cols-3 gap-2">
-                                    <ActionButton label="×2P" sublabel="Fallo 2P" onClick={() => handleAction(null, 0, "Fallo 2P")} colorClass="bg-muted hover:bg-muted/80 text-muted-foreground" />
-                                    <ActionButton label="×3P" sublabel="Fallo 3P" onClick={() => handleAction(null, 0, "Fallo 3P")} colorClass="bg-muted hover:bg-muted/80 text-muted-foreground" />
-                                    <ActionButton label="×TL" sublabel="Fallo TL" onClick={() => handleAction(null, 0, "Fallo TL")} colorClass="bg-muted hover:bg-muted/80 text-muted-foreground" />
-                                  </div>
-                                </div>
-                                <div>
-                                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Rebotes</p>
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <ActionButton label="REB-O" sublabel="Ofensivo" onClick={() => handleAction("offensive_rebounds", 1, "REB-O")} colorClass="bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white" />
-                                    <ActionButton label="REB-D" sublabel="Defensivo" onClick={() => handleAction("defensive_rebounds", 1, "REB-D")} colorClass="bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white" />
-                                  </div>
-                                </div>
-                                <div>
-                                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Otros</p>
-                                  <div className="grid grid-cols-5 gap-2">
-                                    <ActionButton label="AST" sublabel="Asistencia" onClick={() => handleAction("assists", 1, "Asistencia")} colorClass="bg-purple-500 hover:bg-purple-600 active:bg-purple-700 text-white" />
-                                    <ActionButton label="REC" sublabel="Recuperación" onClick={() => handleAction("steals", 1, "Recuperación")} colorClass="bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white" />
-                                    <ActionButton label="TAP" sublabel="Tapón" onClick={() => handleAction("blocks", 1, "Tapón")} colorClass="bg-cyan-600 hover:bg-cyan-700 active:bg-cyan-800 text-white" />
-                                    <ActionButton label="PÉR" sublabel="Pérdida" onClick={() => handleAction("turnovers", 1, "Pérdida")} colorClass="bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white" />
-                                    <ActionButton label="FAL" sublabel="Falta" onClick={() => handleAction("fouls", 1, "Falta")} colorClass="bg-yellow-500 hover:bg-yellow-600 active:bg-yellow-700 text-black" />
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Action log */}
-                        {actionLog.length > 0 && (
-                          <div className="border rounded-lg overflow-hidden">
-                            <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-b">
-                              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                Últimas acciones
-                              </p>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 text-xs gap-1 text-muted-foreground hover:text-foreground"
-                                onClick={handleUndo}
-                              >
-                                <RotateCcw className="h-3 w-3" />
-                                Deshacer
-                              </Button>
-                            </div>
-                            <div className="divide-y">
-                              {actionLog.slice(0, 5).map((entry, i) => (
-                                <div
-                                  key={entry.logId}
-                                  className={cn(
-                                    "flex items-center gap-2 px-4 py-2 text-sm",
-                                    i === 0 && "bg-accent/10",
-                                  )}
-                                >
-                                  <span className="font-medium truncate flex-1">{entry.playerName}</span>
-                                  <span className={cn("text-xs px-2 py-0.5 rounded-full font-semibold shrink-0", entry.delta > 0 ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400" : "bg-muted text-muted-foreground")}>
-                                    {entry.label}
-                                  </span>
-                                  {i === 0 && <span className="text-xs text-muted-foreground shrink-0">← último</span>}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                      <StatsTable matchPlayers={match.match_players} stats={match.match_stats} />
                     )
                   )}
-
-                  {/* Read-only for non-coach or finished */}
-                  {(match.status === "finished" || (match.status === "in_progress" && !isCoachOrTD)) && (
-                    match.match_players.length === 0 ? (
-                      <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
-                        No hay jugadores en la convocatoria.
-                      </div>
+                  {match.status === "finished" && (
+                    match.match_stats.length === 0 ? (
+                      <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">No se registraron estadísticas en este partido.</div>
                     ) : (
                       <div>
                         <StatsTable matchPlayers={match.match_players} stats={match.match_stats} />
-                        {match.status === "finished" && (
-                          <>
-                            <StatsBarChart matchPlayers={match.match_players} stats={match.match_stats} />
-                            <p className="text-xs text-muted-foreground text-center py-2 mt-1">
-                              Partido finalizado — estadísticas en modo lectura.
-                            </p>
-                          </>
-                        )}
+                        <StatsBarChart matchPlayers={match.match_players} stats={match.match_stats} />
+                        <p className="text-xs text-muted-foreground text-center py-2 mt-1">Partido finalizado — estadísticas en modo lectura.</p>
                       </div>
                     )
                   )}
                 </div>
-
-                {/* ── Equipo rival ── */}
                 {match.opponent_id && (
                   <div>
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
                       {opponentTeam ? opponentTeam.name : match.opponent_name} (rival)
                     </p>
-
-                    {/* Live scoring for rival — in_progress + coach */}
-                    {match.status === "in_progress" && isCoachOrTD && (
-                      match.opponent_stats.length === 0 ? (
-                        <div className="border rounded-lg p-6 text-center text-muted-foreground text-sm">
-                          Convoca jugadores del rival en la pestaña{" "}
-                          <button className="underline text-foreground" onClick={() => setTab("rival")}>
-                            Rival
-                          </button>{" "}
-                          para registrar sus estadísticas.
-                        </div>
-                      ) : (
-                        <div className="flex gap-4">
-                          {/* Rival player cards */}
-                          <div className="w-[32%] flex-shrink-0 space-y-2">
-                            {match.opponent_stats.map((os) => {
-                              const draft = oppStatDraft.get(os.opponent_player_id) ?? {};
-                              const isSelected = selectedOppPlayerId === os.opponent_player_id;
-                              const pts = (draft.points ?? 0) as number;
-                              const ast = (draft.assists ?? 0) as number;
-                              const reb = (((draft.defensive_rebounds ?? 0) as number) + ((draft.offensive_rebounds ?? 0) as number));
-                              const fal = (draft.fouls ?? 0) as number;
-                              return (
-                                <button
-                                  key={os.opponent_player_id}
-                                  onClick={() => setSelectedOppPlayerId(os.opponent_player_id)}
-                                  className={cn(
-                                    "w-full text-left border rounded-lg px-3 py-2 transition-all",
-                                    isSelected
-                                      ? "border-primary bg-primary/5 ring-1 ring-primary shadow-sm"
-                                      : "hover:bg-muted/40 hover:border-muted-foreground/30",
-                                  )}
-                                >
-                                  <p className="text-sm font-semibold truncate leading-tight">
-                                    <span className="text-xs text-muted-foreground mr-1">#{os.opponent_player.jersey_number}</span>
-                                    {os.opponent_player.name}
-                                  </p>
-                                  <div className="flex gap-2 mt-1 text-xs text-muted-foreground">
-                                    <span>Pts <strong className="text-foreground">{pts}</strong></span>
-                                    <span>Ast <strong className="text-foreground">{ast}</strong></span>
-                                    <span>Reb <strong className="text-foreground">{reb}</strong></span>
-                                    <span>Fal <strong className="text-foreground">{fal}</strong></span>
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          </div>
-
-                          {/* Rival action buttons */}
-                          <div className="flex-1 min-w-0">
-                            {!selectedOppPlayerId ? (
-                              <div className="border rounded-lg h-full min-h-[200px] flex items-center justify-center text-muted-foreground text-sm text-center p-8">
-                                Selecciona un jugador rival para registrar acciones
-                              </div>
-                            ) : (
-                              <div className="space-y-3">
-                                <div>
-                                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Anotación</p>
-                                  <div className="grid grid-cols-3 gap-2">
-                                    <ActionButton label="+2P" sublabel="Canasta 2P" onClick={() => handleOppAction("points", 2)} colorClass="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white" />
-                                    <ActionButton label="+3P" sublabel="Canasta 3P" onClick={() => handleOppAction("points", 3)} colorClass="bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white" />
-                                    <ActionButton label="+TL" sublabel="Tiro libre" onClick={() => handleOppAction("points", 1)} colorClass="bg-teal-500 hover:bg-teal-600 active:bg-teal-700 text-white" />
-                                  </div>
-                                </div>
-                                <div>
-                                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Rebotes</p>
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <ActionButton label="REB-O" sublabel="Ofensivo" onClick={() => handleOppAction("offensive_rebounds", 1)} colorClass="bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white" />
-                                    <ActionButton label="REB-D" sublabel="Defensivo" onClick={() => handleOppAction("defensive_rebounds", 1)} colorClass="bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white" />
-                                  </div>
-                                </div>
-                                <div>
-                                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Otros</p>
-                                  <div className="grid grid-cols-5 gap-2">
-                                    <ActionButton label="AST" sublabel="Asistencia" onClick={() => handleOppAction("assists", 1)} colorClass="bg-purple-500 hover:bg-purple-600 active:bg-purple-700 text-white" />
-                                    <ActionButton label="REC" sublabel="Recuperación" onClick={() => handleOppAction("steals", 1)} colorClass="bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white" />
-                                    <ActionButton label="TAP" sublabel="Tapón" onClick={() => handleOppAction("blocks", 1)} colorClass="bg-cyan-600 hover:bg-cyan-700 active:bg-cyan-800 text-white" />
-                                    <ActionButton label="PÉR" sublabel="Pérdida" onClick={() => handleOppAction("turnovers", 1)} colorClass="bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white" />
-                                    <ActionButton label="FAL" sublabel="Falta" onClick={() => handleOppAction("fouls", 1)} colorClass="bg-yellow-500 hover:bg-yellow-600 active:bg-yellow-700 text-black" />
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    )}
-
-                    {/* Read-only rival stats */}
-                    {(match.status === "finished" || (match.status === "in_progress" && !isCoachOrTD)) && (
-                      match.opponent_stats.length === 0 ? (
-                        <div className="border rounded-lg p-6 text-center text-muted-foreground text-sm">
-                          No hay estadísticas registradas para el equipo rival.
-                        </div>
-                      ) : (
-                        <OppStatsTable opponentStats={match.opponent_stats} />
-                      )
+                    {match.opponent_stats.length === 0 ? (
+                      <div className="border rounded-lg p-6 text-center text-muted-foreground text-sm">No hay estadísticas registradas para el equipo rival.</div>
+                    ) : (
+                      <OppStatsTable opponentStats={match.opponent_stats} />
                     )}
                   </div>
                 )}
-              </>
-            )}
+              </div>
+            ) : null}
           </div>
         )}
 
@@ -1366,7 +2033,12 @@ export default function MatchDetailPage({
               </div>
             )}
 
-            {isCoachOrTD && (
+            {isCoachOrTD && match.status !== "finished" && (
+              <div className="border rounded-lg p-4 text-center text-sm text-muted-foreground">
+                Los vídeos del partido se pueden vincular una vez finalizado el partido.
+              </div>
+            )}
+            {isCoachOrTD && match.status === "finished" && (
               <div className="border rounded-lg p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium">Vincular vídeo</p>
@@ -1531,11 +2203,82 @@ export default function MatchDetailPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Bulk add opponent players dialog */}
+      {(() => {
+        const existingOppJerseys = new Set(
+          opponentTeam?.players.filter((p) => !p.archived_at).map((p) => p.jersey_number) ?? []
+        );
+        const parsedOppJerseys = bulkOppJerseys
+          .split(/[,\s]+/)
+          .map((s) => s.trim())
+          .filter((s) => s !== "")
+          .map(Number)
+          .filter((n) => !isNaN(n) && n >= 0 && n <= 99);
+        const newOppJerseys = parsedOppJerseys.filter((n) => !existingOppJerseys.has(n));
+        const dupOppJerseys = parsedOppJerseys.filter((n) => existingOppJerseys.has(n));
+        return (
+          <Dialog open={showBulkAddOppPlayer} onOpenChange={(o) => { if (!o) { setShowBulkAddOppPlayer(false); setBulkOppJerseys(""); } }}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Añadir jugadores a {opponentTeam?.name ?? "rival"}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-1.5">
+                  <Label>Dorsales (separados por comas o espacios)</Label>
+                  <Input
+                    value={bulkOppJerseys}
+                    onChange={(e) => setBulkOppJerseys(e.target.value)}
+                    placeholder="Ej: 4, 7, 11, 14, 23"
+                  />
+                </div>
+                {newOppJerseys.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Nuevos:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {newOppJerseys.map((n, i) => (
+                        <span key={i} className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium">
+                          #{n}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {dupOppJerseys.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-destructive">Ya existen (se omitirán):</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {dupOppJerseys.map((n, i) => (
+                        <span key={i} className="inline-flex items-center rounded-full bg-destructive/10 text-destructive px-2.5 py-0.5 text-xs font-medium line-through">
+                          #{n}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Se crearán {newOppJerseys.length} jugador{newOppJerseys.length !== 1 ? "es" : ""}.
+                  Podrás editar sus nombres después.
+                </p>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => { setShowBulkAddOppPlayer(false); setBulkOppJerseys(""); }}>Cancelar</Button>
+                <Button
+                  onClick={() => bulkAddOppPlayerMut.mutate(newOppJerseys)}
+                  disabled={newOppJerseys.length === 0 || bulkAddOppPlayerMut.isPending}
+                >
+                  {bulkAddOppPlayerMut.isPending ? "Añadiendo..." : `Añadir ${newOppJerseys.length > 0 ? newOppJerseys.length : ""} jugadores`}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
     </PageShell>
   );
 }
 
-// ── StatsTable — read-only stats view ────────────────────────────────────────
+// ── StatsTable — read-only stats view ────────────────────────────────────────────
 
 import type { MatchPlayer, MatchStat, OpponentMatchStat } from "@basketball-clipper/shared/types";
 
@@ -1546,6 +2289,21 @@ function StatsTable({
   matchPlayers: MatchPlayer[];
   stats: MatchStat[];
 }) {
+  // When match_players is empty (convocatoria not set up), fall back to rendering
+  // rows directly from match_stats using the player names embedded in each stat.
+  const rows =
+    matchPlayers.length > 0
+      ? matchPlayers.map((mp) => {
+          const stat = stats.find((s) => s.player_id === mp.player_id);
+          return { key: mp.player_id, firstName: mp.player_first_name, lastName: mp.player_last_name, stat };
+        })
+      : stats.map((s) => ({
+          key: s.player_id,
+          firstName: s.player_first_name,
+          lastName: s.player_last_name,
+          stat: s,
+        }));
+
   return (
     <div className="border rounded-lg overflow-x-auto">
       <table className="w-full text-sm">
@@ -1563,13 +2321,12 @@ function StatsTable({
           </tr>
         </thead>
         <tbody>
-          {matchPlayers.map((mp) => {
-            const stat = stats.find((s) => s.player_id === mp.player_id);
+          {rows.map(({ key, firstName, lastName, stat }) => {
             const totalReb = (stat?.defensive_rebounds ?? 0) + (stat?.offensive_rebounds ?? 0);
             return (
-              <tr key={mp.player_id} className="border-b last:border-0">
+              <tr key={key} className="border-b last:border-0">
                 <td className="px-4 py-2.5 font-medium">
-                  {mp.player_first_name} {mp.player_last_name}
+                  {firstName} {lastName}
                 </td>
                 <td className="text-center px-2 py-2.5 text-muted-foreground">{stat?.minutes ?? "—"}</td>
                 <td className="text-center px-2 py-2.5 font-semibold">{stat?.points ?? "—"}</td>
@@ -1588,7 +2345,7 @@ function StatsTable({
   );
 }
 
-// ── OppStatsTable — read-only opponent stats view ─────────────────────────────
+// ── OppStatsTable — read-only opponent stats view ────────────────────────────────────────────────
 
 function OppStatsTable({ opponentStats }: { opponentStats: OpponentMatchStat[] }) {
   return (
@@ -1633,7 +2390,7 @@ function OppStatsTable({ opponentStats }: { opponentStats: OpponentMatchStat[] }
   );
 }
 
-// ── ActionButton ──────────────────────────────────────────────────────────────
+// ── ActionButton ────────────────────────────────────────────────────────────────────────────
 
 function ActionButton({
   label,
@@ -1661,7 +2418,7 @@ function ActionButton({
   );
 }
 
-// ── StatsBarChart — horizontal bar chart for finished match stats ─────────────
+// ── StatsBarChart — horizontal bar chart for finished match stats ─────────────────────────────
 
 type ChartStat = "points" | "rebounds" | "assists";
 
@@ -1680,12 +2437,18 @@ function StatsBarChart({
 }) {
   const [activeStat, setActiveStat] = useState<ChartStat>("points");
 
-  const rows = matchPlayers
-    .map((mp) => {
-      const stat = stats.find((s) => s.player_id === mp.player_id);
+  const rows = (
+    matchPlayers.length > 0
+      ? matchPlayers.map((mp) => {
+          const stat = stats.find((s) => s.player_id === mp.player_id);
+          return { name: `${mp.player_first_name} ${mp.player_last_name}`, stat };
+        })
+      : stats.map((s) => ({ name: `${s.player_first_name} ${s.player_last_name}`, stat: s }))
+  )
+    .map(({ name, stat }) => {
       const rebounds = (stat?.defensive_rebounds ?? 0) + (stat?.offensive_rebounds ?? 0);
       return {
-        name: `${mp.player_first_name} ${mp.player_last_name}`,
+        name,
         points:   stat?.points   ?? 0,
         rebounds,
         assists:  stat?.assists  ?? 0,

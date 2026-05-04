@@ -8,6 +8,7 @@ import type {
   MatchUpdate,
   MatchVideo,
   MatchVideoAdd,
+  SetStartersRequest,
 } from "../types";
 
 const base = (clubId: number, teamId: number) =>
@@ -179,6 +180,34 @@ export const upsertMatchStat = (
   data: MatchStatUpsert,
 ): Promise<MatchStat> =>
   apiRequest<MatchStat>(`${base(clubId, teamId)}/${matchId}/stats`, {
+    token,
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+// ── Titulares ─────────────────────────────────────────────────────────────────
+
+export const setHomeStarters = (
+  token: string,
+  clubId: number,
+  teamId: number,
+  matchId: number,
+  data: SetStartersRequest,
+): Promise<Match> =>
+  apiRequest<Match>(`${base(clubId, teamId)}/${matchId}/set-starters`, {
+    token,
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+export const setRivalStarters = (
+  token: string,
+  clubId: number,
+  teamId: number,
+  matchId: number,
+  data: SetStartersRequest,
+): Promise<Match> =>
+  apiRequest<Match>(`${base(clubId, teamId)}/${matchId}/set-rival-starters`, {
     token,
     method: "POST",
     body: JSON.stringify(data),

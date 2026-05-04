@@ -90,6 +90,7 @@ class OpponentMatchStatResponse(BaseModel):
     match_id: int
     opponent_player_id: int
     opponent_player: OpponentPlayerResponse
+    is_starter: bool = False
     points: int | None
     minutes: int | None
     assists: int | None

@@ -6,7 +6,6 @@ import { BarChart2, Download, Users, Dumbbell } from "lucide-react";
 import Link from "next/link";
 import { listTrainings } from "@basketball-clipper/shared/api";
 import { PageShell } from "@/components/layout/PageShell";
-import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -146,18 +145,6 @@ export default function TrainingReportPage({
       <div className="container mx-auto px-4 py-8 max-w-3xl print:px-0 print:py-4">
         {/* Header */}
         <div className="mb-6 print:hidden">
-          <Breadcrumb
-            className="mb-4"
-            items={[
-              {
-                label: activeProfile?.club_name ?? "Club",
-                href: clubId ? `/clubs/${clubId}/teams` : "/",
-              },
-              { label: activeProfile?.team_name ?? "Equipo", href: `/teams/${teamId}/trainings` },
-              { label: "Entrenamientos", href: `/teams/${teamId}/trainings` },
-              { label: "Informe de asistencia" },
-            ]}
-          />
           <div className="flex items-center justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold flex items-center gap-2">

@@ -33,7 +33,6 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Breadcrumb } from "@/components/layout/Breadcrumb";
 
 interface PositionForm {
   name: string;
@@ -103,10 +102,6 @@ export default function PositionsPage({
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-8 max-w-2xl">
-        <Breadcrumb items={[
-          { label: activeProfile?.club_name ?? "Club", href: `/clubs/${clubId}/teams` },
-          { label: "Posiciones" },
-        ]} />
 
         <div className="flex items-center justify-between mb-6">
           <div>

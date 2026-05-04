@@ -45,7 +45,6 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import { cn } from "@/lib/utils";
 
 const POSITIONS: RosterPosition[] = [
@@ -242,11 +241,6 @@ export default function RosterPage({
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-8 max-w-5xl">
-        <Breadcrumb items={[
-          { label: activeProfile?.club_name ?? "Club", href: clubId ? `/clubs/${clubId}/teams` : "/" },
-          { label: activeProfile?.team_name ?? "Equipo", href: `/teams/${teamId}/matches` },
-          { label: "Plantilla" },
-        ]} />
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-2xl font-bold">Plantilla</h1>

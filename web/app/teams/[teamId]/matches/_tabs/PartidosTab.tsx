@@ -74,12 +74,14 @@ function statusBadgeClass(status: MatchStatus): string {
 interface Props {
   teamId: number;
   initialCompetitionId?: number;
+  initialOpponentId?: number;
+  onGoToLeagues: () => void;
 }
 
 // Local form type — competition_id is optional until submit validates it
 type MatchFormState = Omit<MatchCreate, "competition_id"> & { competition_id: number | undefined };
 
-export default function PartidosTab({ teamId, initialCompetitionId }: Props) {
+export default function PartidosTab({ teamId, initialCompetitionId, initialOpponentId, onGoToLeagues }: Props) {
   const { token, activeProfile } = useAuth();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -91,6 +93,7 @@ export default function PartidosTab({ teamId, initialCompetitionId }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [filterCompId, setFilterCompId] = useState<number | undefined>(initialCompetitionId);
+  const [filterOppId, setFilterOppId] = useState<number | undefined>(initialOpponentId);
   const [search, setSearch] = useState("");
 
   // Rival mode: "registered" picks from the opponents list, "custom" free-text
@@ -104,6 +107,8 @@ export default function PartidosTab({ teamId, initialCompetitionId }: Props) {
     status: "scheduled",
     competition_id: undefined,
     opponent_id: undefined,
+    track_home_minutes: true,
+    track_rival_minutes: false,
   });
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -113,13 +118,19 @@ export default function PartidosTab({ teamId, initialCompetitionId }: Props) {
     setPage(1);
   }, [initialCompetitionId]);
 
+  // Sync opponent filter when hub navigates here from RivalesTab
+  useEffect(() => {
+    setFilterOppId(initialOpponentId);
+    setPage(1);
+  }, [initialOpponentId]);
+
   const { data: seasons = [], isLoading: seasonsLoading } = useQuery({
     queryKey: ["seasons", clubId],
     queryFn: () => getSeasons(token!, clubId!),
     enabled: !!token && !!clubId,
   });
 
-  const { data: competitions = [] } = useQuery<Competition[]>({
+  const { data: competitions = [], isLoading: competitionsLoading } = useQuery<Competition[]>({
     queryKey: ["competitions", teamId, null],
     queryFn: () => listCompetitions(token!, clubId!, teamId),
     enabled: !!token && !!clubId && !!teamId,
@@ -137,7 +148,7 @@ export default function PartidosTab({ teamId, initialCompetitionId }: Props) {
     enabled: !!token && !!clubId,
   });
 
-  const isLoading = seasonsLoading || matchesLoading;
+  const isLoading = seasonsLoading || matchesLoading || competitionsLoading;
 
   const createMut = useMutation({
     mutationFn: (data: MatchCreate) => createMatch(token!, clubId!, teamId, data),
@@ -183,6 +194,8 @@ export default function PartidosTab({ teamId, initialCompetitionId }: Props) {
       status: "scheduled",
       competition_id: activeComp?.id ?? undefined,
       opponent_id: undefined,
+      track_home_minutes: true,
+      track_rival_minutes: false,
     });
     setFormError(null);
     setDialogOpen(true);
@@ -229,7 +242,13 @@ export default function PartidosTab({ teamId, initialCompetitionId }: Props) {
     .filter((m) => !m.archived_at)
     .filter((m) => !searchQ || m.opponent_name.toLowerCase().includes(searchQ))
     .filter((m) => filterCompId === undefined || m.competition_id === filterCompId)
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    .filter((m) => filterOppId === undefined || m.opponent_id === filterOppId)
+    .sort((a, b) => {
+      const aFinished = a.status === "finished" || a.status === "cancelled" ? 1 : 0;
+      const bFinished = b.status === "finished" || b.status === "cancelled" ? 1 : 0;
+      if (aFinished !== bFinished) return aFinished - bFinished;
+      return new Date(a.date).getTime() - new Date(b.date).getTime();
+    });
 
   const totalPagesM = Math.max(1, Math.ceil(allSorted.length / PAGE_SIZE_M));
   const safePageM = Math.min(page, totalPagesM);
@@ -237,9 +256,29 @@ export default function PartidosTab({ teamId, initialCompetitionId }: Props) {
 
   const activeOpponents = opponents.filter((o) => !o.archived_at);
   const filterCompName = filterCompId ? competitionName(filterCompId) : null;
+  const filterOppName = filterOppId ? (opponents.find((o) => o.id === filterOppId)?.name ?? null) : null;
 
   // Matches with no competition assigned — legacy cleanup
   const matchesWithoutComp = matches.filter((m) => !m.archived_at && !m.competition_id);
+
+
+  // Guard: no active competitions → can't create matches
+  if (!isLoading && activeCompetitions.length === 0) {
+    return (
+      <div className="text-center py-16 border rounded-lg border-dashed text-muted-foreground">
+        <Swords className="h-10 w-10 mx-auto mb-3 opacity-30" />
+        <p className="text-sm font-medium">No hay ninguna liga activa</p>
+        <p className="text-xs mt-1 mb-4">
+          Necesitas crear al menos una liga antes de registrar partidos.
+        </p>
+        {isCoachOrTD && (
+          <Button size="sm" variant="outline" onClick={onGoToLeagues}>
+            Crear una liga
+          </Button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <>
@@ -247,6 +286,15 @@ export default function PartidosTab({ teamId, initialCompetitionId }: Props) {
         <p className="text-sm text-muted-foreground">
           {allSorted.length} partido{allSorted.length !== 1 ? "s" : ""}
           {filterCompName && <> &middot; <strong className="font-medium text-foreground">{filterCompName}</strong></>}
+          {filterOppName && (
+            <> &middot; vs. <strong className="font-medium text-foreground">{filterOppName}</strong>
+              <button
+                className="ml-1 text-muted-foreground hover:text-foreground"
+                onClick={() => { setFilterOppId(undefined); setPage(1); }}
+                title="Quitar filtro de rival"
+              >×</button>
+            </>
+          )}
         </p>
         {isCoachOrTD && (
           <Button onClick={openCreate} size="sm" disabled={seasons.length === 0}>
@@ -492,6 +540,28 @@ export default function PartidosTab({ teamId, initialCompetitionId }: Props) {
                     ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="border rounded-lg p-3 space-y-2 bg-muted/30">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Seguimiento de minutos</p>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={form.track_home_minutes ?? true}
+                  onChange={(e) => setForm((f) => ({ ...f, track_home_minutes: e.target.checked }))}
+                />
+                <span className="text-sm">Seguir minutos del equipo local</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={form.track_rival_minutes ?? false}
+                  onChange={(e) => setForm((f) => ({ ...f, track_rival_minutes: e.target.checked }))}
+                />
+                <span className="text-sm">Seguir minutos del rival</span>
+              </label>
             </div>
 
             {formError && (

@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import { PaginationBar } from "@/components/ui/pagination-bar";
 import {
   Dialog,
@@ -187,7 +186,6 @@ export default function DrillsPage() {
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-6 max-w-5xl">
-        <Breadcrumb items={[{ label: "Mi biblioteca" }]} />
 
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">Mi biblioteca</h1>

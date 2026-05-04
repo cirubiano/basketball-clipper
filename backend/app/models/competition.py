@@ -25,6 +25,7 @@ class Competition(Base):
     players_on_court: Mapped[int] = mapped_column(Integer, nullable=False, server_default="5")
     bench_size: Mapped[int] = mapped_column(Integer, nullable=False, server_default="7")
     clock_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default="stopped")
+    overtime_minutes: Mapped[int] = mapped_column(Integer, nullable=False, server_default="5")
 
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True

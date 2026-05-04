@@ -56,6 +56,8 @@ class Match(Base):
     opponent_id: Mapped[int | None] = mapped_column(
         ForeignKey("opponent_teams.id", ondelete="SET NULL"), nullable=True
     )
+    track_home_minutes: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    track_rival_minutes: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     created_by: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -118,6 +120,7 @@ class MatchPlayer(Base):
     player_id: Mapped[int] = mapped_column(
         ForeignKey("players.id", ondelete="CASCADE"), nullable=False
     )
+    is_starter: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
     match: Mapped["Match"] = relationship("Match", back_populates="match_players")
     player: Mapped["Player"] = relationship("Player", lazy="select")  # noqa: F821

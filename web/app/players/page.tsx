@@ -47,7 +47,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import { PaginationBar } from "@/components/ui/pagination-bar";
 import { cn } from "@/lib/utils";
 
@@ -376,10 +375,6 @@ export default function PlayersPage() {
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-8 max-w-4xl">
-        <Breadcrumb items={[
-          { label: activeProfile?.club_name ?? "Club", href: clubId ? `/clubs/${clubId}/teams` : "/" },
-          { label: "Jugadores" },
-        ]} />
 
         {/* Header */}
         <div className="flex items-center justify-between mb-6">

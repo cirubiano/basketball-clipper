@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Users, Plus, Archive, ChevronDown, ChevronRight, Pencil, Hash } from "lucide-react";
+import { Users, Plus, Archive, ChevronDown, ChevronRight, Pencil, Hash, Trophy } from "lucide-react";
 import {
   listOpponents,
   getOpponent,
@@ -47,7 +47,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 const DEFAULT_COLOR = "#6366f1";
 
-export default function RivalesTab({ teamId: _teamId }: { teamId: number }) {
+export default function RivalesTab({ teamId: _teamId, onGoToMatches }: { teamId: number; onGoToMatches: (oppId: number) => void }) {
   const { token, activeProfile } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -228,7 +228,7 @@ export default function RivalesTab({ teamId: _teamId }: { teamId: number }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Rivales del club disponibles para scouting y asignación a partidos.
+          Rivales de la temporada disponibles para scouting y asignación de partidos.
         </p>
         {canEdit && (
           <Button onClick={openCreateTeam} size="sm">
@@ -280,8 +280,19 @@ export default function RivalesTab({ teamId: _teamId }: { teamId: number }) {
                     />
                     <span className="font-medium">{opp.name}</span>
                   </button>
-                  {canEdit && (
-                    <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs h-7 text-muted-foreground"
+                      onClick={() => onGoToMatches(opp.id)}
+                      title="Ver partidos de este rival"
+                    >
+                      <Trophy className="h-3.5 w-3.5 mr-1" />
+                      Partidos
+                    </Button>
+                    {canEdit && (
+                    <>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -317,8 +328,9 @@ export default function RivalesTab({ teamId: _teamId }: { teamId: number }) {
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
-                    </div>
-                  )}
+                    </>
+                    )}
+                  </div>
                 </div>
 
                 {isExpanded && (

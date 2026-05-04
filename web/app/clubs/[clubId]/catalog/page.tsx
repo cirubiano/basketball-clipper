@@ -34,7 +34,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import { Input } from "@/components/ui/input";
 import { CourtSVG } from "@/components/ui/court-svg";
 
@@ -102,10 +101,6 @@ export default function CatalogPage({
   return (
     <PageShell>
       <div className="max-w-3xl mx-auto space-y-6">
-        <Breadcrumb items={[
-          { label: activeProfile?.club_name ?? "Club", href: `/clubs/${clubId}/teams` },
-          { label: "Catálogo" },
-        ]} />
 
         {/* Header */}
         <div>

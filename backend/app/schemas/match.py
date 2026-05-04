@@ -23,6 +23,7 @@ class MatchPlayerResponse(BaseModel):
     player_id: int
     player_first_name: str | None = None
     player_last_name: str | None = None
+    is_starter: bool = False
 
 
 class MatchStatResponse(BaseModel):
@@ -30,6 +31,8 @@ class MatchStatResponse(BaseModel):
     id: int
     match_id: int
     player_id: int
+    player_first_name: str | None = None
+    player_last_name: str | None = None
     points: int | None
     minutes: int | None
     assists: int | None
@@ -55,6 +58,8 @@ class MatchResponse(BaseModel):
     their_score: int | None = None
     competition_id: int | None = None
     opponent_id: int | None = None
+    track_home_minutes: bool = True
+    track_rival_minutes: bool = False
     created_by: int | None
     created_at: datetime
     archived_at: datetime | None
@@ -73,6 +78,12 @@ class MatchCreate(BaseModel):
     status: MatchStatus = MatchStatus.scheduled
     notes: str | None = None
     opponent_id: int | None = None
+    track_home_minutes: bool = True
+    track_rival_minutes: bool = False
+
+
+class SetStartersRequest(BaseModel):
+    player_ids: list[int]  # for home: MatchPlayer.player_id list; for rival: opponent_player_id list
 
 
 class MatchUpdate(BaseModel):

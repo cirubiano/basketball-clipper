@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -67,6 +67,7 @@ class OpponentMatchStat(Base):
     opponent_player_id: Mapped[int] = mapped_column(
         ForeignKey("opponent_players.id", ondelete="CASCADE"), nullable=False
     )
+    is_starter: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     points: Mapped[int | None] = mapped_column(Integer)
     minutes: Mapped[int | None] = mapped_column(Integer)
     assists: Mapped[int | None] = mapped_column(Integer)

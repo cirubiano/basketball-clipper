@@ -16,6 +16,9 @@ import {
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { listCompetitions } from "@basketball-clipper/shared/api";
+import type { Competition } from "@basketball-clipper/shared/types";
 
 interface SidebarItem {
   href: string;
@@ -27,6 +30,7 @@ function buildItems(
   role: string | undefined,
   clubId: number | undefined,
   teamId: number | null | undefined,
+  competicionesHref: string,
 ): SidebarItem[] {
   if (role === "technical_director" && clubId) {
     return [
@@ -44,7 +48,7 @@ function buildItems(
   if (teamId) {
     return [
       { href: "/",                           label: "Inicio",         icon: <Home         className="h-4 w-4 shrink-0" /> },
-      { href: `/teams/${teamId}/matches`,    label: "Competiciones",  icon: <Trophy       className="h-4 w-4 shrink-0" /> },
+      { href: competicionesHref,             label: "Competiciones",  icon: <Trophy       className="h-4 w-4 shrink-0" /> },
       { href: `/teams/${teamId}/trainings`,  label: "Entrenamientos", icon: <Dumbbell     className="h-4 w-4 shrink-0" /> },
       { href: `/teams/${teamId}/roster`,     label: "Plantilla",      icon: <CalendarDays className="h-4 w-4 shrink-0" /> },
       { href: `/teams/${teamId}/playbook`,   label: "Playbook",       icon: <BookMarked   className="h-4 w-4 shrink-0" /> },
@@ -65,7 +69,7 @@ const STORAGE_KEY = "sidebar_collapsed";
 
 export function Sidebar() {
   const pathname   = usePathname();
-  const { activeProfile } = useAuth();
+  const { activeProfile, token } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -89,10 +93,31 @@ export function Sidebar() {
   const role   = activeProfile?.role;
   const clubId = activeProfile?.club_id;
   const teamId = activeProfile?.team_id ?? null;
-  const items  = buildItems(role, clubId, teamId);
 
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname.startsWith(href);
+  // Fetch competitions to decide where "Competiciones" should link to
+  const { data: competitions = [] } = useQuery<Competition[]>({
+    queryKey: ["competitions", teamId, clubId],
+    queryFn: () => listCompetitions(token!, clubId!, teamId!),
+    enabled: !!token && !!clubId && !!teamId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // If there is an active default competition, jump straight to its matches
+  const defaultComp = competitions.find((c) => c.is_default && !c.archived_at);
+  const competicionesHref = teamId
+    ? defaultComp
+      ? `/teams/${teamId}/matches?tab=partidos&comp=${defaultComp.id}`
+      : `/teams/${teamId}/matches`
+    : "/";
+
+  const items  = buildItems(role, clubId, teamId, competicionesHref);
+
+  // "Competiciones" is active when on any /teams/{id}/matches path
+  const isActive = (href: string) => {
+    if (href === "/") return pathname === "/";
+    const base = href.split("?")[0];
+    return pathname.startsWith(base);
+  };
 
   // Don't render on auth pages
   if (pathname.startsWith("/login") || pathname.startsWith("/register") || pathname.startsWith("/select-profile")) {
@@ -116,7 +141,7 @@ export function Sidebar() {
           const active = isActive(item.href);
           return (
             <Link
-              key={item.href}
+              key={item.label}
               href={item.href}
               title={collapsed ? item.label : undefined}
               aria-current={active ? "page" : undefined}

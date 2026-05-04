@@ -46,7 +46,6 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Breadcrumb } from "@/components/layout/Breadcrumb";
 import { PaginationBar } from "@/components/ui/pagination-bar";
 import { cn } from "@/lib/utils";
 
@@ -215,11 +214,6 @@ export default function TrainingsPage({
   return (
     <PageShell>
       <div className="container mx-auto px-4 py-8 max-w-3xl">
-        <Breadcrumb items={[
-          { label: activeProfile?.club_name ?? "Club", href: `/clubs/${clubId}/teams` },
-          { label: activeProfile?.team_name ?? "Equipo" },
-          { label: "Entrenamientos" },
-        ]} />
 
         <div className="flex items-center justify-between mb-6">
           <div>

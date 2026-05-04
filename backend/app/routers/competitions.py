@@ -93,6 +93,7 @@ async def _build_response(comp: Competition, db: AsyncSession) -> CompetitionRes
         players_on_court=comp.players_on_court,
         bench_size=comp.bench_size,
         clock_type=comp.clock_type,
+        overtime_minutes=comp.overtime_minutes,
         created_by=comp.created_by,
         created_at=comp.created_at,
         archived_at=comp.archived_at,
@@ -163,6 +164,7 @@ async def create_competition(
         players_on_court=body.players_on_court,
         bench_size=body.bench_size,
         clock_type=body.clock_type,
+        overtime_minutes=body.overtime_minutes,
         created_by=user.id,
     )
     db.add(comp)
@@ -196,6 +198,8 @@ async def update_competition(
         comp.bench_size = body.bench_size
     if body.clock_type is not None:
         comp.clock_type = body.clock_type
+    if body.overtime_minutes is not None:
+        comp.overtime_minutes = body.overtime_minutes
 
     if body.is_default is True and not comp.is_default:
         # Clear existing default for same team+season

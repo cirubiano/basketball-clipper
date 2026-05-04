@@ -387,3 +387,32 @@ async def upsert_opponent_stat(
         .where(OpponentMatchStat.id == stat.id)
     )
     return stat
+
+
+@router.delete(
+    "/{club_id}/teams/{team_id}/matches/{match_id}/opponent-stats/{stat_id}",
+    status_code=204,
+)
+async def delete_opponent_stat(
+    club_id: int,
+    team_id: int,
+    match_id: int,
+    stat_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    await _get_club_or_404(club_id, db)
+    await _require_coach_or_td(club_id, user, db)
+
+    stat = await db.scalar(
+        select(OpponentMatchStat).where(
+            OpponentMatchStat.id == stat_id,
+            OpponentMatchStat.match_id == match_id,
+        )
+    )
+    if not stat:
+        raise HTTPException(404, "Estadística no encontrada")
+
+    await db.delete(stat)
+    await db.commit()
+    return Response(status_code=204)

@@ -37,12 +37,15 @@ export interface MatchPlayer {
   player_id: number;
   player_first_name: string | null;
   player_last_name: string | null;
+  is_starter: boolean;
 }
 
 export interface MatchStat {
   id: number;
   match_id: number;
   player_id: number;
+  player_first_name: string | null;
+  player_last_name: string | null;
   points: number | null;
   minutes: number | null;
   assists: number | null;
@@ -67,6 +70,8 @@ export interface Match {
   their_score: number | null;
   competition_id: number | null;
   opponent_id: number | null;
+  track_home_minutes: boolean;
+  track_rival_minutes: boolean;
   created_by: number | null;
   created_at: string;
   archived_at: string | null;
@@ -85,6 +90,12 @@ export interface MatchCreate {
   status?: MatchStatus;
   notes?: string | null;
   opponent_id?: number | null;
+  track_home_minutes?: boolean;
+  track_rival_minutes?: boolean;
+}
+
+export interface SetStartersRequest {
+  player_ids: number[];
 }
 
 export interface MatchUpdate {
@@ -113,6 +124,6 @@ export interface MatchStatUpsert {
   offensive_rebounds?: number | null;
   steals?: number | null;
   turnovers?: number | null;
-    fouls?: number | null;
+  fouls?: number | null;
   blocks?: number | null;
 }

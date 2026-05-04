@@ -52,6 +52,7 @@ interface CompFormatForm {
   players_on_court: number;
   bench_size: number;
   clock_type: ClockType;
+  overtime_minutes: number;
 }
 
 const FIBA_DEFAULTS: CompFormatForm = {
@@ -60,6 +61,7 @@ const FIBA_DEFAULTS: CompFormatForm = {
   players_on_court: 5,
   bench_size: 12,
   clock_type: "stopped",
+  overtime_minutes: 5,
 };
 
 interface Props {
@@ -105,6 +107,9 @@ export default function CompeticionesTab({ teamId, onGoToMatches }: Props) {
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["competitions", teamId] });
 
+  // No active competitions → the new one must always become the default
+  const hasActiveCompetitions = competitions.some((c) => !c.archived_at);
+
   const createMut = useMutation({
     mutationFn: (data: CompetitionCreate) => createCompetition(token!, clubId!, teamId, data),
     onSuccess: () => { invalidate(); setShowCreate(false); toast("Competición creada"); },
@@ -145,6 +150,7 @@ export default function CompeticionesTab({ teamId, onGoToMatches }: Props) {
       players_on_court: comp.players_on_court,
       bench_size: comp.bench_size,
       clock_type: comp.clock_type as ClockType,
+      overtime_minutes: comp.overtime_minutes ?? 5,
     });
     setEditComp(comp);
   }
@@ -156,7 +162,8 @@ export default function CompeticionesTab({ teamId, onGoToMatches }: Props) {
       await createMut.mutateAsync({
         season_id: activeSeasonId,
         name: formName.trim(),
-        is_default: formDefault,
+        // Force default when no active competitions exist yet
+        is_default: hasActiveCompetitions ? formDefault : true,
         ...formFormat,
       });
     } finally { setSaving(false); }
@@ -177,7 +184,7 @@ export default function CompeticionesTab({ teamId, onGoToMatches }: Props) {
     <>
       <div className="flex items-center justify-between mb-5">
         <p className="text-sm text-muted-foreground">
-          Ligas y torneos del equipo. Haz clic en una competición para ver sus partidos.
+          Ligas, copas y torneos del equipo. Haz clic en una competición para ver sus partidos.
         </p>
         {canEdit && (
           <Button onClick={openCreate} size="sm">
@@ -408,15 +415,25 @@ function FormatFields({
           />
         </div>
       </div>
-      <div className="space-y-1">
-        <Label className="text-xs">Tiempo</Label>
-        <Select value={format.clock_type} onValueChange={(v) => set("clock_type", v as ClockType)}>
-          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="stopped">Tiempo parado (FIBA)</SelectItem>
-            <SelectItem value="running">Tiempo corrido</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label className="text-xs">Tiempo</Label>
+          <Select value={format.clock_type} onValueChange={(v) => set("clock_type", v as ClockType)}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="stopped">Tiempo parado (FIBA)</SelectItem>
+              <SelectItem value="running">Tiempo corrido</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Min. prórroga</Label>
+          <Input
+            type="number" min={1} max={20} className="h-8 text-xs"
+            value={format.overtime_minutes}
+            onChange={(e) => set("overtime_minutes", Math.max(1, Math.min(20, Number(e.target.value))))}
+          />
+        </div>
       </div>
     </div>
   );

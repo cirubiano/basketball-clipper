@@ -15,6 +15,7 @@ class CompetitionCreate(BaseModel):
     players_on_court: int = Field(default=5, ge=1, le=10)
     bench_size: int = Field(default=7, ge=0, le=20)
     clock_type: ClockType = "stopped"
+    overtime_minutes: int = Field(default=5, ge=1, le=30)
 
 
 class CompetitionUpdate(BaseModel):
@@ -25,6 +26,7 @@ class CompetitionUpdate(BaseModel):
     players_on_court: int | None = Field(None, ge=1, le=10)
     bench_size: int | None = Field(None, ge=0, le=20)
     clock_type: ClockType | None = None
+    overtime_minutes: int | None = Field(None, ge=1, le=30)
 
 
 class CompetitionResponse(BaseModel):
@@ -38,6 +40,7 @@ class CompetitionResponse(BaseModel):
     players_on_court: int
     bench_size: int
     clock_type: str
+    overtime_minutes: int
     created_by: int | None
     created_at: datetime
     archived_at: datetime | None

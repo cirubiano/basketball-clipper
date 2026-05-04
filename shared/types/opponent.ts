@@ -59,6 +59,7 @@ export interface OpponentMatchStat {
   match_id: number;
   opponent_player_id: number;
   opponent_player: OpponentPlayer;
+  is_starter: boolean;
   points: number | null;
   minutes: number | null;
   assists: number | null;

@@ -44,7 +44,16 @@ function MatchesHub({ teamId }: { teamId: number }) {
     router.replace(`?${params.toString()}`);
   }
 
+  function handleGoToMatchesByOpponent(oppId: number) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", "partidos");
+    params.set("opp", String(oppId));
+    params.delete("comp");
+    router.replace(`?${params.toString()}`);
+  }
+
   const compFilter = searchParams.get("comp");
+  const oppFilter = searchParams.get("opp");
 
   return (
     <PageShell requireAuth requireProfile>
@@ -72,12 +81,14 @@ function MatchesHub({ teamId }: { teamId: number }) {
           <PartidosTab
             teamId={teamId}
             initialCompetitionId={compFilter ? Number(compFilter) : undefined}
+            initialOpponentId={oppFilter ? Number(oppFilter) : undefined}
+            onGoToLeagues={() => setTab("competiciones")}
           />
         )}
         {tab === "competiciones" && (
           <CompeticionesTab teamId={teamId} onGoToMatches={handleGoToMatches} />
         )}
-        {tab === "rivales" && <RivalesTab teamId={teamId} />}
+        {tab === "rivales" && <RivalesTab teamId={teamId} onGoToMatches={handleGoToMatchesByOpponent} />}
       </div>
     </PageShell>
   );
