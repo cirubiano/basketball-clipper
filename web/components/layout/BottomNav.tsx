@@ -6,7 +6,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, BookOpen, Trophy, Dumbbell, Users, LayoutGrid } from "lucide-react";
+import { Home, BookOpen, Trophy, Dumbbell, Users, LayoutGrid, BookMarked } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
@@ -21,29 +21,29 @@ function buildItems(
   clubId: number | undefined,
   teamId: number | null | undefined,
 ): BottomNavItem[] {
-  // TD: club-level navigation
+  // TD: gestión de club (5 ítems más importantes)
   if (role === "technical_director" && clubId) {
     return [
-      { href: "/",                             label: "Inicio",      icon: <Home       className="h-5 w-5" /> },
-      { href: `/clubs/${clubId}/teams`,        label: "Equipos",     icon: <Users      className="h-5 w-5" /> },
-      { href: "/players",                      label: "Jugadores",   icon: <Users      className="h-5 w-5" /> },
-      { href: `/clubs/${clubId}/catalog`,      label: "Catálogo",    icon: <LayoutGrid className="h-5 w-5" /> },
-      { href: "/drills",                       label: "Biblioteca",  icon: <BookOpen   className="h-5 w-5" /> },
+      { href: "/",                             label: "Inicio",    icon: <Home       className="h-5 w-5" /> },
+      { href: `/clubs/${clubId}/teams`,        label: "Equipos",   icon: <Users      className="h-5 w-5" /> },
+      { href: "/players",                      label: "Jugadores", icon: <Users      className="h-5 w-5" /> },
+      { href: `/clubs/${clubId}/catalog`,      label: "Catálogo",  icon: <LayoutGrid className="h-5 w-5" /> },
+      { href: "/drills",                       label: "Biblioteca", icon: <BookOpen  className="h-5 w-5" /> },
     ];
   }
 
-  // head_coach / staff_member with a team
+  // head_coach / staff_member con equipo: orden operativo acordado
   if (teamId) {
     return [
-      { href: "/",                              label: "Inicio",         icon: <Home     className="h-5 w-5" /> },
-      { href: `/teams/${teamId}/matches`,       label: "Partidos",       icon: <Trophy   className="h-5 w-5" /> },
-      { href: `/teams/${teamId}/trainings`,     label: "Entrenos",       icon: <Dumbbell className="h-5 w-5" /> },
-      { href: `/teams/${teamId}/roster`,        label: "Plantilla",      icon: <Users    className="h-5 w-5" /> },
-      { href: "/drills",                        label: "Biblioteca",     icon: <BookOpen className="h-5 w-5" /> },
+      { href: "/",                             label: "Inicio",    icon: <Home       className="h-5 w-5" /> },
+      { href: `/teams/${teamId}/roster`,       label: "Plantilla", icon: <Users      className="h-5 w-5" /> },
+      { href: `/teams/${teamId}/matches`,      label: "Partidos",  icon: <Trophy     className="h-5 w-5" /> },
+      { href: `/teams/${teamId}/trainings`,    label: "Entrenos",  icon: <Dumbbell   className="h-5 w-5" /> },
+      { href: `/teams/${teamId}/playbook`,     label: "Playbook",  icon: <BookMarked className="h-5 w-5" /> },
     ];
   }
 
-  // Personal / no profile
+  // Sin perfil de equipo
   return [
     { href: "/",        label: "Inicio",     icon: <Home     className="h-5 w-5" /> },
     { href: "/drills",  label: "Biblioteca", icon: <BookOpen className="h-5 w-5" /> },

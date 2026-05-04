@@ -5,13 +5,17 @@
 //   expanded (default): 220px — iconos + etiquetas
 //   rail (colapsado): 56px — solo iconos con tooltip nativo (title)
 // El estado se persiste en sessionStorage para no resetear en cada navegación.
+//
+// Estructura de bloques por rol:
+//   TD:    Inicio | [gestión de club] Equipos, Temporadas, Jugadores, Posiciones, Entrenadores, Catálogo de Club | [personal] Mi Biblioteca
+//   Coach: Inicio | [equipo] Plantilla, Competiciones, Entrenamientos, Playbook | [recursos] Catálogo de Club, Mi Biblioteca
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Home, BookOpen, Users, LayoutGrid, Trophy, Dumbbell,
   CalendarDays, ClipboardList, ChevronLeft, ChevronRight,
-  Tag, UserCheck, BookMarked, Video,
+  Tag, UserCheck, BookMarked,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -20,48 +24,48 @@ import { useQuery } from "@tanstack/react-query";
 import { listCompetitions } from "@basketball-clipper/shared/api";
 import type { Competition } from "@basketball-clipper/shared/types";
 
-interface SidebarItem {
-  href: string;
-  label: string;
-  icon: React.ReactNode;
-}
+type SidebarEntry =
+  | { kind: "item";    href: string; label: string; icon: React.ReactNode }
+  | { kind: "divider"; key: string };
 
 function buildItems(
   role: string | undefined,
   clubId: number | undefined,
   teamId: number | null | undefined,
   competicionesHref: string,
-): SidebarItem[] {
+): SidebarEntry[] {
   if (role === "technical_director" && clubId) {
     return [
-      { href: "/",                          label: "Inicio",        icon: <Home          className="h-4 w-4 shrink-0" /> },
-      { href: `/clubs/${clubId}/teams`,     label: "Equipos",       icon: <Users         className="h-4 w-4 shrink-0" /> },
-      { href: `/clubs/${clubId}/seasons`,   label: "Temporadas",    icon: <CalendarDays  className="h-4 w-4 shrink-0" /> },
-      { href: "/players",                   label: "Jugadores",     icon: <ClipboardList className="h-4 w-4 shrink-0" /> },
-      { href: `/clubs/${clubId}/positions`, label: "Posiciones",    icon: <Tag           className="h-4 w-4 shrink-0" /> },
-      { href: `/clubs/${clubId}/members`,   label: "Entrenadores",  icon: <UserCheck     className="h-4 w-4 shrink-0" /> },
-      { href: `/clubs/${clubId}/catalog`,   label: "Catálogo",      icon: <LayoutGrid    className="h-4 w-4 shrink-0" /> },
-      { href: "/drills",                    label: "Mi Biblioteca", icon: <BookOpen      className="h-4 w-4 shrink-0" /> },
+      { kind: "item",    href: "/",                          label: "Inicio",           icon: <Home          className="h-4 w-4 shrink-0" /> },
+      { kind: "divider", key: "d1" },
+      { kind: "item",    href: `/clubs/${clubId}/teams`,     label: "Equipos",          icon: <Users         className="h-4 w-4 shrink-0" /> },
+      { kind: "item",    href: `/clubs/${clubId}/seasons`,   label: "Temporadas",       icon: <CalendarDays  className="h-4 w-4 shrink-0" /> },
+      { kind: "item",    href: "/players",                   label: "Jugadores",        icon: <ClipboardList className="h-4 w-4 shrink-0" /> },
+      { kind: "item",    href: `/clubs/${clubId}/positions`, label: "Posiciones",       icon: <Tag           className="h-4 w-4 shrink-0" /> },
+      { kind: "item",    href: `/clubs/${clubId}/members`,   label: "Entrenadores",     icon: <UserCheck     className="h-4 w-4 shrink-0" /> },
+      { kind: "item",    href: `/clubs/${clubId}/catalog`,   label: "Catálogo de Club", icon: <LayoutGrid    className="h-4 w-4 shrink-0" /> },
+      { kind: "divider", key: "d2" },
+      { kind: "item",    href: "/drills",                    label: "Mi Biblioteca",    icon: <BookOpen      className="h-4 w-4 shrink-0" /> },
     ];
   }
 
   if (teamId) {
     return [
-      { href: "/",                           label: "Inicio",         icon: <Home         className="h-4 w-4 shrink-0" /> },
-      { href: competicionesHref,             label: "Competiciones",  icon: <Trophy       className="h-4 w-4 shrink-0" /> },
-      { href: `/teams/${teamId}/trainings`,  label: "Entrenamientos", icon: <Dumbbell     className="h-4 w-4 shrink-0" /> },
-      { href: `/teams/${teamId}/roster`,     label: "Plantilla",      icon: <CalendarDays className="h-4 w-4 shrink-0" /> },
-      { href: `/teams/${teamId}/playbook`,   label: "Playbook",       icon: <BookMarked   className="h-4 w-4 shrink-0" /> },
-      ...(clubId ? [{ href: `/clubs/${clubId}/catalog`, label: "Catálogo", icon: <LayoutGrid className="h-4 w-4 shrink-0" /> }] : []),
-      { href: "/drills",                     label: "Mi Biblioteca",  icon: <BookOpen     className="h-4 w-4 shrink-0" /> },
-      { href: "/videos",                     label: "Vídeos",         icon: <Video        className="h-4 w-4 shrink-0" /> },
+      { kind: "item",    href: "/",                          label: "Inicio",           icon: <Home       className="h-4 w-4 shrink-0" /> },
+      { kind: "divider", key: "d1" },
+      { kind: "item",    href: `/teams/${teamId}/roster`,    label: "Plantilla",        icon: <Users      className="h-4 w-4 shrink-0" /> },
+      { kind: "item",    href: competicionesHref,            label: "Competiciones",    icon: <Trophy     className="h-4 w-4 shrink-0" /> },
+      { kind: "item",    href: `/teams/${teamId}/trainings`, label: "Entrenamientos",   icon: <Dumbbell   className="h-4 w-4 shrink-0" /> },
+      { kind: "item",    href: `/teams/${teamId}/playbook`,  label: "Playbook",         icon: <BookMarked className="h-4 w-4 shrink-0" /> },
+      { kind: "divider", key: "d2" },
+      ...(clubId ? [{ kind: "item" as const, href: `/clubs/${clubId}/catalog`, label: "Catálogo de Club", icon: <LayoutGrid className="h-4 w-4 shrink-0" /> }] : []),
+      { kind: "item",    href: "/drills",                    label: "Mi Biblioteca",    icon: <BookOpen   className="h-4 w-4 shrink-0" /> },
     ];
   }
 
   return [
-    { href: "/",        label: "Inicio",        icon: <Home     className="h-4 w-4 shrink-0" /> },
-    { href: "/drills",  label: "Mi Biblioteca", icon: <BookOpen className="h-4 w-4 shrink-0" /> },
-    { href: "/videos",  label: "Vídeos",        icon: <Video    className="h-4 w-4 shrink-0" /> },
+    { kind: "item", href: "/",       label: "Inicio",        icon: <Home     className="h-4 w-4 shrink-0" /> },
+    { kind: "item", href: "/drills", label: "Mi Biblioteca", icon: <BookOpen className="h-4 w-4 shrink-0" /> },
   ];
 }
 
@@ -110,7 +114,7 @@ export function Sidebar() {
       : `/teams/${teamId}/matches`
     : "/";
 
-  const items  = buildItems(role, clubId, teamId, competicionesHref);
+  const entries = buildItems(role, clubId, teamId, competicionesHref);
 
   // "Competiciones" is active when on any /teams/{id}/matches path
   const isActive = (href: string) => {
@@ -137,13 +141,16 @@ export function Sidebar() {
     >
       {/* Nav items */}
       <nav className="flex-1 py-3 flex flex-col gap-0.5 px-2">
-        {items.map((item) => {
-          const active = isActive(item.href);
+        {entries.map((entry) => {
+          if (entry.kind === "divider") {
+            return <hr key={entry.key} className="my-1.5 border-border mx-1" />;
+          }
+          const active = isActive(entry.href);
           return (
             <Link
-              key={item.label}
-              href={item.href}
-              title={collapsed ? item.label : undefined}
+              key={entry.label}
+              href={entry.href}
+              title={collapsed ? entry.label : undefined}
               aria-current={active ? "page" : undefined}
               className={cn(
                 "flex items-center gap-3 rounded-md px-2 py-2 text-sm font-medium transition-colors min-h-[40px]",
@@ -152,9 +159,9 @@ export function Sidebar() {
                   : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
               )}
             >
-              {item.icon}
+              {entry.icon}
               {!collapsed && (
-                <span className="truncate">{item.label}</span>
+                <span className="truncate">{entry.label}</span>
               )}
             </Link>
           );
