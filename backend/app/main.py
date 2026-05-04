@@ -2,11 +2,25 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.routers import auth, clips, video, ws
-from app.routers import clubs, seasons, teams, profiles, players, positions
-from app.routers import drills, catalog, playbook
-from app.routers import matches, trainings
-from app.routers import competitions, opponents
+from app.routers import (
+    auth,
+    catalog,
+    clips,
+    clubs,
+    competitions,
+    drills,
+    matches,
+    opponents,
+    playbook,
+    players,
+    positions,
+    profiles,
+    seasons,
+    teams,
+    trainings,
+    video,
+    ws,
+)
 
 app = FastAPI(
     title="Basketball Club Management API",

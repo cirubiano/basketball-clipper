@@ -9,11 +9,10 @@ Permisos:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
-from uuid import uuid4
-
 import csv
 import io
+from datetime import UTC, datetime
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from sqlalchemy import select
@@ -291,7 +290,7 @@ async def archive_player(
     if player.archived_at is not None:
         raise HTTPException(status_code=409, detail="Player is already archived")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     player.archived_at = now
 
     # RF-090: archivar en todas las plantillas activas
@@ -446,7 +445,7 @@ async def remove_from_roster(
     if entry.archived_at is not None:
         raise HTTPException(status_code=409, detail="Roster entry is already archived")
 
-    entry.archived_at = datetime.now(timezone.utc)
+    entry.archived_at = datetime.now(UTC)
     await db.commit()
     return Response(status_code=204)
 

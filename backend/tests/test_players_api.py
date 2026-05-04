@@ -15,7 +15,7 @@ Cubre:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -24,7 +24,6 @@ from fastapi.testclient import TestClient
 from app.core.database import get_db
 from app.core.security import create_access_token, get_current_user
 from app.main import app
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -64,7 +63,7 @@ def _fake_team(team_id: int = 10, club_id: int = 1, season_id: int = 5) -> Magic
 
 
 def _fake_player(player_id: int = 42, club_id: int = 1) -> MagicMock:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     p = MagicMock()
     p.id = player_id
     p.club_id = club_id
@@ -80,7 +79,7 @@ def _fake_player(player_id: int = 42, club_id: int = 1) -> MagicMock:
 
 
 def _fake_roster_entry(entry_id: int = 1, player_id: int = 42, team_id: int = 10) -> MagicMock:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     e = MagicMock()
     e.id = entry_id
     e.player_id = player_id
@@ -228,7 +227,7 @@ def test_update_archived_player_returns_409():
     _override_user(_fake_admin())
     club = _fake_club()
     player = _fake_player()
-    player.archived_at = datetime.now(timezone.utc)
+    player.archived_at = datetime.now(UTC)
 
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = player
@@ -293,7 +292,7 @@ def test_archive_already_archived_player_returns_409():
     _override_user(_fake_admin())
     club = _fake_club()
     player = _fake_player()
-    player.archived_at = datetime.now(timezone.utc)
+    player.archived_at = datetime.now(UTC)
 
     session = AsyncMock()
     session.get.side_effect = [club, player]
@@ -392,7 +391,7 @@ def test_add_to_roster_archived_player_returns_404():
     """Añadir un jugador archivado a la plantilla → 404."""
     _override_user(_fake_admin())
     player = _fake_player()
-    player.archived_at = datetime.now(timezone.utc)
+    player.archived_at = datetime.now(UTC)
 
     session = AsyncMock()
     session.get.side_effect = [_fake_club(), _fake_team(), player]
@@ -451,7 +450,7 @@ def test_remove_already_archived_roster_entry_returns_409():
     """Retirar una entrada ya archivada → 409."""
     _override_user(_fake_admin())
     entry = _fake_roster_entry()
-    entry.archived_at = datetime.now(timezone.utc)
+    entry.archived_at = datetime.now(UTC)
 
     session = AsyncMock()
     session.get.side_effect = [_fake_club(), _fake_team(), entry]

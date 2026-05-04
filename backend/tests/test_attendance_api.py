@@ -16,7 +16,7 @@ Cubre:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -25,7 +25,6 @@ from fastapi.testclient import TestClient
 from app.core.database import get_db
 from app.core.security import create_access_token, get_current_user
 from app.main import app
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -73,7 +72,7 @@ def _fake_player(player_id: int = 42) -> MagicMock:
 
 
 def _fake_training(training_id: int = 7, team_id: int = 10) -> MagicMock:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     t = MagicMock()
     t.id = training_id
     t.team_id = team_id

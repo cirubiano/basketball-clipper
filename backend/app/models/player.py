@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 
-class PlayerPosition(str, enum.Enum):
+class PlayerPosition(enum.StrEnum):
     """Enum heredado — solo usado por RosterEntry.position (asignación por equipo).
     El campo Player.position fue reemplazado por la M2M player_positions."""
     point_guard = "point_guard"        # Base

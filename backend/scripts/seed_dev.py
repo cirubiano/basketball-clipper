@@ -27,11 +27,11 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 from app.core.security import hash_password
-from app.models.user import User
 from app.models.club import Club
 from app.models.club_member import ClubMember
-from app.models.season import Season, SeasonStatus
 from app.models.profile import Profile, UserRole
+from app.models.season import Season, SeasonStatus
+from app.models.user import User
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@example.com")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin1234")

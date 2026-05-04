@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 
 from app.models.drill import CourtLayoutType, DrillType
 
-
 # ── Tag ───────────────────────────────────────────────────────────────────────
 
 class TagCreate(BaseModel):

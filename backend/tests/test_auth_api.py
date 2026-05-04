@@ -5,18 +5,16 @@ Tests de los endpoints de autenticación y gestión de perfiles.
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
-
 import base64
 import json
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.security import create_access_token, get_current_user, hash_password
 from app.core.database import get_db
+from app.core.security import create_access_token, get_current_user, hash_password
 from app.main import app
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

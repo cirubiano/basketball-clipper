@@ -4,7 +4,6 @@ from pydantic import BaseModel, Field
 
 from app.models.video import VideoStatus
 
-
 # ── Multipart upload ─────────────────────────────────────────────────────────
 
 class InitUploadRequest(BaseModel):

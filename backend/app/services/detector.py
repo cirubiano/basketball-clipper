@@ -26,7 +26,7 @@ are exposed via env vars so you can tune without redeploying. See
 """
 import logging
 from collections import Counter, deque
-from typing import Callable
+from collections.abc import Callable
 
 import cv2
 import numpy as np
@@ -420,7 +420,7 @@ def _smooth_possession(
         else:
             smoothed.append(Counter(window_slice).most_common(1)[0][0])
     frame_indices = [f for f, _ in seq]
-    return list(zip(frame_indices, smoothed))
+    return list(zip(frame_indices, smoothed, strict=False))
 
 
 def _to_segments(

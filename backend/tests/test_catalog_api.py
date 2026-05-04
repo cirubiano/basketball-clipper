@@ -18,7 +18,7 @@ Cubre:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -28,7 +28,6 @@ from app.core.database import get_db
 from app.core.security import create_access_token, get_current_user
 from app.main import app
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _auth_headers(user_id: int = 1) -> dict[str, str]:
@@ -37,7 +36,7 @@ def _auth_headers(user_id: int = 1) -> dict[str, str]:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _fake_user(user_id: int = 1) -> MagicMock:
@@ -211,7 +210,6 @@ def test_list_club_tags_club_not_found():
 def test_create_club_tag_success():
     """TD puede crear un tag del club."""
     _override_user(_fake_admin())
-    tag = _fake_club_tag()
 
     session = AsyncMock()
     session.get = AsyncMock(return_value=_fake_club())

@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ── 1. Settings ──────────────────────────────────────────────────────────────
 
 def test_settings_load_without_errors():
@@ -124,6 +123,7 @@ def test_fastapi_app_core_routes_registered():
 
 def test_health_endpoint_responds_ok():
     from fastapi.testclient import TestClient
+
     from app.main import app
 
     client = TestClient(app)
@@ -136,28 +136,28 @@ def test_health_endpoint_responds_ok():
 
 def test_all_models_are_mapped_on_base():
     """Todos los modelos SQLAlchemy estan registrados en Base.metadata."""
-    from app.core.database import Base
+    import app.models.catalog  # noqa: F401
 
     # Importar todos los modelos para que se registren en Base.metadata
-    import app.models.clip         # noqa: F401
-    import app.models.exercise     # noqa: F401
-    import app.models.user         # noqa: F401
-    import app.models.video        # noqa: F401
-    import app.models.club         # noqa: F401
-    import app.models.season       # noqa: F401
-    import app.models.team         # noqa: F401
-    import app.models.profile      # noqa: F401
+    import app.models.clip  # noqa: F401
+    import app.models.club  # noqa: F401
     import app.models.club_member  # noqa: F401
-    import app.models.player       # noqa: F401
     import app.models.club_position  # noqa: F401
-    import app.models.drill        # noqa: F401
-    import app.models.club_tag     # noqa: F401
-    import app.models.catalog      # noqa: F401
-    import app.models.playbook     # noqa: F401
-    import app.models.match        # noqa: F401
-    import app.models.training     # noqa: F401
+    import app.models.club_tag  # noqa: F401
     import app.models.competition  # noqa: F401
-    import app.models.opponent     # noqa: F401
+    import app.models.drill  # noqa: F401
+    import app.models.exercise  # noqa: F401
+    import app.models.match  # noqa: F401
+    import app.models.opponent  # noqa: F401
+    import app.models.playbook  # noqa: F401
+    import app.models.player  # noqa: F401
+    import app.models.profile  # noqa: F401
+    import app.models.season  # noqa: F401
+    import app.models.team  # noqa: F401
+    import app.models.training  # noqa: F401
+    import app.models.user  # noqa: F401
+    import app.models.video  # noqa: F401
+    from app.core.database import Base
 
     tables = set(Base.metadata.tables.keys())
 

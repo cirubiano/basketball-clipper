@@ -17,7 +17,7 @@ DELETE /{club_id}/teams/{team_id}/matches/{match_id}/opponent-stats/{stat_id} â†
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
@@ -180,7 +180,7 @@ async def archive_opponent(
     await _get_club_or_404(club_id, db)
     await _require_coach_or_td(club_id, user, db)
     opp = await _get_opponent_or_404(opp_id, club_id, db)
-    opp.archived_at = datetime.now(timezone.utc)
+    opp.archived_at = datetime.now(UTC)
     await db.commit()
     return Response(status_code=204)
 
@@ -311,7 +311,7 @@ async def archive_opponent_player(
     await _get_club_or_404(club_id, db)
     await _require_coach_or_td(club_id, user, db)
     player = await _get_player_or_404(pid, opp_id, db)
-    player.archived_at = datetime.now(timezone.utc)
+    player.archived_at = datetime.now(UTC)
     await db.commit()
     return Response(status_code=204)
 

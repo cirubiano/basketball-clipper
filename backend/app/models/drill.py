@@ -13,30 +13,31 @@ from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
+    Column,
     DateTime,
-    Enum as SAEnum,
     ForeignKey,
     Integer,
     String,
     Table,
     Text,
-    Column,
     func,
+)
+from sqlalchemy import (
+    Enum as SAEnum,
 )
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
-
 # ── Enums ─────────────────────────────────────────────────────────────────────
 
-class DrillType(str, enum.Enum):
+class DrillType(enum.StrEnum):
     drill = "drill"
     play = "play"
 
 
-class CourtLayoutType(str, enum.Enum):
+class CourtLayoutType(enum.StrEnum):
     full_fiba = "full_fiba"
     half_fiba = "half_fiba"
     mini_fiba = "mini_fiba"
@@ -69,8 +70,8 @@ class Tag(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    user: Mapped["User"] = relationship("User", back_populates="tags", lazy="select")  # noqa: F821
-    drills: Mapped[list["Drill"]] = relationship(
+    user: Mapped[User] = relationship("User", back_populates="tags", lazy="select")  # noqa: F821
+    drills: Mapped[list[Drill]] = relationship(
         "Drill", secondary=drill_tags, back_populates="tags", lazy="select"
     )
 
@@ -138,13 +139,13 @@ class Drill(Base):
     )
 
     # relationships
-    user: Mapped["User"] = relationship("User", back_populates="drills", lazy="select")  # noqa: F821
+    user: Mapped[User] = relationship("User", back_populates="drills", lazy="select")  # noqa: F821
     tags: Mapped[list[Tag]] = relationship(
         Tag, secondary=drill_tags, back_populates="drills", lazy="select"
     )
-    parent: Mapped["Drill | None"] = relationship(
+    parent: Mapped[Drill | None] = relationship(
         "Drill", remote_side="Drill.id", back_populates="variants", lazy="select"
     )
-    variants: Mapped[list["Drill"]] = relationship(
+    variants: Mapped[list[Drill]] = relationship(
         "Drill", back_populates="parent", lazy="select"
     )

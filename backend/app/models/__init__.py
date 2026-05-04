@@ -13,14 +13,28 @@ from app.models.club_tag import ClubTag
 from app.models.competition import Competition
 from app.models.drill import CourtLayoutType, Drill, DrillType, Tag, drill_tags
 from app.models.exercise import Exercise
-from app.models.match import Match, MatchLocation, MatchPlayer, MatchStat, MatchStatus, MatchVideo, MatchVideoLabel
+from app.models.match import (
+    Match,
+    MatchLocation,
+    MatchPlayer,
+    MatchStat,
+    MatchStatus,
+    MatchVideo,
+    MatchVideoLabel,
+)
 from app.models.opponent import OpponentMatchStat, OpponentPlayer, OpponentTeam
-from app.models.player import Player, PlayerPosition, RosterEntry
 from app.models.playbook import TeamPlaybookEntry
+from app.models.player import Player, PlayerPosition, RosterEntry
 from app.models.profile import Profile, UserRole
 from app.models.season import Season, SeasonStatus
 from app.models.team import Team
-from app.models.training import Training, TrainingAttendance, TrainingDrill, TrainingDrillGroup, training_drill_group_players
+from app.models.training import (
+    Training,
+    TrainingAttendance,
+    TrainingDrill,
+    TrainingDrillGroup,
+    training_drill_group_players,
+)
 from app.models.user import User
 from app.models.video import Video, VideoStatus
 

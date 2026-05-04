@@ -15,7 +15,7 @@ DELETE /{club_id}/catalog/{entry_id}               → retirar del catálogo (au
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
@@ -139,7 +139,7 @@ async def archive_club_tag(
         raise HTTPException(status_code=404, detail="Club tag not found")
     if tag.archived_at is not None:
         raise HTTPException(status_code=409, detail="Tag is already archived")
-    tag.archived_at = datetime.now(timezone.utc)
+    tag.archived_at = datetime.now(UTC)
     await db.commit()
     return Response(status_code=204)
 
@@ -268,7 +268,7 @@ async def update_catalog_entry_tags(
         raise HTTPException(status_code=403, detail="Only the author or TechnicalDirector can update tags")
 
     entry.tags = await _resolve_club_tags(body.tag_ids, club_id, db)
-    entry.updated_at = datetime.now(timezone.utc)
+    entry.updated_at = datetime.now(UTC)
     await db.commit()
     return await _get_entry_or_404(entry_id, club_id, db)
 
@@ -295,6 +295,6 @@ async def remove_from_catalog(
     if entry.published_by != current_user.id and not is_td and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Only the author or TechnicalDirector can remove catalog entries")
 
-    entry.archived_at = datetime.now(timezone.utc)
+    entry.archived_at = datetime.now(UTC)
     await db.commit()
     return Response(status_code=204)

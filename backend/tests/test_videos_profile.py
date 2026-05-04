@@ -11,18 +11,17 @@ Verifica que:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.security import create_access_token, get_current_profile
 from app.core.database import get_db
+from app.core.security import create_access_token, get_current_profile
 from app.main import app
 from app.models.profile import UserRole
 from app.models.video import VideoStatus
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -57,7 +56,7 @@ def _fake_video(vid_id: int = 1, team_id: int = 10) -> MagicMock:
     v.error_message = None
     v.team_id = team_id
     v.user_id = 1
-    v.created_at = datetime.now(timezone.utc)
+    v.created_at = datetime.now(UTC)
     return v
 
 
@@ -220,7 +219,7 @@ def test_list_clips_requires_active_profile():
 
 def test_list_clips_filtered_by_team():
     """HeadCoach / StaffMember ve solo los clips de su equipo."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     profile = _fake_profile(team_id=10)
     _override_current_profile(profile)
@@ -233,7 +232,7 @@ def test_list_clips_filtered_by_team():
     mock_clip.team = "A"
     mock_clip.s3_key = "clips/1/1/clip.mp4"
     mock_clip.duration = 30.0
-    mock_clip.created_at = datetime.now(timezone.utc)
+    mock_clip.created_at = datetime.now(UTC)
 
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = [mock_clip]

@@ -10,7 +10,7 @@ Cubre:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -19,7 +19,6 @@ from fastapi.testclient import TestClient
 from app.core.database import get_db
 from app.core.security import create_access_token, get_current_user
 from app.main import app
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -70,7 +69,7 @@ def _fake_drill(drill_id: int = 99, user_id: int = 1) -> MagicMock:
 
 
 def _fake_playbook_entry(entry_id: int = 7, team_id: int = 10) -> MagicMock:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     e = MagicMock()
     e.id = entry_id
     e.team_id = team_id
@@ -198,7 +197,7 @@ def test_list_playbook_team_archived():
     """404 si el equipo está archivado."""
     _override_user(_fake_admin())
     archived_team = _fake_team()
-    archived_team.archived_at = datetime.now(timezone.utc)
+    archived_team.archived_at = datetime.now(UTC)
 
     session = AsyncMock()
     session.get = AsyncMock(side_effect=[_fake_club(), archived_team])
@@ -318,7 +317,7 @@ def test_add_to_playbook_drill_archived():
     """404 si el drill está archivado."""
     _override_user(_fake_admin())
     drill = _fake_drill()
-    drill.archived_at = datetime.now(timezone.utc)
+    drill.archived_at = datetime.now(UTC)
 
     session = AsyncMock()
     session.get = AsyncMock(side_effect=[_fake_club(), _fake_team(), drill])

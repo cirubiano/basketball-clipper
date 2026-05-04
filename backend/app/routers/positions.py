@@ -8,7 +8,7 @@ Permisos:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
@@ -154,6 +154,6 @@ async def archive_position(
     if position is None or position.club_id != club_id or position.archived_at is not None:
         raise HTTPException(status_code=404, detail="Position not found")
 
-    position.archived_at = datetime.now(timezone.utc)
+    position.archived_at = datetime.now(UTC)
     await db.commit()
     return Response(status_code=204)

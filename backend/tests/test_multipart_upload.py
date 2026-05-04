@@ -8,18 +8,17 @@ Se ejecutan dentro del contenedor backend:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.security import create_access_token, get_current_user, get_current_profile
 from app.core.database import get_db
+from app.core.security import create_access_token, get_current_profile, get_current_user
 from app.main import app
 from app.models.profile import UserRole
 from app.models.video import VideoStatus
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -160,7 +159,7 @@ def test_complete_upload_closes_multipart_and_enqueues_job():
     mock_video.s3_key = "videos/1/xyz.mp4"
     mock_video.upload_id = "upload-id-7"
     mock_video.status = VideoStatus.uploading
-    mock_video.created_at = datetime.now(timezone.utc)
+    mock_video.created_at = datetime.now(UTC)
 
     session = AsyncMock()
     session.get.return_value = mock_video

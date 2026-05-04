@@ -7,7 +7,7 @@ DELETE /profiles/{id}      → archivar un perfil (retirar rol)
 La asignación de perfil (POST /clubs/{club_id}/profiles) vive en clubs.py
 para mantener la coherencia de rutas bajo /clubs.
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -95,7 +95,7 @@ async def archive_profile(
         raise HTTPException(status_code=404, detail="Profile not found")
 
     await _require_technical_director(profile.club_id, current_user, db)
-    profile.archived_at = datetime.now(timezone.utc)
+    profile.archived_at = datetime.now(UTC)
     await db.flush()
 
     # RF-164: congelar entradas del playbook si pierde acceso al equipo

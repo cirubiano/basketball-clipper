@@ -13,7 +13,6 @@ import pytest
 from app.models.video import VideoStatus
 from app.services.queue import _run_pipeline
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _make_session_mock(video_mock):

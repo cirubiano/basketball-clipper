@@ -12,7 +12,7 @@ Cubre:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -21,7 +21,6 @@ from fastapi.testclient import TestClient
 from app.core.database import get_db
 from app.core.security import create_access_token, get_current_user
 from app.main import app
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -58,12 +57,12 @@ def _fake_position(pos_id: int = 100, club_id: int = 1, name: str = "Base") -> M
     p.name = name
     p.color = "#3B82F6"
     p.archived_at = None
-    p.created_at = datetime.now(timezone.utc)
+    p.created_at = datetime.now(UTC)
     return p
 
 
 def _fake_player(player_id: int = 42, club_id: int = 1) -> MagicMock:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     p = MagicMock()
     p.id = player_id
     p.club_id = club_id
@@ -161,12 +160,11 @@ def test_list_positions_requires_auth():
 def test_create_position_returns_201_for_admin():
     """Admin crea una posición con nombre y color → 201."""
     _override_user(_fake_admin())
-    pos = _fake_position(name="Alero", pos_id=101)
 
     session = AsyncMock()
     session.get = AsyncMock(return_value=_fake_club())
     session.add = MagicMock()
-    session.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 101) or setattr(obj, "name", "Alero") or setattr(obj, "color", "#EF4444") or setattr(obj, "archived_at", None) or setattr(obj, "created_at", datetime.now(timezone.utc)))
+    session.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 101) or setattr(obj, "name", "Alero") or setattr(obj, "color", "#EF4444") or setattr(obj, "archived_at", None) or setattr(obj, "created_at", datetime.now(UTC)))
     _override_db(session)
 
     # Use pos as the return value after refresh
@@ -176,7 +174,7 @@ def test_create_position_returns_201_for_admin():
         obj.id = 101
         obj.club_id = 1
         obj.archived_at = None
-        obj.created_at = datetime.now(timezone.utc)
+        obj.created_at = datetime.now(UTC)
     session.add = MagicMock(side_effect=_add)
 
     r = TestClient(app).post(

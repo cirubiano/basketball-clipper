@@ -1,9 +1,9 @@
 """
 Shared pytest fixtures.
 """
+import cv2
 import numpy as np
 import pytest
-import cv2
 
 
 @pytest.fixture(scope="session")

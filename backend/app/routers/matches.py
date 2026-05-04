@@ -17,7 +17,7 @@ POST   /{club_id}/teams/{team_id}/matches/{match_id}/stats             → crear
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
@@ -28,8 +28,8 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.competition import Competition
 from app.models.match import Match, MatchPlayer, MatchStat, MatchVideo
-from app.models.opponent import OpponentMatchStat as OppStat, OpponentPlayer
-from app.models.player import Player, RosterEntry
+from app.models.opponent import OpponentMatchStat as OppStat
+from app.models.player import Player
 from app.models.profile import Profile, UserRole
 from app.models.team import Team
 from app.models.user import User
@@ -412,7 +412,7 @@ async def archive_match(
     _require_coach_or_td(profile, current_user)
 
     match = await _get_match_or_404(match_id, team_id, db)
-    match.archived_at = datetime.now(timezone.utc)
+    match.archived_at = datetime.now(UTC)
     await db.commit()
     return Response(status_code=204)
 

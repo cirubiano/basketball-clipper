@@ -1,5 +1,7 @@
 from datetime import datetime
+
 from pydantic import BaseModel, model_validator
+
 from app.models.training import AbsenceReason
 
 

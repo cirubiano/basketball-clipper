@@ -157,7 +157,7 @@ async def _run_pipeline(video_id: int) -> None:
             logger.info("[video %d] stage 4/4: uploading %d clips to S3", video_id, len(clip_paths))
             t0 = time.monotonic()
             for i, (clip_path, (start_t, end_t, team)) in enumerate(
-                zip(clip_paths, segments), 1
+                zip(clip_paths, segments, strict=False), 1
             ):
                 clip_filename = Path(clip_path).name
                 clip_stem = Path(clip_path).stem  # e.g. "clip_0001_team_a"

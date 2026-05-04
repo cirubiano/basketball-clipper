@@ -97,7 +97,7 @@ def test_all_api_routes_registered():
         # ── Drills ────────────────────────────────────────────────────────────
         "/drills/tags",
         "/drills/tags/{tag_id}",
-        "/drills/",
+        "/drills",
         "/drills/{drill_id}",
         "/drills/{drill_id}/clone",
         "/drills/{drill_id}/variants",

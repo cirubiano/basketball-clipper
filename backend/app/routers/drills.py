@@ -9,7 +9,7 @@ Permisos (RF-126):
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import func, select
@@ -129,7 +129,7 @@ async def archive_tag(
         raise HTTPException(status_code=404, detail="Tag not found")
     if tag.archived_at is not None:
         raise HTTPException(status_code=409, detail="Tag is already archived")
-    tag.archived_at = datetime.now(timezone.utc)
+    tag.archived_at = datetime.now(UTC)
     await db.commit()
     return Response(status_code=204)
 
@@ -242,7 +242,7 @@ async def update_drill(
     if tag_ids is not None:
         drill.tags = await _resolve_tags(tag_ids, current_user.id, db)
 
-    drill.updated_at = datetime.now(timezone.utc)
+    drill.updated_at = datetime.now(UTC)
     await db.commit()
     return await _get_drill_or_404(drill_id, db)
 
@@ -257,7 +257,7 @@ async def archive_drill(
     await _require_author(drill, current_user)
     if drill.archived_at is not None:
         raise HTTPException(status_code=409, detail="Drill is already archived")
-    drill.archived_at = datetime.now(timezone.utc)
+    drill.archived_at = datetime.now(UTC)
     await db.commit()
     return Response(status_code=204)
 

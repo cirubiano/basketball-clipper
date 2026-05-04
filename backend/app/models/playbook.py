@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -30,9 +30,9 @@ class TeamPlaybookEntry(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    drill: Mapped["Drill"] = relationship(  # noqa: F821
+    drill: Mapped[Drill] = relationship(  # noqa: F821
         "Drill", foreign_keys=[drill_id], lazy="select"
     )
-    added_by_user: Mapped["User"] = relationship(  # noqa: F821
+    added_by_user: Mapped[User] = relationship(  # noqa: F821
         "User", foreign_keys=[added_by], lazy="select"
     )

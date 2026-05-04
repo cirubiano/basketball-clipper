@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 
-class VideoStatus(str, enum.Enum):
+class VideoStatus(enum.StrEnum):
     uploading = "uploading"
     pending = "pending"
     processing = "processing"

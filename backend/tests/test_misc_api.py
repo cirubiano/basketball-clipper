@@ -12,16 +12,20 @@ Tests misceláneos para cubrir rutas con baja cobertura:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.core.database import get_db
-from app.core.security import create_access_token, get_current_user, require_admin, get_current_profile
+from app.core.security import (
+    create_access_token,
+    get_current_profile,
+    get_current_user,
+    require_admin,
+)
 from app.main import app
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -31,7 +35,7 @@ def _auth_headers(user_id: int = 1) -> dict[str, str]:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _fake_admin(user_id: int = 1) -> MagicMock:
@@ -221,7 +225,6 @@ def test_create_club_success():
     admin = _fake_admin()
     _override_admin(admin)
 
-    club = _fake_club()
     session = AsyncMock()
     session.add = MagicMock(side_effect=lambda c: _set_club_fields(c))
     _override_db(session)

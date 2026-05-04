@@ -15,7 +15,7 @@ POST   /{club_id}/teams/{team_id}/trainings/{training_id}/attendance    → regi
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
@@ -28,7 +28,12 @@ from app.models.drill import Drill
 from app.models.player import Player
 from app.models.profile import Profile, UserRole
 from app.models.team import Team
-from app.models.training import AbsenceReason, Training, TrainingAttendance, TrainingDrill, TrainingDrillGroup
+from app.models.training import (
+    Training,
+    TrainingAttendance,
+    TrainingDrill,
+    TrainingDrillGroup,
+)
 from app.models.user import User
 from app.routers.clubs import _get_club_or_404
 from app.schemas.training import (
@@ -37,8 +42,8 @@ from app.schemas.training import (
     TrainingBulkCreate,
     TrainingCreate,
     TrainingDrillAdd,
-    TrainingDrillGroupResponse,
     TrainingDrillGroupPlayerResponse,
+    TrainingDrillGroupResponse,
     TrainingDrillGroupUpsert,
     TrainingDrillReorderItem,
     TrainingDrillResponse,
@@ -322,7 +327,7 @@ async def archive_training(
     _require_coach_or_td(profile, current_user)
 
     training = await _get_training_or_404(training_id, team_id, db)
-    training.archived_at = datetime.now(timezone.utc)
+    training.archived_at = datetime.now(UTC)
     await db.commit()
     return Response(status_code=204)
 
@@ -435,7 +440,7 @@ async def upsert_drill_groups(
     new_groups: list[TrainingDrillGroup] = []
     for item in body.groups:
         if not 1 <= item.group_number <= 4:
-            raise HTTPException(status_code=422, detail=f"group_number debe estar entre 1 y 4")
+            raise HTTPException(status_code=422, detail="group_number debe estar entre 1 y 4")
         players = []
         for pid in item.player_ids:
             player = await db.get(Player, pid)

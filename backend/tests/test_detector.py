@@ -18,7 +18,6 @@ from app.services.detector import (
     detect_possessions,
 )
 
-
 # ── _determine_possession ─────────────────────────────────────────────────────
 
 CENTROIDS = np.array([[10.0, 20.0, 30.0], [200.0, 200.0, 200.0]], dtype=np.float32)

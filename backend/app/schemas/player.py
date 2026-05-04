@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 from app.models.player import PlayerPosition
-
 
 # ── Club Position (used inline in PlayerResponse) ─────────────────────────────
 
@@ -25,8 +24,8 @@ class ClubPositionCreate(BaseModel):
 
 
 class ClubPositionUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    color: Optional[str] = Field(None, max_length=20)
+    name: str | None = Field(None, min_length=1, max_length=100)
+    color: str | None = Field(None, max_length=20)
 
 
 class ClubPositionResponse(BaseModel):
@@ -34,7 +33,7 @@ class ClubPositionResponse(BaseModel):
     club_id: int
     name: str
     color: str
-    archived_at: Optional[datetime]
+    archived_at: datetime | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -57,19 +56,19 @@ class PhotoUploadResponse(BaseModel):
 class PlayerCreate(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
-    date_of_birth: Optional[date] = None
+    date_of_birth: date | None = None
     position_ids: list[int] = Field(default_factory=list)
-    photo_url: Optional[str] = Field(None, max_length=512)
-    phone: Optional[str] = Field(None, max_length=30)
+    photo_url: str | None = Field(None, max_length=512)
+    phone: str | None = Field(None, max_length=30)
 
 
 class PlayerUpdate(BaseModel):
-    first_name: Optional[str] = Field(None, min_length=1, max_length=100)
-    last_name: Optional[str] = Field(None, min_length=1, max_length=100)
-    date_of_birth: Optional[date] = None
-    position_ids: Optional[list[int]] = None  # None = no change; [] = clear all
-    photo_url: Optional[str] = Field(None, max_length=512)
-    phone: Optional[str] = Field(None, max_length=30)
+    first_name: str | None = Field(None, min_length=1, max_length=100)
+    last_name: str | None = Field(None, min_length=1, max_length=100)
+    date_of_birth: date | None = None
+    position_ids: list[int] | None = None  # None = no change; [] = clear all
+    photo_url: str | None = Field(None, max_length=512)
+    phone: str | None = Field(None, max_length=30)
 
 
 class PlayerResponse(BaseModel):
@@ -77,11 +76,11 @@ class PlayerResponse(BaseModel):
     club_id: int
     first_name: str
     last_name: str
-    date_of_birth: Optional[date]
+    date_of_birth: date | None
     positions: list[ClubPositionBrief]
-    photo_url: Optional[str]
-    phone: Optional[str]
-    archived_at: Optional[datetime]
+    photo_url: str | None
+    phone: str | None
+    archived_at: datetime | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -92,16 +91,16 @@ class PlayerResponse(BaseModel):
 class RosterEntryCreate(BaseModel):
     player_id: int
     jersey_number: int = Field(..., ge=0, le=99)
-    position: Optional[PlayerPosition] = None
+    position: PlayerPosition | None = None
 
 
 class RosterEntryUpdate(BaseModel):
-    jersey_number: Optional[int] = Field(None, ge=0, le=99)
-    position: Optional[PlayerPosition] = None
-    points_per_game: Optional[float] = Field(None, ge=0)
-    rebounds_per_game: Optional[float] = Field(None, ge=0)
-    assists_per_game: Optional[float] = Field(None, ge=0)
-    minutes_per_game: Optional[float] = Field(None, ge=0)
+    jersey_number: int | None = Field(None, ge=0, le=99)
+    position: PlayerPosition | None = None
+    points_per_game: float | None = Field(None, ge=0)
+    rebounds_per_game: float | None = Field(None, ge=0)
+    assists_per_game: float | None = Field(None, ge=0)
+    minutes_per_game: float | None = Field(None, ge=0)
 
 
 class RosterEntryResponse(BaseModel):
@@ -109,13 +108,13 @@ class RosterEntryResponse(BaseModel):
     player_id: int
     team_id: int
     season_id: int
-    jersey_number: Optional[int]
-    position: Optional[PlayerPosition]
-    points_per_game: Optional[float]
-    rebounds_per_game: Optional[float]
-    assists_per_game: Optional[float]
-    minutes_per_game: Optional[float]
-    archived_at: Optional[datetime]
+    jersey_number: int | None
+    position: PlayerPosition | None
+    points_per_game: float | None
+    rebounds_per_game: float | None
+    assists_per_game: float | None
+    minutes_per_game: float | None
+    archived_at: datetime | None
     created_at: datetime
     # Datos del jugador embebidos para evitar N+1 en la lista de plantilla
     player: PlayerResponse

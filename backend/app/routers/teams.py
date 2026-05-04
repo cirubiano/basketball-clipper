@@ -4,7 +4,7 @@ Teams — gestión de equipos.
 Solo el TechnicalDirector puede crear y archivar equipos (RF-066).
 Cualquier miembro del club puede consultarlos.
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -90,5 +90,5 @@ async def archive_team(
     team = await db.get(Team, team_id)
     if team is None or team.club_id != club_id:
         raise HTTPException(status_code=404, detail="Team not found")
-    team.archived_at = datetime.now(timezone.utc)
+    team.archived_at = datetime.now(UTC)
     await db.flush()

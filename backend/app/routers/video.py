@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import get_current_user, get_current_profile
+from app.core.security import get_current_profile, get_current_user
 from app.models.clip import Clip
 from app.models.profile import Profile, UserRole
 from app.models.user import User
@@ -40,8 +40,8 @@ from app.schemas.video import (
     InitUploadRequest,
     InitUploadResponse,
     PresignedPart,
-    UploadStatusResponse,
     UploadedPart,
+    UploadStatusResponse,
     VideoListItem,
     VideoStatusResponse,
 )

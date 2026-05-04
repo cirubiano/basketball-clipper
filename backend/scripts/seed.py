@@ -27,7 +27,6 @@ from app.core.config import settings
 from app.core.security import hash_password
 from app.models.user import User
 
-
 ADMIN_EMAIL = os.getenv("SEED_ADMIN_EMAIL", "admin@example.com")
 ADMIN_PASSWORD = os.getenv("SEED_ADMIN_PASSWORD", "admin1234")
 

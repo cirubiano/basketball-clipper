@@ -18,7 +18,7 @@ Cubre:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -27,7 +27,6 @@ from fastapi.testclient import TestClient
 from app.core.database import get_db
 from app.core.security import create_access_token, get_current_user
 from app.main import app
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -44,7 +43,7 @@ def _fake_user(user_id: int = 1) -> MagicMock:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _fake_tag(tag_id: int = 1, user_id: int = 1, archived: bool = False) -> MagicMock:
@@ -152,7 +151,6 @@ def test_list_tags_requires_auth():
 def test_create_tag_success():
     """Crea un tag correctamente."""
     _override_user(_fake_user())
-    tag = _fake_tag()
 
     session = AsyncMock()
     session.add = MagicMock()

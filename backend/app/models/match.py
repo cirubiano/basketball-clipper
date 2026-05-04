@@ -7,13 +7,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 
-class MatchLocation(str, enum.Enum):
+class MatchLocation(enum.StrEnum):
     home = "home"
     away = "away"
     neutral = "neutral"
 
 
-class MatchStatus(str, enum.Enum):
+class MatchStatus(enum.StrEnum):
     scheduled = "scheduled"
     in_progress = "in_progress"
     finished = "finished"
@@ -21,7 +21,7 @@ class MatchStatus(str, enum.Enum):
     # played is DEPRECATED in PostgreSQL enum -- all records migrated to finished
 
 
-class MatchVideoLabel(str, enum.Enum):
+class MatchVideoLabel(enum.StrEnum):
     scouting = "scouting"
     post_analysis = "post_analysis"
     other = "other"

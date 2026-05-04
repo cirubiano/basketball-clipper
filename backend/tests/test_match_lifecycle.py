@@ -13,7 +13,7 @@ Cubre:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -23,7 +23,6 @@ from app.core.database import get_db
 from app.core.security import create_access_token, get_current_user
 from app.main import app
 from app.models.match import MatchStatus
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -62,7 +61,7 @@ def _fake_team(team_id: int = 10, club_id: int = 1) -> MagicMock:
 
 
 def _fake_match(match_id: int = 5, team_id: int = 10, status: MatchStatus = MatchStatus.scheduled) -> MagicMock:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     m = MagicMock()
     m.id = match_id
     m.team_id = team_id
@@ -369,7 +368,6 @@ def test_stats_on_in_progress_match_are_accepted():
     _override_user(_fake_admin())
     match = _fake_match(status=MatchStatus.in_progress)
     mp = _fake_match_player()
-    stat = _fake_match_stat()
 
     session = AsyncMock()
     session.get.side_effect = [_fake_club(), _fake_team()]

@@ -5,7 +5,6 @@ from pydantic import BaseModel, model_validator
 from app.models.profile import UserRole
 from app.models.season import SeasonStatus
 
-
 # ── Club ──────────────────────────────────────────────────────────────────────
 
 class ClubCreate(BaseModel):

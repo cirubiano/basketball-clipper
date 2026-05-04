@@ -12,7 +12,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.season import Season, SeasonStatus
 from app.models.user import User
-from app.routers.clubs import _get_club_or_404, _require_technical_director, _require_club_access
+from app.routers.clubs import _get_club_or_404, _require_club_access, _require_technical_director
 from app.schemas.club import SeasonCreate, SeasonResponse, SeasonStatusUpdate
 
 router = APIRouter()

@@ -7,10 +7,10 @@ DELETE /{club_id}/teams/{team_id}/playbook/{entry_id}  → quitar del playbook (
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy import select, or_
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -22,7 +22,11 @@ from app.models.profile import Profile, UserRole
 from app.models.team import Team
 from app.models.user import User
 from app.routers.clubs import _get_club_or_404
-from app.schemas.playbook import AddToPlaybookRequest, PlaybookEntryResponse, UpdatePlaybookNoteRequest
+from app.schemas.playbook import (
+    AddToPlaybookRequest,
+    PlaybookEntryResponse,
+    UpdatePlaybookNoteRequest,
+)
 
 router = APIRouter()
 
@@ -168,7 +172,7 @@ async def remove_from_playbook(
     await _get_club_or_404(club_id, db)
     await _require_team_access(club_id, team_id, current_user, db)
     entry = await _get_entry_or_404(entry_id, team_id, db)
-    entry.archived_at = datetime.now(timezone.utc)
+    entry.archived_at = datetime.now(UTC)
     await db.commit()
     return Response(status_code=204)
 

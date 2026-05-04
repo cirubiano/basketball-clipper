@@ -14,7 +14,7 @@ Cubre:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -23,7 +23,6 @@ from fastapi.testclient import TestClient
 from app.core.database import get_db
 from app.core.security import create_access_token, get_current_user
 from app.main import app
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -66,12 +65,12 @@ def _fake_player(player_id: int = 42, archived: bool = False) -> MagicMock:
     p.id = player_id
     p.first_name = "Pau"
     p.last_name = "Gasol"
-    p.archived_at = datetime.now(timezone.utc) if archived else None
+    p.archived_at = datetime.now(UTC) if archived else None
     return p
 
 
 def _fake_match(match_id: int = 5, team_id: int = 10) -> MagicMock:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     m = MagicMock()
     m.id = match_id
     m.team_id = team_id
@@ -447,7 +446,6 @@ def test_upsert_stat_creates_new_stat_for_convocated_player():
     _override_user(_fake_admin())
     match = _fake_match()
     mp = _fake_match_player()
-    stat = _fake_match_stat()
 
     session = AsyncMock()
     session.get.side_effect = [_fake_club(), _fake_team()]

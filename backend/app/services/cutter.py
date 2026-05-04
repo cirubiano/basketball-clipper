@@ -24,7 +24,7 @@ de la lista de clips sin necesidad de cargar el video completo.
 """
 import logging
 import os
-from typing import Callable
+from collections.abc import Callable
 
 import ffmpeg
 

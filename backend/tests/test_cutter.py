@@ -114,9 +114,8 @@ def test_cut_clips_raises_runtime_error_on_ffmpeg_failure(tmp_path):
     stream = _ffmpeg_mock()
     stream.run.side_effect = ffmpeg.Error("ffmpeg", b"", b"codec not found")
 
-    with patch("ffmpeg.input", return_value=stream):
-        with pytest.raises(RuntimeError, match="FFmpeg failed on segment 0"):
-            cut_clips("source.mp4", segments, str(tmp_path))
+    with patch("ffmpeg.input", return_value=stream), pytest.raises(RuntimeError, match="FFmpeg failed on segment 0"):
+        cut_clips("source.mp4", segments, str(tmp_path))
 
 
 def test_cut_clips_error_message_includes_time_range(tmp_path):
@@ -124,6 +123,5 @@ def test_cut_clips_error_message_includes_time_range(tmp_path):
     stream = _ffmpeg_mock()
     stream.run.side_effect = ffmpeg.Error("ffmpeg", b"", b"error detail")
 
-    with patch("ffmpeg.input", return_value=stream):
-        with pytest.raises(RuntimeError, match="15.5"):
-            cut_clips("source.mp4", segments, str(tmp_path))
+    with patch("ffmpeg.input", return_value=stream), pytest.raises(RuntimeError, match="15.5"):
+        cut_clips("source.mp4", segments, str(tmp_path))

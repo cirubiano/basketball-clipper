@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import Depends, HTTPException, status
@@ -35,7 +35,7 @@ def create_access_token(
     profile_id viaja como claim firmado — no como header separado — para que
     el perfil este criptograficamente vinculado a la identidad del usuario.
     """
-    expire = datetime.now(timezone.utc) + (
+    expire = datetime.now(UTC) + (
         expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     payload: dict[str, Any] = {"sub": str(subject), "exp": expire}
@@ -67,7 +67,7 @@ async def get_current_user(
             raise credentials_exc
         user_id = int(user_id_str)
     except (JWTError, ValueError):
-        raise credentials_exc
+        raise credentials_exc from None
 
     user = await db.get(User, user_id)
     if user is None:
@@ -100,7 +100,7 @@ async def get_current_profile(
         user_id = int(user_id_str)
         profile_id: int | None = payload.get("profile_id")
     except (JWTError, ValueError):
-        raise credentials_exc
+        raise credentials_exc from None
 
     if profile_id is None:
         raise no_profile_exc

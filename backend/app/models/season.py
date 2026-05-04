@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 
-class SeasonStatus(str, enum.Enum):
+class SeasonStatus(enum.StrEnum):
     future = "future"
     active = "active"
     archived = "archived"

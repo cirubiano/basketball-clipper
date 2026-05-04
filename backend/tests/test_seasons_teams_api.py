@@ -15,7 +15,7 @@ Cubre:
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -25,7 +25,6 @@ from app.core.database import get_db
 from app.core.security import create_access_token, get_current_user
 from app.main import app
 from app.models.season import SeasonStatus
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -56,7 +55,7 @@ def _fake_club(club_id: int = 1) -> MagicMock:
 
 
 def _fake_season(season_id: int = 3, club_id: int = 1) -> MagicMock:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     s = MagicMock()
     s.id = season_id
     s.club_id = club_id
@@ -69,7 +68,7 @@ def _fake_season(season_id: int = 3, club_id: int = 1) -> MagicMock:
 
 
 def _fake_team(team_id: int = 10, club_id: int = 1) -> MagicMock:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     t = MagicMock()
     t.id = team_id
     t.club_id = club_id
@@ -88,7 +87,7 @@ def _fake_orm_season(club_id: int = 1) -> MagicMock:
 def _add_side_effect_with_timestamps(obj: object) -> None:
     """Simula lo que el DB haría al hacer flush: asigna id y created_at."""
     obj.id = 1
-    obj.created_at = datetime.now(timezone.utc)
+    obj.created_at = datetime.now(UTC)
 
 
 def _override_user(user: MagicMock) -> None:

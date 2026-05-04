@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import copy
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -136,9 +136,9 @@ async def push_changes_to_catalog(
     catalog_drill.court_layout = original.court_layout
     catalog_drill.description = original.description
     catalog_drill.root_sequence = seq_copy
-    catalog_drill.updated_at = datetime.now(timezone.utc)
+    catalog_drill.updated_at = datetime.now(UTC)
 
-    catalog_entry.updated_at = datetime.now(timezone.utc)
+    catalog_entry.updated_at = datetime.now(UTC)
     await db.flush()
     return catalog_entry
 
@@ -183,7 +183,7 @@ async def freeze_playbook_entries(
 
         entry.drill_id = frozen_drill.id
         entry.is_frozen = True
-        entry.frozen_at = datetime.now(timezone.utc)
+        entry.frozen_at = datetime.now(UTC)
 
     await db.flush()
 

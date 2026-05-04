@@ -14,7 +14,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
-
 catalog_entry_tags = Table(
     "catalog_entry_tags",
     Base.metadata,
@@ -53,15 +52,15 @@ class ClubCatalogEntry(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    drill: Mapped["Drill"] = relationship(  # noqa: F821
+    drill: Mapped[Drill] = relationship(  # noqa: F821
         "Drill", foreign_keys=[drill_id], lazy="select"
     )
-    original_drill: Mapped["Drill | None"] = relationship(  # noqa: F821
+    original_drill: Mapped[Drill | None] = relationship(  # noqa: F821
         "Drill", foreign_keys=[original_drill_id], lazy="select"
     )
-    publisher: Mapped["User"] = relationship(  # noqa: F821
+    publisher: Mapped[User] = relationship(  # noqa: F821
         "User", foreign_keys=[published_by], lazy="select"
     )
-    tags: Mapped[list["ClubTag"]] = relationship(  # noqa: F821
+    tags: Mapped[list[ClubTag]] = relationship(  # noqa: F821
         "ClubTag", secondary=catalog_entry_tags, lazy="select"
     )

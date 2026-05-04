@@ -9,7 +9,7 @@ POST   /{club_id}/teams/{team_id}/competitions/{comp_id}/set-default → marcar 
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import func, select
@@ -234,7 +234,7 @@ async def archive_competition(
     await _get_club_or_404(club_id, db)
     await _require_team_coach(club_id, team_id, user, db)
     comp = await _get_competition_or_404(comp_id, team_id, db)
-    comp.archived_at = datetime.now(timezone.utc)
+    comp.archived_at = datetime.now(UTC)
     if comp.is_default:
         comp.is_default = False
     await db.commit()
