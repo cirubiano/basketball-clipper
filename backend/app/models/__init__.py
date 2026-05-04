@@ -27,6 +27,7 @@ from app.models.playbook import TeamPlaybookEntry
 from app.models.player import Player, PlayerPosition, RosterEntry
 from app.models.profile import Profile, UserRole
 from app.models.season import Season, SeasonStatus
+from app.models.stat_attribute import CustomMatchStat, StatAttributeType, TeamStatAttribute
 from app.models.team import Team
 from app.models.training import (
     Training,
@@ -71,6 +72,9 @@ __all__ = [
     "UserRole",
     "Season",
     "SeasonStatus",
+    "CustomMatchStat",
+    "StatAttributeType",
+    "TeamStatAttribute",
     "Tag",
     "Team",
     "Training",

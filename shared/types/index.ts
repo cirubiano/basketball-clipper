@@ -10,3 +10,4 @@ export * from "./player";
 export * from "./training";
 export * from "./user";
 export * from "./video";
+export * from "./stat_attribute";

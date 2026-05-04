@@ -16,6 +16,7 @@ from app.routers import (
     positions,
     profiles,
     seasons,
+    stat_attributes,
     teams,
     trainings,
     video,
@@ -67,3 +68,6 @@ app.include_router(trainings.router, prefix="/clubs", tags=["trainings"])
 # Phase H
 app.include_router(competitions.router, prefix="/clubs", tags=["competitions"])
 app.include_router(opponents.router, prefix="/clubs", tags=["opponents"])
+
+# Phase I
+app.include_router(stat_attributes.router, prefix="/clubs", tags=["stat_attributes"])

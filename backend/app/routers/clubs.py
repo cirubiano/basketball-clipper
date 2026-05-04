@@ -5,8 +5,10 @@ Solo un Admin puede crear clubs (RF-022).
 Solo un TechnicalDirector o Admin puede gestionar miembros y perfiles.
 Cualquier miembro del club puede consultarlo.
 """
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -27,6 +29,7 @@ from app.schemas.club import (
     ClubUpdate,
     ProfileResponse,
 )
+from app.schemas.stat_attribute import AddStaffRequest
 
 router = APIRouter()
 
@@ -353,3 +356,178 @@ async def assign_profile(
     )
     profile = await db.scalar(stmt)
     return _enrich_profile(profile)
+
+
+# ── Team staff ────────────────────────────────────────────────────────────────
+
+@router.get("/{club_id}/teams/{team_id}/staff", response_model=list[ProfileResponse])
+async def list_team_staff(
+    club_id: int,
+    team_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[ProfileResponse]:
+    """
+    Lista los perfiles activos de un equipo (head_coach + staff_member).
+    Accesible por cualquier miembro del equipo o el TechnicalDirector del club.
+    """
+    await _get_club_or_404(club_id, db)
+
+    team = await db.get(Team, team_id)
+    if team is None or team.club_id != club_id or team.archived_at is not None:
+        raise HTTPException(status_code=404, detail="Team not found")
+
+    if not current_user.is_admin:
+        caller = await db.scalar(
+            select(Profile).where(
+                Profile.user_id == current_user.id,
+                Profile.club_id == club_id,
+                Profile.archived_at.is_(None),
+                or_(
+                    Profile.team_id == team_id,
+                    Profile.role == UserRole.technical_director,
+                ),
+            )
+        )
+        if caller is None:
+            raise HTTPException(status_code=403, detail="Team access required")
+
+    stmt = (
+        select(Profile)
+        .options(
+            selectinload(Profile.club),
+            selectinload(Profile.team),
+            selectinload(Profile.season),
+            selectinload(Profile.user),
+        )
+        .where(
+            Profile.club_id == club_id,
+            Profile.team_id == team_id,
+            Profile.archived_at.is_(None),
+        )
+        .order_by(Profile.created_at)
+    )
+    profiles = (await db.scalars(stmt)).all()
+    return [_enrich_profile(p) for p in profiles]
+
+
+@router.post("/{club_id}/teams/{team_id}/staff", response_model=ProfileResponse, status_code=201)
+async def add_team_staff(
+    club_id: int,
+    team_id: int,
+    body: AddStaffRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ProfileResponse:
+    """
+    El HeadCoach (o TD) añade un staff_member a su equipo.
+    El usuario debe ser ClubMember activo del club.
+    """
+    await _get_club_or_404(club_id, db)
+
+    team = await db.get(Team, team_id)
+    if team is None or team.club_id != club_id or team.archived_at is not None:
+        raise HTTPException(status_code=404, detail="Team not found")
+
+    # HeadCoach del equipo o TechnicalDirector del club
+    if not current_user.is_admin:
+        caller = await db.scalar(
+            select(Profile).where(
+                Profile.user_id == current_user.id,
+                Profile.club_id == club_id,
+                Profile.archived_at.is_(None),
+                or_(
+                    (Profile.team_id == team_id) & (Profile.role == UserRole.head_coach),
+                    Profile.role == UserRole.technical_director,
+                ),
+            )
+        )
+        if caller is None:
+            raise HTTPException(status_code=403, detail="Head coach or Technical Director required")
+
+    member = await db.scalar(
+        select(ClubMember).where(
+            ClubMember.club_id == club_id,
+            ClubMember.user_id == body.user_id,
+            ClubMember.archived_at.is_(None),
+        )
+    )
+    if member is None:
+        raise HTTPException(status_code=404, detail="User is not an active member of this club")
+
+    season = await db.get(Season, body.season_id)
+    if season is None or season.club_id != club_id:
+        raise HTTPException(status_code=404, detail="Season not found in this club")
+
+    profile = Profile(
+        user_id=body.user_id,
+        club_id=club_id,
+        team_id=team_id,
+        season_id=body.season_id,
+        role=UserRole.staff_member,
+    )
+    db.add(profile)
+    await db.flush()
+
+    stmt = (
+        select(Profile)
+        .options(
+            selectinload(Profile.club),
+            selectinload(Profile.team),
+            selectinload(Profile.season),
+            selectinload(Profile.user),
+        )
+        .where(Profile.id == profile.id)
+    )
+    profile = await db.scalar(stmt)
+    await db.commit()
+    return _enrich_profile(profile)
+
+
+@router.delete("/{club_id}/teams/{team_id}/staff/{profile_id}", status_code=204)
+async def remove_team_staff(
+    club_id: int,
+    team_id: int,
+    profile_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    El HeadCoach (o TD) retira a un staff_member de su equipo (archiva el perfil).
+    No puede retirar a otro head_coach ni a sí mismo.
+    """
+    await _get_club_or_404(club_id, db)
+
+    # HeadCoach del equipo o TechnicalDirector del club
+    if not current_user.is_admin:
+        caller = await db.scalar(
+            select(Profile).where(
+                Profile.user_id == current_user.id,
+                Profile.club_id == club_id,
+                Profile.archived_at.is_(None),
+                or_(
+                    (Profile.team_id == team_id) & (Profile.role == UserRole.head_coach),
+                    Profile.role == UserRole.technical_director,
+                ),
+            )
+        )
+        if caller is None:
+            raise HTTPException(status_code=403, detail="Head coach or Technical Director required")
+
+    target = await db.get(Profile, profile_id)
+    if (
+        target is None
+        or target.club_id != club_id
+        or target.team_id != team_id
+        or target.archived_at is not None
+    ):
+        raise HTTPException(status_code=404, detail="Staff profile not found")
+
+    if target.role != UserRole.staff_member:
+        raise HTTPException(
+            status_code=422,
+            detail="Only staff_member profiles can be removed via this endpoint",
+        )
+
+    target.archived_at = datetime.now(UTC)
+    await db.commit()

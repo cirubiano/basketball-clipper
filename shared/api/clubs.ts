@@ -150,3 +150,11 @@ export const getClubProfiles = (
   clubId: number
 ): Promise<Profile[]> =>
   apiRequest<Profile[]>(`/clubs/${clubId}/profiles`, { token });
+
+/** Lista los perfiles activos de un equipo (head_coach + staff_member). Accesible por cualquier miembro del equipo. */
+export const listTeamStaff = (
+  token: string,
+  clubId: number,
+  teamId: number
+): Promise<Profile[]> =>
+  apiRequest<Profile[]>(`/clubs/${clubId}/teams/${teamId}/staff`, { token });

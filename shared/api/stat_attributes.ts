@@ -35,11 +35,11 @@ export const updateStatAttribute = (
   clubId: number,
   teamId: number,
   attrId: number,
-  name: string,
+  data: import("../types/stat_attribute").StatAttributeUpdate,
 ): Promise<TeamStatAttribute> =>
   apiRequest<TeamStatAttribute>(
     `/clubs/${clubId}/teams/${teamId}/stat-attributes/${attrId}`,
-    { token, method: "PATCH", body: JSON.stringify({ name }) },
+    { token, method: "PATCH", body: JSON.stringify(data) },
   );
 
 export const archiveStatAttribute = (

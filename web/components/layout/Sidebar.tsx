@@ -8,14 +8,14 @@
 //
 // Estructura de bloques por rol:
 //   TD:    Inicio | [gestión de club] Equipos, Temporadas, Jugadores, Posiciones, Entrenadores, Catálogo de Club | [personal] Mi Biblioteca
-//   Coach: Inicio | [equipo] Plantilla, Competiciones, Entrenamientos, Playbook | [recursos] Catálogo de Club, Mi Biblioteca
+//   Coach: Inicio | [equipo] Plantilla, Competiciones, Entrenamientos, Playbook, Ajustes | [recursos] Catálogo de Club, Mi Biblioteca
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Home, BookOpen, Users, LayoutGrid, Trophy, Dumbbell,
   CalendarDays, ClipboardList, ChevronLeft, ChevronRight,
-  Tag, UserCheck, BookMarked,
+  Tag, UserCheck, BookMarked, Settings,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -57,6 +57,7 @@ function buildItems(
       { kind: "item",    href: competicionesHref,            label: "Competiciones",    icon: <Trophy     className="h-4 w-4 shrink-0" /> },
       { kind: "item",    href: `/teams/${teamId}/trainings`, label: "Entrenamientos",   icon: <Dumbbell   className="h-4 w-4 shrink-0" /> },
       { kind: "item",    href: `/teams/${teamId}/playbook`,  label: "Playbook",         icon: <BookMarked className="h-4 w-4 shrink-0" /> },
+      { kind: "item",    href: `/teams/${teamId}/settings`,  label: "Ajustes",          icon: <Settings   className="h-4 w-4 shrink-0" /> },
       { kind: "divider", key: "d2" },
       ...(clubId ? [{ kind: "item" as const, href: `/clubs/${clubId}/catalog`, label: "Catálogo de Club", icon: <LayoutGrid className="h-4 w-4 shrink-0" /> }] : []),
       { kind: "item",    href: "/drills",                    label: "Mi Biblioteca",    icon: <BookOpen   className="h-4 w-4 shrink-0" /> },

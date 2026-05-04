@@ -1687,3 +1687,50 @@ Todos los ítems de Fase 3 del `docs/UX_ROADMAP.md` han sido implementados:
 - **Registro por cuarto**: todas las acciones se acumulan en `quarterStatsLog` con `{ quarter, team, statKey, delta, playerName }` para análisis futuro por cuarto.
 
 **Verificaciones**: Python py_compile ✅ ALL OK · ESLint 0 errores ✅ · TSC 0 errores ✅
+---
+
+### 2026-05-04 — Sesión 50 (Fase I — Ajustes de equipo: Staff y Estadísticas personalizadas)
+
+**Objetivo**: añadir sección de configuración propia del equipo (accesible desde la barra lateral), con gestión de staff y estadísticas personalizadas por equipo.
+
+**Backend:**
+
+- `backend/app/models/stat_attribute.py` (nuevo):
+  - `StatAttributeType` (StrEnum: `count`)
+  - `TeamStatAttribute` — estadísticas personalizadas por equipo (`id`, `team_id` FK→teams CASCADE, `name` varchar(120), `type`, `archived_at`, `created_at`)
+  - `CustomMatchStat` — valor por jugador y partido (`id`, `match_id` FK→matches CASCADE, `player_id` FK→players CASCADE, `stat_attribute_id` FK→team_stat_attributes CASCADE, `value` int default 0, `created_at`); UniqueConstraint `(match_id, player_id, stat_attribute_id)`
+- `backend/app/models/__init__.py`: añadidos `CustomMatchStat`, `StatAttributeType`, `TeamStatAttribute`
+- `backend/alembic/versions/0023_team_stat_attributes.py`: crea enum PostgreSQL `statattributetype`, tablas `team_stat_attributes` y `custom_match_stats`
+- `backend/app/schemas/stat_attribute.py` (nuevo): `StatAttributeCreate`, `StatAttributeUpdate`, `StatAttributeResponse`, `CustomMatchStatUpsert`, `CustomMatchStatResponse`, `AddStaffRequest`
+- `backend/app/routers/stat_attributes.py` (nuevo): router con helpers `_get_team_or_404`, `_require_team_member`, `_require_coach_or_td`. Endpoints:
+  - GET/POST/PATCH/DELETE `/clubs/{club_id}/teams/{team_id}/stat-attributes[/{attr_id}]`
+  - GET/PUT `/clubs/{club_id}/teams/{team_id}/matches/{match_id}/custom-stats`
+  - DELETE `/clubs/{club_id}/teams/{team_id}/matches/{match_id}/custom-stats/{stat_id}`
+- `backend/app/routers/clubs.py`: nuevos endpoints `POST /clubs/{club_id}/teams/{team_id}/staff` y `DELETE /clubs/{club_id}/teams/{team_id}/staff/{profile_id}`. Permisos: HC del equipo o TD del club. HC solo puede añadir `staff_member`; solo puede añadir ClubMembers existentes.
+- `backend/app/main.py`: incluye `stat_attributes.router` con prefix `/clubs`
+- `backend/tests/test_conventions.py`: añadidas a `expected` las 5 rutas nuevas de staff y stat-attributes
+
+**Shared:**
+
+- `shared/types/stat_attribute.ts` (nuevo): `StatAttributeType`, `TeamStatAttribute`, `CustomMatchStat`, `StatAttributeCreate`, `CustomMatchStatUpsert`, `AddStaffRequest`
+- `shared/api/stat_attributes.ts` (nuevo): `listStatAttributes`, `createStatAttribute`, `updateStatAttribute`, `archiveStatAttribute`, `listCustomMatchStats`, `upsertCustomMatchStat`, `deleteCustomMatchStat`, `addTeamStaff`, `removeTeamStaff`
+- `shared/api/clubs.ts`: añadida `listTeamStaff`
+- `shared/types/index.ts`: `export * from "./stat_attribute"`
+- `shared/api/index.ts`: `export * from "./stat_attributes"`
+
+**Web:**
+
+- `web/components/layout/Sidebar.tsx`: reorganización completa del menú lateral:
+  - Orden del equipo: Inicio, Plantilla, Competiciones, Entrenamientos, Playbook, Ajustes
+  - Bloque de recursos: Catálogo de Club, Mi Biblioteca
+  - Para TD: Catálogo de Club en bloque de gestión; Mi Biblioteca en recursos
+  - Vídeos eliminado de todos los bloques de navegación
+  - Divisores entre bloques usando discriminated union `SidebarEntry`
+- `web/components/layout/BottomNav.tsx`: Vídeos eliminado; nav de equipo: Inicio, Plantilla, Partidos, Entrenos, Ajustes
+- `web/app/teams/[teamId]/settings/page.tsx` (nueva página): tabs "Staff" y "Estadísticas"
+  - `StaffTab`: lista del staff del equipo, diálogo para añadir (solo ClubMembers no-HC, no-TD), eliminar con confirmación (solo `staff_member`)
+  - `EstadisticasTab`: CRUD de `TeamStatAttribute` con edición inline (editingId pattern), añadir nueva fila, archivar con AlertDialog
+  - `canManage = role === "head_coach" || role === "technical_director"`
+- `web/app/teams/[teamId]/matches/[matchId]/page.tsx`: sección `CustomStatsSection` en pestaña Estadísticas (debajo de stats del rival); muestra +/- por jugador durante partido en vivo y solo lectura para partidos finalizados; solo aparece si `statAttributes.length > 0 && match_players.length > 0`
+
+**Verificaciones pendientes**: `make check-backend` y `make check-web` (requieren Docker)

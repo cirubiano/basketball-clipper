@@ -13,3 +13,4 @@ export * from "./positions";
 export * from "./trainings";
 export * from "./videoUpload";
 export * from "./videos";
+export * from "./stat_attributes";

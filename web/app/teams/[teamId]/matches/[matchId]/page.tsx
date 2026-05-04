@@ -24,6 +24,9 @@ import {
   listCompetitions,
   setHomeStarters,
   setRivalStarters,
+  listStatAttributes,
+  listCustomMatchStats,
+  upsertCustomMatchStat,
 } from "@basketball-clipper/shared/api";
 import {
   MATCH_LOCATION_LABELS,
@@ -37,6 +40,8 @@ import type {
   OpponentTeam,
   OpponentMatchStatUpsert,
   Competition,
+  TeamStatAttribute,
+  CustomMatchStat,
 } from "@basketball-clipper/shared/types";
 import { PageShell } from "@/components/layout/PageShell";
 import { useAuth } from "@/lib/auth";
@@ -126,6 +131,7 @@ type ActionLogEntry = {
   delta: number;
   team: "home" | "rival" | "none";
   quarter: number;
+  customStatAttrId?: number;
 };
 
 type QuarterStatEntry = {
@@ -137,6 +143,20 @@ type QuarterStatEntry = {
 };
 
 // ── Page component ────────────────────────────────────────────────────────────
+
+// ── Custom stat color map — keyed by TeamStatAttribute.color ──────────────────
+const CUSTOM_STAT_COLOR_MAP: Record<string, string> = {
+  violet: "bg-violet-500 hover:bg-violet-600 active:bg-violet-700 text-white",
+  blue:   "bg-blue-500   hover:bg-blue-600   active:bg-blue-700   text-white",
+  green:  "bg-green-500  hover:bg-green-600  active:bg-green-700  text-white",
+  orange: "bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white",
+  rose:   "bg-rose-500   hover:bg-rose-600   active:bg-rose-700   text-white",
+  purple: "bg-purple-500 hover:bg-purple-600 active:bg-purple-700 text-white",
+  teal:   "bg-teal-500   hover:bg-teal-600   active:bg-teal-700   text-white",
+  amber:  "bg-amber-400  hover:bg-amber-500  active:bg-amber-600  text-black",
+  cyan:   "bg-cyan-500   hover:bg-cyan-600   active:bg-cyan-700   text-white",
+  pink:   "bg-pink-500   hover:bg-pink-600   active:bg-pink-700   text-white",
+};
 
 export default function MatchDetailPage({
   params,
@@ -159,6 +179,7 @@ export default function MatchDetailPage({
   const [selectedVideoLabel, setSelectedVideoLabel] = useState<MatchVideoLabel>("other");
   const [scoreDialogOpen, setScoreDialogOpen] = useState(false);
   const [scoreForm, setScoreForm] = useState({ our: "", their: "" });
+  const [informeStatsTab, setInformeStatsTab] = useState<"predefined" | "custom">("predefined");
 
   // ── Live scoring state ──────────────────────────────────────────────────────
 
@@ -277,6 +298,31 @@ export default function MatchDetailPage({
     queryKey: ["competitions", teamId, match?.season_id],
     queryFn: () => listCompetitions(token!, clubId!, teamId, match?.season_id),
     enabled: !!token && !!clubId && !!teamId && !!match?.season_id,
+  });
+
+  // Custom stat attributes for this team
+  const { data: statAttributes = [] } = useQuery<TeamStatAttribute[]>({
+    queryKey: ["stat-attributes", clubId, teamId],
+    queryFn: () => listStatAttributes(token!, clubId!, teamId),
+    enabled: !!token && !!clubId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Custom match stats for this match
+  const { data: customMatchStats = [], refetch: refetchCustomStats } = useQuery<CustomMatchStat[]>({
+    queryKey: ["custom-match-stats", matchId],
+    queryFn: () => listCustomMatchStats(token!, clubId!, teamId, matchId),
+    enabled: !!token && !!clubId,
+  });
+
+  const upsertCustomStatMut = useMutation({
+    mutationFn: (data: {
+      stat_attribute_id: number;
+      value: number;
+      player_id?: number | null;
+      opponent_player_id?: number | null;
+    }) => upsertCustomMatchStat(token!, clubId!, teamId, matchId, data),
+    onSuccess: () => void refetchCustomStats(),
   });
 
   // Convocatoria and rival management only editable before the match starts
@@ -805,7 +851,25 @@ export default function MatchDetailPage({
     if (actionLog.length === 0) return;
     const last = actionLog[0];
     setActionLog((prev) => prev.slice(1));
-    // Only undo home player stats — rival stats are saved directly and not undoable here
+
+    // Undo custom stat (both home and rival)
+    if (last.customStatAttrId !== undefined && last.delta > 0 && last.playerId !== -1) {
+      const existing = customMatchStats.find(
+        (s) =>
+          s.stat_attribute_id === last.customStatAttrId &&
+          (last.team === "home" ? s.player_id === last.playerId : s.opponent_player_id === last.playerId),
+      );
+      const currentVal = existing?.value ?? 0;
+      const newVal = Math.max(0, currentVal - last.delta);
+      if (last.team === "home") {
+        upsertCustomStatMut.mutate({ player_id: last.playerId, stat_attribute_id: last.customStatAttrId, value: newVal });
+      } else {
+        upsertCustomStatMut.mutate({ opponent_player_id: last.playerId, stat_attribute_id: last.customStatAttrId, value: newVal });
+      }
+      return;
+    }
+
+    // Only undo home player standard stats — rival standard stats are saved directly and not undoable here
     if (last.team !== "home" || last.statKey === null || last.delta === 0) return;
 
     const current = sessionStats.get(last.playerId) ?? { player_id: last.playerId };
@@ -2443,6 +2507,57 @@ export default function MatchDetailPage({
                           <ActionButton label="PÉR" sublabel="Pérdida" onClick={() => withOutOfTimeGuard("Pérdida", () => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("turnovers", 1, "Pérdida"); else handleOppAction("turnovers", 1); })} colorClass="bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white" />
                           <ActionButton label="FAL" sublabel="Falta" onClick={() => withOutOfTimeGuard("Falta", () => { if (selectedPlayerId !== null || homeTeamSelected) handleAction("fouls", 1, "Falta"); else handleOppAction("fouls", 1); })} colorClass="bg-yellow-500 hover:bg-yellow-600 active:bg-yellow-700 text-black" />
                         </div>
+                        {/* ── Estadísticas personalizadas ── */}
+                        {statAttributes.length > 0 && (selectedPlayerId !== null || selectedOppPlayerId !== null) && (() => {
+                          const isHome = selectedPlayerId !== null;
+                          const cols = statAttributes.length <= 3 ? statAttributes.length : Math.ceil(statAttributes.length / Math.ceil(statAttributes.length / 3));
+                          return (
+                            <div className="border-t pt-1.5 space-y-1">
+                              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-0.5">Stats personalizadas</p>
+                              <div className={`grid gap-1.5`} style={{ gridTemplateColumns: `repeat(${Math.min(statAttributes.length, 3)}, 1fr)` }}>
+                                {statAttributes.map((attr) => {
+                                  const current = isHome
+                                    ? (customMatchStats.find(s => s.player_id === selectedPlayerId && s.stat_attribute_id === attr.id)?.value ?? 0)
+                                    : (customMatchStats.find(s => s.opponent_player_id === selectedOppPlayerId && s.stat_attribute_id === attr.id)?.value ?? 0);
+                                  const btnLabel = `+${attr.short_name ?? attr.name}`;
+                                  const colorClass = CUSTOM_STAT_COLOR_MAP[attr.color ?? ""] ?? "bg-violet-500 hover:bg-violet-600 active:bg-violet-700 text-white";
+                                  return (
+                                    <ActionButton
+                                      key={attr.id}
+                                      label={btnLabel}
+                                      sublabel={current > 0 ? `${current} registrados` : attr.name}
+                                      onClick={() => {
+                                        const newVal = current + 1;
+                                        const logLabel = attr.short_name ?? attr.name;
+                                        const logId = ++logCounterRef.current;
+                                        if (isHome) {
+                                          const mp = match?.match_players.find((p) => p.player_id === selectedPlayerId);
+                                          const playerName = mp ? `${mp.player_first_name ?? ""} ${mp.player_last_name ?? ""}`.trim() : "Jugador";
+                                          setActionLog((prev) =>
+                                            [{ logId, playerId: selectedPlayerId!, playerName, label: logLabel, statKey: null, delta: 1, team: "home" as const, quarter: currentQuarter, customStatAttrId: attr.id }, ...prev].slice(0, 500),
+                                          );
+                                          upsertCustomStatMut.mutate({ player_id: selectedPlayerId, stat_attribute_id: attr.id, value: newVal });
+                                          setSelectedPlayerId(null);
+                                        } else {
+                                          const oppPlayer = match?.opponent_stats.find((os) => os.opponent_player_id === selectedOppPlayerId);
+                                          const oppName = oppPlayer
+                                            ? (oppPlayer.opponent_player.name ?? `#${oppPlayer.opponent_player.jersey_number}`)
+                                            : "Rival";
+                                          setActionLog((prev) =>
+                                            [{ logId, playerId: selectedOppPlayerId!, playerName: oppName, label: logLabel, statKey: null, delta: 1, team: "rival" as const, quarter: currentQuarter, customStatAttrId: attr.id }, ...prev].slice(0, 500),
+                                          );
+                                          upsertCustomStatMut.mutate({ opponent_player_id: selectedOppPlayerId, stat_attribute_id: attr.id, value: newVal });
+                                          setSelectedOppPlayerId(null);
+                                        }
+                                      }}
+                                      colorClass={colorClass}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     ) : (
                       <div className="border rounded-lg flex items-center justify-center min-h-[200px] text-muted-foreground text-sm text-center p-8">
@@ -2634,71 +2749,139 @@ export default function MatchDetailPage({
         {/* Tab: Informe ─ read-only live/post-match stats */}
         {tab === "informe" && (
           <div className="space-y-8">
-            {/* Home team */}
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                {activeProfile?.team_name ?? "Nuestro equipo"}
-              </p>
-              {match.status === "in_progress" ? (
-                match.match_players.length === 0 ? (
-                  <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
-                    No hay jugadores en la convocatoria.
-                  </div>
-                ) : (
-                  <LiveStatsTable
-                    matchPlayers={match.match_players}
-                    sessionStats={sessionStats}
-                    playerEnteredAtMs={playerEnteredAtMs}
-                    timerMs={timerMs}
-                    trackMinutes={match.track_home_minutes}
-                    onCourtIds={onCourtIds}
-                    rosterJerseyMap={rosterJerseyMap}
-                  />
-                )
-              ) : (
-                match.match_stats.length === 0 ? (
-                  <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
-                    No se registraron estadísticas en este partido.
-                  </div>
-                ) : (
-                  <div>
-                    <StatsTable matchPlayers={match.match_players} stats={match.match_stats} rosterJerseyMap={rosterJerseyMap} />
-                    <StatsBarChart matchPlayers={match.match_players} stats={match.match_stats} />
-                  </div>
-                )
-              )}
-            </div>
-            {/* Rival team */}
-            {match.opponent_id && (
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                  {opponentTeam?.name ?? match.opponent_name} (rival)
-                </p>
-                {match.status === "in_progress" ? (
-                  match.opponent_stats.length === 0 ? (
-                    <div className="border rounded-lg p-6 text-center text-muted-foreground text-sm">
-                      No hay jugadores rivales en la convocatoria.
-                    </div>
-                  ) : (
-                    <LiveOppStatsTable
-                      opponentStats={match.opponent_stats}
-                      oppStatDraft={oppStatDraft}
-                      rivalEnteredAtMs={rivalEnteredAtMs}
-                      timerMs={timerMs}
-                      trackMinutes={match.track_rival_minutes}
-                      onCourtOppIds={onCourtOppIds}
-                    />
-                  )
-                ) : (
-                  match.opponent_stats.length === 0 ? (
-                    <div className="border rounded-lg p-6 text-center text-muted-foreground text-sm">
-                      No hay estadísticas registradas para el equipo rival.
-                    </div>
-                  ) : (
-                    <OppStatsTable opponentStats={match.opponent_stats} />
-                  )
-                )}
+            {/* Stats type navigator — only shown when custom attrs exist */}
+            {statAttributes.length > 0 && (
+              <div className="flex gap-1 p-1 bg-muted rounded-lg w-fit">
+                <button
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${informeStatsTab === "predefined" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                  onClick={() => setInformeStatsTab("predefined")}
+                >
+                  Predefinidas
+                </button>
+                <button
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${informeStatsTab === "custom" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                  onClick={() => setInformeStatsTab("custom")}
+                >
+                  Personalizadas
+                </button>
               </div>
+            )}
+            {/* ── Predefined stats section ── */}
+            {(statAttributes.length === 0 || informeStatsTab === "predefined") && (
+              <>
+                {/* Home team — predefined */}
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                    {activeProfile?.team_name ?? "Nuestro equipo"}
+                  </p>
+                  {match.status === "in_progress" ? (
+                    match.match_players.length === 0 ? (
+                      <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
+                        No hay jugadores en la convocatoria.
+                      </div>
+                    ) : (
+                      <LiveStatsTable
+                        matchPlayers={match.match_players}
+                        sessionStats={sessionStats}
+                        playerEnteredAtMs={playerEnteredAtMs}
+                        timerMs={timerMs}
+                        trackMinutes={match.track_home_minutes}
+                        onCourtIds={onCourtIds}
+                        rosterJerseyMap={rosterJerseyMap}
+                      />
+                    )
+                  ) : (
+                    match.match_stats.length === 0 ? (
+                      <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
+                        No se registraron estadísticas en este partido.
+                      </div>
+                    ) : (
+                      <div>
+                        <StatsTable matchPlayers={match.match_players} stats={match.match_stats} rosterJerseyMap={rosterJerseyMap} />
+                        <StatsBarChart matchPlayers={match.match_players} stats={match.match_stats} />
+                      </div>
+                    )
+                  )}
+                </div>
+                {/* Rival team — predefined */}
+                {match.opponent_id && (
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                      {opponentTeam?.name ?? match.opponent_name} (rival)
+                    </p>
+                    {match.status === "in_progress" ? (
+                      match.opponent_stats.length === 0 ? (
+                        <div className="border rounded-lg p-6 text-center text-muted-foreground text-sm">
+                          No hay jugadores rivales en la convocatoria.
+                        </div>
+                      ) : (
+                        <LiveOppStatsTable
+                          opponentStats={match.opponent_stats}
+                          oppStatDraft={oppStatDraft}
+                          rivalEnteredAtMs={rivalEnteredAtMs}
+                          timerMs={timerMs}
+                          trackMinutes={match.track_rival_minutes}
+                          onCourtOppIds={onCourtOppIds}
+                        />
+                      )
+                    ) : (
+                      match.opponent_stats.length === 0 ? (
+                        <div className="border rounded-lg p-6 text-center text-muted-foreground text-sm">
+                          No hay estadísticas registradas para el equipo rival.
+                        </div>
+                      ) : (
+                        <OppStatsTable opponentStats={match.opponent_stats} />
+                      )
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ── Custom stats section ── */}
+            {statAttributes.length > 0 && informeStatsTab === "custom" && (
+              <>
+                {/* Home team — custom */}
+                {match.match_players.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                      {activeProfile?.team_name ?? "Nuestro equipo"}
+                    </p>
+                    <CustomStatsReadTable
+                      players={match.match_players.map(mp => ({
+                        id: mp.player_id,
+                        label: `${mp.player_first_name} ${mp.player_last_name}`,
+                      }))}
+                      statAttributes={statAttributes}
+                      getValue={(playerId, attrId) =>
+                        customMatchStats.find(s => s.player_id === playerId && s.stat_attribute_id === attrId)?.value ?? 0
+                      }
+                    />
+                  </div>
+                )}
+                {/* Rival team — custom */}
+                {match.opponent_id && match.opponent_stats.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                      {opponentTeam?.name ?? match.opponent_name} (rival)
+                    </p>
+                    <CustomStatsReadTable
+                      players={match.opponent_stats
+                        .filter((os, idx, arr) => arr.findIndex(o => o.opponent_player_id === os.opponent_player_id) === idx)
+                        .map(os => ({
+                          id: os.opponent_player_id,
+                          label: os.opponent_player?.name
+                            ? os.opponent_player.name
+                            : `#${os.opponent_player?.jersey_number ?? os.opponent_player_id}`,
+                        }))}
+                      statAttributes={statAttributes}
+                      getValue={(playerId, attrId) =>
+                        customMatchStats.find(s => s.opponent_player_id === playerId && s.stat_attribute_id === attrId)?.value ?? 0
+                      }
+                    />
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -3726,6 +3909,52 @@ function StatsBarChart({
           </p>
         )}
       </div>
+    </div>
+  );
+}// ── CustomStatsReadTable — tabla de solo lectura de stats personalizadas ────────
+
+function CustomStatsReadTable({
+  players,
+  statAttributes,
+  getValue,
+}: {
+  players: { id: number; label: string }[];
+  statAttributes: TeamStatAttribute[];
+  getValue: (playerId: number, attrId: number) => number;
+}) {
+  if (players.length === 0 || statAttributes.length === 0) return null;
+
+  return (
+    <div className="border rounded-lg overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b bg-muted/30">
+            <th className="text-left px-4 py-2 font-medium">Jugador</th>
+            {statAttributes.map((attr) => (
+              <th key={attr.id} className="text-center px-3 py-2 font-medium whitespace-nowrap">
+                {attr.short_name ?? attr.name}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {players.map((player) => {
+            const values = statAttributes.map((a) => getValue(player.id, a.id));
+            return (
+              <tr key={player.id} className="border-b last:border-0">
+                <td className="px-4 py-2.5 font-medium whitespace-nowrap">{player.label}</td>
+                {values.map((val, i) => (
+                  <td key={statAttributes[i].id} className="text-center px-3 py-2">
+                    <span className={val === 0 ? "text-muted-foreground/40" : "font-semibold"}>
+                      {val > 0 ? val : "\u2014"}
+                    </span>
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

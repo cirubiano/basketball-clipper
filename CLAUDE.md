@@ -445,7 +445,8 @@ backend/
 │   │   ├── catalog.py        # Tags del club + catálogo CRUD (Fase E)
 │   │   ├── playbook.py       # Playbook del equipo (Fase E)
 │   │   ├── matches.py        # Partidos + convocatoria + vídeos + stats (Fase F)
-│   │   └── trainings.py      # Entrenamientos + ejercicios + asistencia (Fase F)
+│   │   ├── trainings.py      # Entrenamientos + ejercicios + asistencia (Fase F)
+│   │   └── stat_attributes.py # Atributos personalizados + custom stats de partido + staff (Fase I)
 │   ├── services/
 │   │   ├── detector.py       # YOLOv8 + OpenCV — detección de posesión (LAB + K-means)
 │   │   ├── cutter.py         # FFmpeg — corte de clips
@@ -472,7 +473,8 @@ backend/
 │   │   ├── catalog.py        # ClubCatalogEntry + catalog_entry_tags M2M (Fase E)
 │   │   ├── playbook.py       # TeamPlaybookEntry (Fase E)
 │   │   ├── match.py          # Match + MatchPlayer + MatchStat + MatchVideo + enums (Fase F)
-│   │   └── training.py       # Training + TrainingDrill + TrainingAttendance + AbsenceReason (Fase F)
+│   │   ├── training.py       # Training + TrainingDrill + TrainingAttendance + AbsenceReason (Fase F)
+│   │   └── stat_attribute.py  # TeamStatAttribute + CustomMatchStat + StatAttributeType (Fase I)
 │   └── schemas/
 │       ├── auth.py           # Login, Register, TokenResponse, UserResponse, SwitchProfileRequest
 │       ├── club.py           # Club, Season, Team, ClubMember, Profile schemas
@@ -483,7 +485,8 @@ backend/
 │       ├── playbook.py       # PlaybookEntry schemas (Fase E)
 │       ├── player.py         # Player, RosterEntry, ClubPosition schemas (Fase C)
 │       ├── match.py          # Match, MatchPlayer, MatchStat, MatchVideo schemas (Fase F)
-│       └── training.py       # Training, TrainingDrill, TrainingAttendance, AttendanceUpdate schemas (Fase F)
+│       ├── training.py       # Training, TrainingDrill, TrainingAttendance, AttendanceUpdate schemas (Fase F)
+│       └── stat_attribute.py  # StatAttributeCreate/Update/Response, CustomMatchStatUpsert/Response, AddStaffRequest (Fase I)
 ├── alembic/versions/
 │   ├── 0001_initial_schema.py
 │   ├── 0002_multipart_upload.py
@@ -502,7 +505,11 @@ backend/
 │   ├── 0014_phase_g_favorites.py
 │   ├── 0015_phase_g_training_duration.py
 │   ├── 0016_phase_g_drill_groups.py
-│   └── 0019_phase_h_competitions_rivals.py
+│   ├── 0019_phase_h_competitions_rivals.py
+│   ├── 0020_rival_color_competition_format.py
+│   ├── 0021_competition_overtime_minutes.py
+│   ├── 0022_match_minutes_tracking.py
+│   └── 0023_team_stat_attributes.py
 ├── models/
 │   └── README.md             # Cómo usar modelos custom de YOLO
 ├── scripts/
@@ -621,6 +628,7 @@ shared/
 │   ├── match.ts          # Match, MatchStatus, MatchPlayer, MatchStat, MatchVideo (Fase F)
 │   ├── opponent.ts       # OpponentTeam, OpponentPlayer, OpponentMatchStat (Fase H)
 │   ├── training.ts       # Training, TrainingDrill, TrainingAttendance, AbsenceReason (Fase F)
+│   └── stat_attribute.ts  # TeamStatAttribute, CustomMatchStat, StatAttributeType, AddStaffRequest (Fase I)
 │   └── index.ts
 └── api/
     ├── client.ts, auth.ts, videos.ts, videoUpload.ts, clips.ts, clubs.ts
@@ -633,6 +641,7 @@ shared/
     ├── matches.ts        # CRUD + convocatoria + vídeos + stats + startMatch/finishMatch/cancelMatch (Fase F)
     ├── opponents.ts      # CRUD OpponentTeam + OpponentPlayer + upsertOpponentStat + deleteOpponentStat (Fase H)
     ├── trainings.ts      # CRUD + ejercicios + asistencia (Fase F)
+    ├── stat_attributes.ts # listStatAttributes, createStatAttribute, updateStatAttribute, archiveStatAttribute, listCustomMatchStats, upsertCustomMatchStat, deleteCustomMatchStat, addTeamStaff, removeTeamStaff (Fase I)
     └── index.ts
 ```
 
@@ -744,6 +753,15 @@ y sus tipos en `shared/types/`. Web y mobile nunca llaman al backend directament
 | DELETE | /clubs/{id}/opponents/{opp_id}/players/{pid} | td_or_hc | Archivar jugador rival |
 | POST | /clubs/{id}/teams/{tid}/matches/{match_id}/opponent-stats | td_or_hc | Upsert estadística de scouting (jugador rival) |
 | DELETE | /clubs/{id}/teams/{tid}/matches/{match_id}/opponent-stats/{stat_id} | td_or_hc | Eliminar estadística de scouting |
+| POST | /clubs/{id}/teams/{tid}/staff | hc_or_td | Añadir miembro de staff al equipo (HC solo puede añadir staff_member) |
+| DELETE | /clubs/{id}/teams/{tid}/staff/{profile_id} | hc_or_td | Retirar miembro de staff del equipo |
+| GET | /clubs/{id}/teams/{tid}/stat-attributes | member | Listar atributos de estadística personalizados del equipo |
+| POST | /clubs/{id}/teams/{tid}/stat-attributes | hc_or_td | Crear atributo de estadística personalizado |
+| PATCH | /clubs/{id}/teams/{tid}/stat-attributes/{attr_id} | hc_or_td | Renombrar atributo de estadística |
+| DELETE | /clubs/{id}/teams/{tid}/stat-attributes/{attr_id} | hc_or_td | Archivar atributo de estadística |
+| GET | /clubs/{id}/teams/{tid}/matches/{match_id}/custom-stats | member | Listar estadísticas personalizadas de un partido |
+| PUT | /clubs/{id}/teams/{tid}/matches/{match_id}/custom-stats | hc_or_td | Upsert estadística personalizada (por jugador + atributo) |
+| DELETE | /clubs/{id}/teams/{tid}/matches/{match_id}/custom-stats/{stat_id} | hc_or_td | Eliminar estadística personalizada |
 | GET | /drills/tags | user | Listar tags personales |
 | POST | /drills/tags | user | Crear tag |
 | PATCH | /drills/tags/{id} | user | Actualizar tag |

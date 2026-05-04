@@ -6,7 +6,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, BookOpen, Trophy, Dumbbell, Users, LayoutGrid, BookMarked } from "lucide-react";
+import { Home, BookOpen, Trophy, Dumbbell, Users, LayoutGrid, Settings } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
@@ -36,10 +36,10 @@ function buildItems(
   if (teamId) {
     return [
       { href: "/",                             label: "Inicio",    icon: <Home       className="h-5 w-5" /> },
-      { href: `/teams/${teamId}/roster`,       label: "Plantilla", icon: <Users      className="h-5 w-5" /> },
-      { href: `/teams/${teamId}/matches`,      label: "Partidos",  icon: <Trophy     className="h-5 w-5" /> },
-      { href: `/teams/${teamId}/trainings`,    label: "Entrenos",  icon: <Dumbbell   className="h-5 w-5" /> },
-      { href: `/teams/${teamId}/playbook`,     label: "Playbook",  icon: <BookMarked className="h-5 w-5" /> },
+      { href: `/teams/${teamId}/roster`,       label: "Plantilla", icon: <Users    className="h-5 w-5" /> },
+      { href: `/teams/${teamId}/matches`,      label: "Partidos",  icon: <Trophy   className="h-5 w-5" /> },
+      { href: `/teams/${teamId}/trainings`,    label: "Entrenos",  icon: <Dumbbell className="h-5 w-5" /> },
+      { href: `/teams/${teamId}/settings`,     label: "Ajustes",   icon: <Settings className="h-5 w-5" /> },
     ];
   }
 

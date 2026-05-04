@@ -1,18 +1,15 @@
 """
 TeamStatAttribute — atributos de estadísticas personalizadas por equipo.
 CustomMatchStat    — valores de esas estadísticas por jugador y partido.
+
+Unicidad de CustomMatchStat garantizada mediante partial indexes (migración 0024):
+  - Home player:  UNIQUE (match_id, stat_attribute_id, player_id) WHERE player_id IS NOT NULL
+  - Rival player: UNIQUE (match_id, stat_attribute_id, opponent_player_id) WHERE opp IS NOT NULL
 """
 import enum
 from datetime import UTC, datetime
 
-from sqlalchemy import (
-    DateTime,
-    Enum,
-    ForeignKey,
-    Integer,
-    String,
-    UniqueConstraint,
-)
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -30,6 +27,9 @@ class TeamStatAttribute(Base):
         ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    short_name: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    description: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    color: Mapped[str | None] = mapped_column(String(20), nullable=True)
     type: Mapped[StatAttributeType] = mapped_column(
         Enum(StatAttributeType, name="statattributetype"),
         nullable=False,
@@ -49,9 +49,17 @@ class CustomMatchStat(Base):
     __tablename__ = "custom_match_stats"
 
     __table_args__ = (
-        UniqueConstraint(
-            "match_id", "player_id", "stat_attribute_id",
-            name="uq_custom_match_stat",
+        Index(
+            "ix_cstat_home",
+            "match_id", "stat_attribute_id", "player_id",
+            unique=True,
+            postgresql_where=text("player_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_cstat_rival",
+            "match_id", "stat_attribute_id", "opponent_player_id",
+            unique=True,
+            postgresql_where=text("opponent_player_id IS NOT NULL"),
         ),
     )
 
@@ -59,8 +67,11 @@ class CustomMatchStat(Base):
     match_id: Mapped[int] = mapped_column(
         ForeignKey("matches.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    player_id: Mapped[int] = mapped_column(
-        ForeignKey("players.id", ondelete="CASCADE"), nullable=False
+    player_id: Mapped[int | None] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), nullable=True
+    )
+    opponent_player_id: Mapped[int | None] = mapped_column(
+        ForeignKey("opponent_players.id", ondelete="CASCADE"), nullable=True
     )
     stat_attribute_id: Mapped[int] = mapped_column(
         ForeignKey("team_stat_attributes.id", ondelete="CASCADE"), nullable=False

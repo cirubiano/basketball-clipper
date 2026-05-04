@@ -63,6 +63,12 @@ def test_all_api_routes_registered():
         # ── Teams ─────────────────────────────────────────────────────────────
         "/clubs/{club_id}/teams",
         "/clubs/{club_id}/teams/{team_id}",
+        "/clubs/{club_id}/teams/{team_id}/staff",
+        "/clubs/{club_id}/teams/{team_id}/staff/{profile_id}",
+        "/clubs/{club_id}/teams/{team_id}/stat-attributes",
+        "/clubs/{club_id}/teams/{team_id}/stat-attributes/{attr_id}",
+        "/clubs/{club_id}/teams/{team_id}/matches/{match_id}/custom-stats",
+        "/clubs/{club_id}/teams/{team_id}/matches/{match_id}/custom-stats/{stat_id}",
 
         # ── Players ───────────────────────────────────────────────────────────
         "/clubs/{club_id}/players",

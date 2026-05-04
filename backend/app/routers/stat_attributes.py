@@ -124,7 +124,14 @@ async def create_stat_attribute(
     await _get_team_or_404(club_id, team_id, db)
     await _require_coach_or_td(club_id, team_id, current_user, db)
 
-    attr = TeamStatAttribute(team_id=team_id, name=body.name, type=body.type)
+    attr = TeamStatAttribute(
+        team_id=team_id,
+        name=body.name,
+        short_name=body.short_name,
+        description=body.description,
+        color=body.color,
+        type=body.type,
+    )
     db.add(attr)
     await db.commit()
     await db.refresh(attr)
@@ -151,6 +158,9 @@ async def update_stat_attribute(
         raise HTTPException(status_code=404, detail="Stat attribute not found")
 
     attr.name = body.name
+    attr.short_name = body.short_name
+    attr.description = body.description
+    attr.color = body.color
     await db.commit()
     await db.refresh(attr)
     return attr
@@ -227,25 +237,42 @@ async def upsert_custom_match_stat(
     if attr is None or attr.team_id != team_id or attr.archived_at is not None:
         raise HTTPException(status_code=404, detail="Stat attribute not found")
 
-    existing = await db.scalar(
-        select(CustomMatchStat).where(
+    # Build the WHERE clause depending on home or rival player
+    if body.player_id is not None:
+        filter_clause = (
             CustomMatchStat.match_id == match_id,
-            CustomMatchStat.player_id == body.player_id,
             CustomMatchStat.stat_attribute_id == body.stat_attribute_id,
+            CustomMatchStat.player_id == body.player_id,
         )
-    )
+        new_kwargs = dict(
+            match_id=match_id,
+            stat_attribute_id=body.stat_attribute_id,
+            player_id=body.player_id,
+            opponent_player_id=None,
+            value=body.value,
+        )
+    else:
+        filter_clause = (
+            CustomMatchStat.match_id == match_id,
+            CustomMatchStat.stat_attribute_id == body.stat_attribute_id,
+            CustomMatchStat.opponent_player_id == body.opponent_player_id,
+        )
+        new_kwargs = dict(
+            match_id=match_id,
+            stat_attribute_id=body.stat_attribute_id,
+            player_id=None,
+            opponent_player_id=body.opponent_player_id,
+            value=body.value,
+        )
+
+    existing = await db.scalar(select(CustomMatchStat).where(*filter_clause))
     if existing:
         existing.value = body.value
         await db.commit()
         await db.refresh(existing)
         return existing
 
-    stat = CustomMatchStat(
-        match_id=match_id,
-        player_id=body.player_id,
-        stat_attribute_id=body.stat_attribute_id,
-        value=body.value,
-    )
+    stat = CustomMatchStat(**new_kwargs)
     db.add(stat)
     await db.commit()
     await db.refresh(stat)
